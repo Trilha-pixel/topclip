@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Lanchador interno da skill topclip-corte. Prefira o da raiz: ./topclip corte ...
+#
+# Existe por um motivo concreto: o `python3` do sistema no macOS e o 3.9, e o
+# pacote exige 3.10+. Sem este wrapper, o pipeline morre no preflight
+# ("Analise: AUSENTE") depois de o usuario ja achar que instalou tudo.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# <repo>/.claude/skills/topclip-corte -> <repo>/.venv
+VENV="$(cd "$ROOT/../../.." && pwd)/.venv/bin/python"
+
+if [ -x "$VENV" ]; then
+    exec "$VENV" "$ROOT/scripts/vch.py" "$@"
+fi
+
+# Sem venv: procura o primeiro interpretador >= 3.10 disponivel.
+for candidato in python3.14 python3.13 python3.12 python3.11 python3.10 python3; do
+    caminho="$(command -v "$candidato" 2>/dev/null || true)"
+    [ -n "$caminho" ] || continue
+    if "$caminho" -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null; then
+        exec "$caminho" "$ROOT/scripts/vch.py" "$@"
+    fi
+done
+
+echo "ERRO: nenhum Python 3.10+ encontrado, e a venv do TopClip nao existe." >&2
+echo "      Rode na raiz do repositorio:  ./topclip instalar" >&2
+exit 2

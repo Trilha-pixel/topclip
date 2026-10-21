@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# TopClip — o lançador único do repositório.
+#
+#   ./topclip instalar              instala ffmpeg, Python 3.11, a venv e os modelos
+#   ./topclip verificar             confere se está tudo pronto para rodar
+#   ./topclip corte <subcomando>    motor de cortes (init, prepare, digest, autoframe, render...)
+#   ./topclip motion novo <pasta>   cria um projeto de motion a partir de um clipe vertical
+#   ./topclip motion transcrever <video> <saida.json>
+#   ./topclip py <script.py> ...    roda qualquer script com o Python da venv
+#   ./topclip testes                roda a suíte de testes
+#
+# Existe porque o python3 do sistema no macOS é o 3.9 e o pacote exige 3.10+.
+# Tudo passa pela venv do repositório, em .venv/.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PY="$ROOT/.venv/bin/python"
+CORTE="$ROOT/.claude/skills/topclip-corte"
+MOTION="$ROOT/.claude/skills/topclip-motion"
+
+ajuda() {
+    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+}
+
+precisa_venv() {
+    if [ ! -x "$PY" ]; then
+        echo "ERRO: a venv do TopClip ainda não existe." >&2
+        echo "      Rode primeiro:  ./topclip instalar" >&2
+        exit 2
+    fi
+}
+
+motion_novo() {
+    local destino="${1:-}"
+    if [ -z "$destino" ]; then
+        echo "uso: ./topclip motion novo <pasta-do-projeto>" >&2
+        exit 2
+    fi
+    if [ -e "$destino/compose.py" ]; then
+        echo "ERRO: $destino já é um projeto de motion (compose.py existe). Nada foi sobrescrito." >&2
+        exit 2
+    fi
+    mkdir -p "$destino"/{00_brief,05_motion,06_transitions,07_assets/raw,07_assets/cutout,08_images/frames,09_plates,10_sequences,11_qa,12_master}
+    cp "$MOTION"/lib/*.py "$destino"/
+    cp "$MOTION/lib/compose_template.py" "$destino/compose.py"
+    cp "$MOTION/lib/render_template.py" "$destino/render.py"
+    cp -R "$MOTION/fontes" "$destino/fontes"
+
+    # A biblioteca de assets cresce com o uso: tudo que já foi desenhado volta aqui.
+    shopt -s nullglob
+    local n=0
+    for f in "$ROOT"/biblioteca/assets/*.png "$ROOT"/biblioteca/assets/*.npy; do
+        cp "$f" "$destino/07_assets/cutout/"; n=$((n + 1))
+    done
+    if [ -f "$destino/07_assets/cutout/BG_PAPER.png" ]; then
+        mv "$destino/07_assets/cutout/BG_PAPER.png" "$destino/07_assets/raw/"
+    fi
+    shopt -u nullglob
+
+    echo "Projeto de motion criado em $destino"
+    echo "  $n asset(s) copiado(s) da biblioteca"
+    echo "  Próximo passo: coloque o clipe vertical em $destino/00_brief/fonte.mp4 e rode"
+    echo "  ./topclip motion transcrever $destino/00_brief/fonte.mp4 $destino/00_brief/transcript_palavras.json"
+}
+
+cmd="${1:-ajuda}"
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+    instalar)
+        exec bash "$ROOT/instalar.sh" "$@"
+        ;;
+    verificar)
+        precisa_venv
+        status=0
+        "$PY" "$CORTE/verificar.py" || status=1
+        echo
+        "$PY" "$MOTION/verificar.py" || status=1
+        exit $status
+        ;;
+    corte)
+        precisa_venv
+        exec "$PY" "$CORTE/scripts/vch.py" "$@"
+        ;;
+    motion)
+        sub="${1:-}"
+        [ $# -gt 0 ] && shift
+        case "$sub" in
+            novo) motion_novo "$@" ;;
+            transcrever) precisa_venv; exec "$PY" "$MOTION/lib/transcrever.py" "$@" ;;
+            *) echo "uso: ./topclip motion {novo|transcrever} ..." >&2; exit 2 ;;
+        esac
+        ;;
+    py)
+        precisa_venv
+        exec "$PY" "$@"
+        ;;
+    testes)
+        precisa_venv
+        cd "$CORTE" && exec "$PY" -m unittest discover -s tests -t . -q
+        ;;
+    ajuda|-h|--help)
+        ajuda
+        ;;
+    *)
+        echo "comando desconhecido: $cmd" >&2
+        ajuda
+        exit 2
+        ;;
+esac

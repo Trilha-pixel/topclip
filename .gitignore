@@ -1,0 +1,19 @@
+# Ambiente
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# Modelos baixados pelo instalador
+.claude/skills/topclip-corte/models/*.onnx
+
+# Seus vídeos e runs — nunca vão para o git
+projetos/
+*.mp4
+*.mov
+*.mkv
+*.m4a
+*.wav
+
+# Configuração pessoal do Claude Code
+.claude/settings.local.json

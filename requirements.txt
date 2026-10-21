@@ -1,0 +1,17 @@
+# TopClip — dependências Python das duas skills. Instale com ./topclip instalar.
+
+# Cortes: config e validação dos artefatos (obrigatórias)
+pyyaml>=6.0
+jsonschema>=4.0
+
+# Transcrição palavra a palavra (cortes e motion). Baixa ~1,5 GB de modelo na 1ª vez.
+faster-whisper>=1.0
+
+# Enquadramento por locutor ativo e composição do motion.
+# O pin não é capricho: o 5.0.0 removeu cv2.dnn.readNetFromCaffe e quebra o detector.
+# O contrib já inclui tudo do opencv-python — não instale os dois juntos.
+opencv-contrib-python==4.10.0.84
+numpy>=1.24
+
+# Composição do motion, legenda e assets
+Pillow>=10.0

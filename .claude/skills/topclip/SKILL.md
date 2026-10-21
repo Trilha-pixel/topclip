@@ -1,0 +1,88 @@
+---
+name: topclip
+description: Fluxo completo do TopClip — de um vídeo longo (podcast, entrevista, live, aula) até clipes verticais 9:16 com motion editorial e legenda queimada, prontos para Shorts, Reels e TikTok. Use quando o pedido for o pacote inteiro ("faz os cortes com motion", "transforma esse podcast em clipes prontos", "/topclip video.mp4"), ou quando não estiver claro por qual etapa começar. Para só cortar, use topclip-corte; para só pôr motion num clipe que já existe, use topclip-motion.
+allowed-tools:
+  - Agent
+  - Read
+  - Write
+  - Grep
+  - Glob
+  - Bash(./topclip *)
+  - Bash(ffprobe *)
+  - Bash(ffmpeg *)
+---
+
+# TopClip — do vídeo longo ao clipe pronto
+
+Duas skills em sequência, cada uma com seus portões:
+
+```text
+vídeo longo ──► topclip-corte ──► clip-vertical.mp4 limpo + timing por palavra ──► topclip-motion ──► master final
+                 momentos → cortes → vertical → entrega        ancorar → assets → compor → legenda → render
+```
+
+Todo caminho é relativo à raiz do repositório e todo comando passa por `./topclip`.
+
+## 0. Antes de tudo
+
+```bash
+./topclip verificar
+```
+
+Se acusar falta, rode `./topclip instalar` e verifique de novo. Não comece com
+instalação incompleta: o pipeline quebra no meio, depois de já ter gasto a transcrição.
+
+## 1. Projeto
+
+Um vídeo, uma pasta: `projetos/<nome-do-video>/` (minúsculas, hífen, sem acento).
+A pasta `projetos/` fica fora do git — nada do usuário sobe para o repositório.
+
+```text
+projetos/<nome>/
+  runs/            as runs da topclip-corte (--workspace aponta aqui)
+  motion/<clipe>/  um projeto da topclip-motion por clipe aprovado
+  entregas/        os masters finais, um .mp4 por clipe
+```
+
+## 2. Cortes — skill `topclip-corte`
+
+Invoque a skill `topclip-corte` com o vídeo e `--workspace projetos/<nome>/runs`.
+Ela tem quatro portões (momentos, cortes, vertical, entrega). **Respeite cada um:**
+pare, mostre, espere o usuário escolher. Só emende as fases quando ele pedir
+("vai até o fim", "manda o pacote todo").
+
+Saída por clipe: `clip-vertical.mp4` limpo (sem legenda, sem motion) e
+`captions.srt`/`.ass` com o timing por palavra.
+
+## 3. Motion — skill `topclip-motion`
+
+Para cada clipe que o usuário aprovou na entrega dos cortes:
+
+```bash
+./topclip motion novo projetos/<nome>/motion/<clipe>
+cp <run>/output/.../clip-vertical.mp4 projetos/<nome>/motion/<clipe>/00_brief/fonte.mp4
+```
+
+Depois invoque a skill `topclip-motion` sobre esse projeto. A transcrição do motion
+é **do clipe**, não do episódio: gere com `./topclip motion transcrever`.
+
+**Assets:** procure primeiro em `biblioteca/assets/`. O que não existir, o Claude
+desenha em código (seção 3 da `topclip-motion`). Todo asset novo aprovado volta para
+`biblioteca/assets/` com uma linha no `biblioteca/MANIFESTO.md` — é assim que o
+próximo vídeo começa com mais coisa pronta.
+
+Mostre o plano de motion (frases escolhidas e recusadas) antes de compor. É o portão
+desta etapa.
+
+## 4. Entrega
+
+Copie cada master verificado para `projetos/<nome>/entregas/<clipe>.mp4` e mostre a
+lista ao usuário com duração e o caminho de cada um. Não declare sucesso sem a
+verificação do master (duração, cadência e MD5 do áudio contra a fonte).
+
+## O que nunca fazer
+
+- Nunca prometer "viral garantido". O sistema estima publicabilidade; desempenho real
+  exige teste na plataforma.
+- Nunca inventar fala nem alterar o sentido do que foi dito.
+- Nunca gerar vídeo com IA de vídeo. O motion é composição em camadas.

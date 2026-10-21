@@ -1,0 +1,14 @@
+visual_index:
+  # O episodio tem mais de tres horas. A varredura geral usa amostragem
+  # mais larga; o candidato final recebe frames detalhados separadamente.
+  interval_seconds: 20.0
+  scene_threshold: 0.45
+
+render:
+  # O piloto prioriza iteracao rapida sem alterar o formato final vertical.
+  fps: 30
+  preset: fast
+  crf: 19
+  # O FFmpeg local não possui libass. O burn-in é feito pelo compositor
+  # Pillow/FFmpeg, que também aplica os motions do plano JSON.
+  make_captioned_version: false
