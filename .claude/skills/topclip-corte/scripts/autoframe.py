@@ -6,7 +6,12 @@ Alimenta o renderer que ja existe (scripts/render.py) em vez de criar um caminho
 paralelo: a saida sao entradas de `timeline` validas pelo edit-plans.schema.json.
 
 Cadeia de decisao por segmento:
-    corte de camera -> tipo de plano -> locutor ativo -> anchor + zoom
+    corte de camera -> amostra esparsa (3 frames, ou 1 a cada ~5s em plano longo)
+      -> um rosto parado: anchor estatico, fim
+      -> o resto: tipo de plano -> locutor ativo (5 fps) -> anchor + zoom
+
+O relatorio diz, por plano, qual caminho rodou ("caminho": amostrado|denso) e
+por que a amostra nao bastou ("motivo").
 
 Uso:
     python3 scripts/autoframe.py --video V.mp4 --segments segs.json --out plano.json
@@ -103,7 +108,9 @@ def plan_segments(video, segments, model=None, silences=None, zones=None):
                              "crop_anchor_x": round(anchor_from_cx(cx, zoom),4),
                              "zoom": zoom})
         report.append({"segmento": [round(a,3), round(b,3)],
-                       "subsegmentos": len(merged), "planos": diags})
+                       "subsegmentos": len(merged), "planos": diags,
+                       "caminhos": {c: sum(1 for d in diags if d.get("caminho")==c)
+                                    for c in ("amostrado", "denso")}})
     return timeline, report
 
 

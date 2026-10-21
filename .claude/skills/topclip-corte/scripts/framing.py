@@ -3,9 +3,14 @@
 Planejador de enquadramento vertical com locutor ativo.
 
 Arquitetura (a ordem importa):
-  1. divide o intervalo em PLANOS reais (cortes de camera);
-  2. por plano, decide o tipo: close (um rosto dominante) ou aberto (mesa);
-  3. close  -> crop estatico no rosto (sem perseguir microgesto);
+  1. divide o intervalo em PLANOS reais (cortes de camera, PySceneDetect;
+     o limite fixo do ffmpeg fica de reserva quando o pacote falta);
+  2. por plano, AMOSTRA ESPARSA: rostos em 3 frames (inicio, meio, fim; plano
+     longo, 1 a cada ~5s). Um rosto so, parado e do mesmo tamanho em todas as
+     amostras -> crop estatico na mediana, e a analise densa nem roda;
+  3. qualquer outra coisa (varios rostos, rosto andando, zoom, rosto sumindo)
+     -> analise DENSA, que decide o tipo: close (um rosto dominante) ou aberto;
+     close  -> crop estatico no rosto (sem perseguir microgesto);
      aberto -> segue o LOCUTOR ATIVO, com histerese para nao ficar pingando;
   4. suaviza e limita velocidade dentro do plano.
 
@@ -16,9 +21,9 @@ import subprocess, re, math
 import numpy as np
 
 try:  # como pacote (scripts.framing)
-    from scripts.active_speaker import analyze_shot, audio_envelope, SAMPLE_FPS, _corr
+    from scripts.active_speaker import analyze_shot, audio_envelope, sample_faces, SAMPLE_FPS, _corr
 except ImportError:  # executado de dentro de scripts/
-    from active_speaker import analyze_shot, audio_envelope, SAMPLE_FPS, _corr
+    from active_speaker import analyze_shot, audio_envelope, sample_faces, SAMPLE_FPS, _corr
 
 SRC_W, SRC_H = 1920, 1080
 CROP_W, CROP_H = 608, 1080
@@ -36,23 +41,58 @@ TARGET_FACE_H = 0.16  # altura de rosto desejada como fracao da altura de saida
 CLOSEUP_W   = 0.085   # largura do rosto (fracao do frame) que caracteriza close
                       # medido: close ~0.12 | plano aberto ~0.03-0.05
 
+# amostra esparsa, antes da analise densa
+PROBE_EDGE  = 0.25    # s: amostra de borda fica dentro do plano, longe do frame do corte
+PROBE_LONG  = 20.0    # s: plano mais longo que isso amostra por passo, nao 3 fixos
+PROBE_STEP  = 5.0     # s entre amostras no plano longo
+PROBE_ZOOM_TOL = 0.25 # variacao da largura do rosto que denuncia zoom de camera (docs/12)
+
 
 def detect_cuts(src, a, b, thresh=0.35):
-    dur=b-a
-    if dur < 1.2: return []
-    r=subprocess.run(["ffmpeg","-nostdin","-ss",f"{a:.3f}","-i",src,"-t",f"{dur:.3f}",
-                      "-vf",f"select='gt(scene,{thresh})',showinfo","-f","null","-"],
-                     capture_output=True,text=True)
-    out=[]
-    for m in re.finditer(r'pts_time:([\d.]+)', r.stdout+r.stderr):
-        t=float(m.group(1))
-        if 0.25 < t < dur-0.25: out.append(a+t)
-    out=sorted(set(round(x,2) for x in out))
+    """Cortes de camera em [a,b], em segundos absolutos."""
+    return _detect_cuts(src, a, b, thresh)[0]
+
+
+def _detect_cuts(src, a, b, thresh=0.35):
+    """(cortes, detector usado). `thresh` so vale para o ffmpeg de reserva."""
+    if b-a < 1.2: return [], "nenhum"
+    raw, detector = _cuts_pyscenedetect(src, a, b), "pyscenedetect"
+    if raw is None:
+        raw, detector = _cuts_ffmpeg(src, a, b, thresh), "ffmpeg"
+    out=sorted(set(round(t,2) for t in raw if a+0.25 < t < b-0.25))
     merged=[]
     for c in out:
         if merged and c-merged[-1] < 1.0: continue
         merged.append(c)
-    return merged
+    return merged, detector
+
+
+def _cuts_pyscenedetect(src, a, b):
+    """AdaptiveDetector compara cada frame com a media movel dos vizinhos, entao
+    pan e zoom de camera (mudanca gradual) nao viram corte - o limite fixo do
+    ffmpeg nao separa uma coisa da outra. None quando o pacote falta ou o video
+    nao abre: quem chama cai para o ffmpeg."""
+    try:
+        from scenedetect import open_video, SceneManager
+        from scenedetect.detectors import AdaptiveDetector
+    except Exception:
+        return None
+    try:
+        video=open_video(src)
+        if a > 0: video.seek(a)
+        sm=SceneManager()
+        sm.add_detector(AdaptiveDetector())
+        sm.detect_scenes(video, end_time=b)
+        return [inicio.get_seconds() for (inicio,_) in sm.get_scene_list()[1:]]
+    except Exception:
+        return None
+
+
+def _cuts_ffmpeg(src, a, b, thresh=0.35):
+    r=subprocess.run(["ffmpeg","-nostdin","-ss",f"{a:.3f}","-i",src,"-t",f"{b-a:.3f}",
+                      "-vf",f"select='gt(scene,{thresh})',showinfo","-f","null","-"],
+                     capture_output=True,text=True)
+    return [a+float(m.group(1)) for m in re.finditer(r'pts_time:([\d.]+)', r.stdout+r.stderr)]
 
 
 def _excluder(zones):
@@ -64,7 +104,58 @@ def _excluder(zones):
     return f
 
 
+def probe_times(a, b):
+    """Instantes da amostra esparsa: inicio, meio e fim. Plano longo ganha 1 amostra
+    a cada ~PROBE_STEP, porque 3 fixas num plano de 40s nao veem a pessoa sair do
+    lugar no meio nem a camera zoomando dentro do proprio corte."""
+    dur=b-a
+    edge=min(PROBE_EDGE, dur*0.15)
+    t0,t1=a+edge,b-edge
+    n=3 if dur <= PROBE_LONG else int(math.ceil((t1-t0)/PROBE_STEP))+1
+    return [round(float(t),3) for t in np.linspace(t0,t1,n)]
+
+
+def _probe_verdict(samples, ex):
+    """Le a amostra esparsa. Devolve (fixo, motivo): `fixo` quando o plano tem um
+    rosto so, parado e do mesmo tamanho em TODAS as amostras; senao None e o
+    motivo de cair na analise densa, que vai para o diagnostico.
+
+    Na duvida, densa: nenhum rosto, rosto sumindo ou frame ilegivel tambem caem
+    nela, porque errar o crop custa mais que 5 fps de deteccao."""
+    if not samples: return None, "sem amostra"
+    if any(fs is None for _,fs in samples): return None, "frame da amostra nao decodificou"
+    faces=[[f for f in fs if not ex(f[0],f[1])] for _,fs in samples]
+    n=[len(fs) for fs in faces]
+    if max(n)==0: return None, "nenhum rosto na amostra"
+    if max(n)>1:  return None, f"{max(n)} rostos na amostra"
+    if min(n)==0: return None, f"rosto ausente em {n.count(0)} de {len(n)} amostras"
+    xs=[fs[0][0]*SRC_W/960.0 for fs in faces]
+    ws=[fs[0][2] for fs in faces]
+    anda=max(xs)-min(xs)
+    if anda >= DEADZONE:
+        return None, f"rosto andou {anda:.0f}px (deadzone {DEADZONE}px)"
+    zoom=(max(ws)-min(ws))/max(1e-6,float(np.median(ws)))
+    if zoom > PROBE_ZOOM_TOL:
+        return None, f"rosto mudou {zoom:.0%} de largura (zoom de camera)"
+    return {"cx":float(np.median(xs)),"w":float(np.median(ws)),"variacao_px":round(anda,1)}, None
+
+
 def _plan_single_shot(src, a, b, model, silences, zones):
+    """Amostra esparsa primeiro; a analise densa so roda quando a amostra nao basta."""
+    times=probe_times(a,b)
+    fixo,motivo=_probe_verdict(sample_faces(src,times,model), _excluder(zones))
+    if fixo:
+        x=int(np.clip(round(fixo["cx"]-CROP_W/2),0,SRC_W-CROP_W))
+        return [(a,x,CROP_W)], {"tipo":"close" if fixo["w"]/960.0 >= CLOSEUP_W else "unico",
+                                "tracks":1,"zoom":1.0,"caminho":"amostrado",
+                                "amostras":len(times),"variacao_px":fixo["variacao_px"]}
+    keys,diag=_plan_dense(src,a,b,model,silences,zones)
+    diag.update({"caminho":"denso","amostras":len(times),"motivo":motivo})
+    return keys,diag
+
+
+def _plan_dense(src, a, b, model, silences, zones):
+    """Analise densa: 5 fps de deteccao + correlacao boca x audio, com histerese."""
     tracks,_ = analyze_shot(src, a, b, model, silences)
     ex=_excluder(zones)
     tracks=[t for t in tracks if not ex(t.cx,t.cy)]
@@ -158,14 +249,14 @@ def _plan_single_shot(src, a, b, model, silences, zones):
 
 def plan_range(src, a, b, model, silences, zones=None):
     """Planeja o intervalo inteiro, dividindo por cortes de camera."""
-    cuts=detect_cuts(src,a,b)
+    cuts,detector=_detect_cuts(src,a,b)
     bounds=[a]+cuts+[b]
     allkeys=[]; diags=[]
     for i in range(len(bounds)-1):
         s,e=bounds[i],bounds[i+1]
         if e-s < 0.3: continue
         k,d=_plan_single_shot(src,s,e,model,silences,zones)
-        d["plano"]=f"{s:.2f}-{e:.2f}"
+        d["plano"]=f"{s:.2f}-{e:.2f}"; d["detector_cortes"]=detector
         allkeys.extend(k); diags.append(d)
     if not allkeys: allkeys=[(a,CENTER,CROP_W)]
     return allkeys, diags

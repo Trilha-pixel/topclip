@@ -127,6 +127,11 @@ topclip/
 └── projetos/                seus vídeos e resultados (fora do git)
 ```
 
+## Quem fez
+
+Criado por **Felipe Top**. Tutoriais, bastidores e novidades do TopClip no Instagram:
+[@realfelipetop](https://www.instagram.com/realfelipetop/).
+
 ## Licença
 
 Código sob [MIT](LICENSE). As fontes em `.claude/skills/topclip-motion/fontes/` são de

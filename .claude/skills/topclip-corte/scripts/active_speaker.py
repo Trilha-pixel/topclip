@@ -13,6 +13,10 @@ precisa seguir QUEM ESTA FALANDO. Este modulo:
 
 Efeito colateral desejado: uma FOTO de rosto (ex.: arte de patrocinador na TV do
 cenario) tem movimento de boca ~0, entao e descartada automaticamente.
+
+`sample_faces` e a passada barata que vem antes: o mesmo YuNet em poucos frames
+avulsos, sem tracking nem boca. O framing.py so paga a analise densa quando ela
+nao basta.
 """
 from __future__ import annotations
 import subprocess, json, math
@@ -52,6 +56,45 @@ def _mouth_patch(gray, cx, cy, w, h):
     return cv2.resize(p, (32,24)).astype(np.float32)
 
 
+def _detector(model_path, det_w=DET_W, det_h=DET_H):
+    return cv2.FaceDetectorYN.create(model_path,"",(det_w,det_h),
+                                     score_threshold=SCORE_MIN, nms_threshold=0.3, top_k=20)
+
+
+def _faces(det, frame):
+    """Rostos do frame como (cx, cy, w, h) no espaco de deteccao."""
+    det.setInputSize((frame.shape[1], frame.shape[0]))
+    _, faces = det.detect(frame)
+    if faces is None: return []
+    return [(float(x+w/2), float(y+h/2), float(w), float(h)) for (x,y,w,h) in (f[:4] for f in faces)]
+
+
+def grab_frame(src, t, det_w=DET_W, det_h=DET_H):
+    """Um frame no instante t. O -ss antes do -i salta direto para o keyframe
+    anterior: custa um GOP de decodificacao, nao o plano inteiro."""
+    cmd = ["ffmpeg","-nostdin","-ss",f"{t:.3f}","-i",src,"-frames:v","1",
+           "-vf",f"scale={det_w}:{det_h}","-f","rawvideo","-pix_fmt","bgr24","-"]
+    p = subprocess.run(cmd, capture_output=True)
+    fsize = det_w*det_h*3
+    if len(p.stdout) < fsize: return None
+    return np.frombuffer(p.stdout[:fsize], np.uint8).reshape(det_h,det_w,3)
+
+
+def sample_faces(src, times, model_path, det_w=DET_W, det_h=DET_H):
+    """Deteccao esparsa: [(t, [(cx,cy,w,h), ...])] so nos instantes pedidos.
+
+    Frame que nao decodifica volta como (t, None): amostra inconclusiva, e quem
+    chama deve tratar como motivo para a analise densa, nao como "sem rosto"."""
+    det = None; out = []
+    for t in times:
+        frame = grab_frame(src, t, det_w, det_h)
+        if frame is None:
+            out.append((t, None)); continue
+        if det is None: det = _detector(model_path, det_w, det_h)
+        out.append((t, _faces(det, frame)))
+    return out
+
+
 def analyze_shot(src, t0, t1, model_path, silences=None, det_w=DET_W, det_h=DET_H):
     """Devolve (tracks, escala) para o intervalo [t0,t1]."""
     dur = max(0.05, t1 - t0)
@@ -63,20 +106,13 @@ def analyze_shot(src, t0, t1, model_path, silences=None, det_w=DET_W, det_h=DET_
     n = len(p.stdout)//fsize
     if n == 0: return [], 1.0
 
-    det = cv2.FaceDetectorYN.create(model_path,"",(det_w,det_h),
-                                    score_threshold=SCORE_MIN, nms_threshold=0.3, top_k=20)
+    det = _detector(model_path, det_w, det_h)
     tracks: list[Track] = []
     for i in range(n):
         t = t0 + i/SAMPLE_FPS
         frame = np.frombuffer(p.stdout[i*fsize:(i+1)*fsize], np.uint8).reshape(det_h,det_w,3)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        det.setInputSize((det_w,det_h))
-        _, faces = det.detect(frame)
-        dets = []
-        if faces is not None:
-            for f in faces:
-                x,y,w,h = f[:4]
-                dets.append((x+w/2, y+h/2, w, h))
+        dets = _faces(det, frame)
         # associacao gulosa por proximidade
         used=set()
         for tr in tracks:

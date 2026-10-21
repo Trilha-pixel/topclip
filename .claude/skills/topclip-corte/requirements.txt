@@ -10,5 +10,10 @@ faster-whisper>=1.0
 opencv-contrib-python==4.10.0.84
 numpy>=1.24
 
+# Opcional: cortes de camera no autoframe (PySceneDetect, BSD). Sem ele, cai no ffmpeg.
+# Teto: o 0.7 exige opencv-python (puxa o 5.0.0 e briga com o contrib); o 0.6.7.1
+# trava click<8.3, que o huggingface-hub do faster-whisper recusa. Sem extra [opencv].
+scenedetect>=0.6.4,<0.7,!=0.6.7.1
+
 # Opcional: utilidades de imagem
 Pillow>=10.0
