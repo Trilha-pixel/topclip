@@ -543,9 +543,14 @@ def instalar(pasta, projeto, variacao=None, marca=None, exigir_previa=True):
     est = carregar(pasta)["estilo"]
     alvo, molde = projeto / "compose.py", projeto / "compose_template.py"
     intocado = not alvo.exists() or (molde.exists() and alvo.read_bytes() == molde.read_bytes())
+    modelo = projeto / "pecas" / "compose_modelo.py"
     if est.get("codigo") and (pasta / "compose.py").is_file() and intocado:
         # so troca o compose recem-criado: num projeto com cenas escritas, nunca sobrescreve
         shutil.copy2(pasta / "compose.py", alvo)
+    elif est.get("cenas") == "overlay" and intocado and modelo.is_file():
+        # estilo de pecas sem compose proprio (o importado, que chega sem codigo): as
+        # cenas-exemplo genericas das pecas, que vestem qualquer estilo
+        shutil.copy2(modelo, alvo)
     render = projeto / "render.py"
     if est.get("cenas") == "overlay" and render.is_file():
         t = render.read_text(encoding="utf-8")
@@ -696,7 +701,11 @@ def main(argv=None):
     pv = sub.add_parser("previa", help="gera preview/ (capa e pecas) dentro do pacote")
     pv.add_argument("alvo")
     pv.add_argument("--cena", help="cena do compose.py para a capa (padrao: a primeira)")
+    import meu_estilo                       # remixar, ajustar, aprovar, exportar, importar...
+    do_usuario = meu_estilo.comandos(sub)
     a = ap.parse_args(argv)
+    if a.cmd in do_usuario:
+        return meu_estilo.roda(a)
     if a.cmd == "listar":
         return _listar(a.raiz)
     if a.cmd == "validar":

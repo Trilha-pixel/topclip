@@ -129,7 +129,12 @@ Todo objeto desenhado num vídeo vai para a sua `minha-biblioteca/` e fica pront
 próximo. Quanto mais você usa o TopClip, mais coisa já vem pronta. Essa pasta é sua e
 fica fora do git: atualizar o TopClip nunca mexe nela.
 
-O motion vem no estilo **Papel** e está ganhando outros estilos (`./topclip estilo listar`).
+O motion tem quatro estilos prontos — **Papel**, **Limpo**, **Impacto** e **Luxo**, cada um
+com variações de cor — e você escolhe o de cada vídeo no painel. Quer um com a cara da sua
+marca? Peça ao Claude *"cria o meu estilo"*: ele tira a paleta dos seus posts, mostra quatro
+caminhos num quadro do seu próprio vídeo e monta o estilo com você. Estilo pronto se
+compartilha como arquivo (`.topclip-estilo`), e quem recebe arrasta para o painel.
+
 Quer contribuir com um objeto ou um estilo? Abra um PR — veja
 [biblioteca/MANIFESTO.md](biblioteca/MANIFESTO.md).
 

@@ -624,3 +624,17 @@ fieldset.campo legend { padding: 0; margin-bottom: 7px; font: 700 14px/1 var(--d
   .escolha-estilo { grid-template-columns: 78px 1fr; }
   .estilos { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px 14px; }
 }
+
+/* o estilo da pessoa (fase 5): remixar, exportar, apagar, importar */
+.selo-rascunho { display: inline-block; vertical-align: middle; font: 400 13px/1 var(--mao); color: var(--tinta-2); border: 1.5px dashed var(--tinta-3); padding: 4px 8px 3px; transform: rotate(-2deg); }
+.acoes-estilo { display: flex; flex-wrap: wrap; gap: 12px; margin: 4px 0 26px; }
+.acoes-estilo .botao { text-decoration: none; }
+form.remixar { display: grid; grid-template-columns: 1fr auto; gap: 10px 14px; align-items: end; max-width: 660px; padding: 20px 22px; margin: -8px 0 30px; }
+form.remixar label { display: grid; gap: 6px; font: 600 13.5px/1.2 var(--texto); color: var(--tinta-2); }
+form.remixar input { font: 500 16px/1.2 var(--texto); padding: 10px 12px; border: 1.5px solid var(--papel-borda); background: var(--papel-claro); color: var(--tinta); }
+form.remixar .explica { grid-column: 1 / -1; margin: 0; }
+.importar-estilo { display: block; margin-top: 22px; padding: 20px 22px; border: 2px dashed var(--papel-borda); cursor: pointer; color: var(--tinta-2); font: 400 15px/1.5 var(--texto); transition: border-color 0.15s, background 0.15s; }
+.importar-estilo:hover, .importar-estilo:focus-visible { border-color: var(--tinta-3); }
+.importar-estilo.arrastando { border-color: var(--azul); background: var(--papel-claro); }
+.importar-estilo b { color: var(--tinta); }
+@media (max-width: 640px) { form.remixar { grid-template-columns: 1fr; } }

@@ -864,3 +864,74 @@ class EstilosMarcaPreferencias(ComProjetosTemporarios):
         (m / "estilo" / "resolvido.json").write_text('{"id": "limpo", "nome": "Limpo", "variacao": "escuro"}')
         self.assertEqual(S.estilo_do_motion(m), "Limpo · Escuro")
         self.assertIsNone(S.estilo_do_motion(S.PROJETOS / "x" / "motion" / "sem-estilo"))
+
+
+class EstiloDaPessoa(ComProjetosTemporarios):
+    """A fase 5 pelo painel: remixar, exportar (download), apagar e importar (arrastando o
+    arquivo). Quem faz é o lib/meu_estilo.py; a minha-biblioteca é a temporária do teste."""
+    pedir = Http.pedir
+
+    def setUp(self):
+        super().setUp()
+        self._orig_minha5 = S.MINHA
+        S.MINHA = self.tmp / "minha-biblioteca"
+        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), S.Painel)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+        S.MINHA = self._orig_minha5
+        super().tearDown()
+
+    def postar(self, rota, dados):
+        return self.pedir(rota, {"Content-Type": "application/json", "Origin": self.base}, dados)
+
+    def test_remixar_cria_um_rascunho_seu(self):
+        status, _, corpo = self.postar("/api/estilos/remixar", {"base": "limpo", "nome": "Minha Marca"})
+        self.assertEqual(status, 200, corpo)
+        e = json.loads(corpo)
+        self.assertEqual((e["id"], e["dono"], e["origem"], e["versao"]), ("minha-marca", "seu", "meu", "0.1.0"))
+        self.assertTrue((S.MINHA / "estilos" / "minha-marca" / "estilo.json").is_file())
+        self.assertFalse((S.RAIZ / "minha-biblioteca" / "estilos" / "minha-marca").exists())
+        status, _, corpo = self.postar("/api/estilos/remixar", {"base": "limpo", "nome": "Minha Marca"})
+        self.assertEqual(status, 400)
+        self.assertIn("você já tem", json.loads(corpo)["erro"])
+        status, _, _ = self.postar("/api/estilos/remixar", {"base": "limpo", "nome": ""})
+        self.assertEqual(status, 400)
+
+    def test_exportar_apagar_e_importar_de_volta(self):
+        import base64
+        self.postar("/api/estilos/remixar", {"base": "impacto", "nome": "Vendas"})
+        status, cab, arquivo = self.pedir("/api/estilos/vendas/exportar")
+        self.assertEqual(status, 200)
+        self.assertIn('attachment; filename="vendas.topclip-estilo"', cab["Content-Disposition"])
+        self.assertEqual(arquivo[:2], b"PK")                                   # é um zip
+        status, _, _ = self.postar("/api/estilos/vendas/apagar", {})
+        self.assertEqual(status, 200)
+        self.assertFalse((S.MINHA / "estilos" / "vendas").exists())
+        b64 = base64.b64encode(arquivo).decode()
+        status, _, corpo = self.postar("/api/estilos/importar", {"nome": "vendas.topclip-estilo", "conteudo": b64})
+        self.assertEqual(status, 200, corpo)
+        e = json.loads(corpo)
+        self.assertEqual((e["id"], e["dono"], e["origem"]), ("vendas", "seu", "comunidade"))
+        self.assertFalse((S.MINHA / "estilos" / "vendas" / "compose.py").exists())   # chega sem código
+        status, _, corpo = self.postar("/api/estilos/importar", {"conteudo": b64})
+        self.assertEqual(status, 400)
+        status, _, _ = self.postar("/api/estilos/importar", {"conteudo": b64, "substituir": True})
+        self.assertEqual(status, 200)
+
+    def test_recusa_o_que_nao_pode(self):
+        status, _, _ = self.postar("/api/estilos/limpo/apagar", {})
+        self.assertEqual(status, 400)
+        self.assertTrue((S.BIBLIOTECA / "estilos" / "limpo" / "estilo.json").is_file())
+        status, _, corpo = self.postar("/api/estilos/importar", {"conteudo": "bm9wZQ=="})
+        self.assertEqual(status, 400)
+        self.assertIn("zip", json.loads(corpo)["erro"])
+        status, _, _ = self.postar("/api/estilos/importar", {"conteudo": "isso não é base64"})
+        self.assertEqual(status, 400)
+        status, _, _ = self.pedir("/api/estilos/nao-existe/exportar")
+        self.assertEqual(status, 400)
+        status, _, _ = self.pedir("/api/estilos/limpo/exportar", {"Host": "site-malicioso.com"})
+        self.assertEqual(status, 403)

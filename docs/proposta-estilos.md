@@ -1,6 +1,6 @@
 # Proposta: estilos de motion e a nova Biblioteca
 
-> **Estado: APROVADA. Fases 1, 2 e 3 implementadas** em 2026-10-22.
+> **Estado: APROVADA. Fases 1 a 5 implementadas** em 2026-10-22. Falta só a v2 (vitrine).
 > Fase 1: `lib/estilo.py`, `biblioteca/estilos/papel/`, `./topclip estilo listar|validar`,
 > `motion novo --estilo`, `minha-biblioteca/` e a regressão do Papel (`tests/test_estilo.py`).
 > Fase 2: as 8 peças em `biblioteca/pecas/`, a legenda por estilo, o estilo Limpo (claro e
@@ -8,7 +8,9 @@
 > Fase 3: tipografia e pop por estilo, as peças `moldura` e `brilho`, o `cinema`, os estilos
 > Impacto (amarelo, verde) e Luxo (latão, bordô, marfim), e o clip-010 nos três estilos com
 > as MESMAS cenas. Fase 4: a aba Biblioteca, o detalhe do estilo, a escolha do estilo na
-> etapa Motion e Minha marca no painel. As fases 5 e v2 ainda são proposta.
+> etapa Motion e Minha marca no painel. Fase 5: `lib/meu_estilo.py` (remixar, ajustar,
+> aprovar, exportar, importar, apagar, paleta, amostra), a skill `topclip-estilo`, o
+> compose-modelo das peças e, no painel, remixar, exportar, apagar e importar arrastando.
 > O que mudou no caminho está na seção 16.
 > Base: a pesquisa de 2026-10-22 (bibliotecas web de motion, caminhos de renderização,
 > tendências de 2026, guias de motion, concorrentes) e o teste do Lottie sobre o clip-010.
@@ -440,7 +442,7 @@ Cada fase termina com `./topclip testes` e `./topclip verificar` passando.
 | 2. Peças + Limpo ✓ | as 8 peças em `traco: "limpo"`, o estilo Limpo completo (com legenda), um clipe real no Limpo | feito em 2026-10-22 |
 | 3. Impacto + Luxo ✓ | os dois estilos, a legenda `pop`, as variações | feito em 2026-10-22 |
 | 4. Painel ✓ | Biblioteca, detalhe, escolha na etapa de motion, Minha marca | feito em 2026-10-22 |
-| 5. Meu estilo | criar com o Claude, remixar, exportar e importar | médio |
+| 5. Meu estilo ✓ | criar com o Claude, remixar, exportar e importar | feito em 2026-10-22 |
 | v2 | vitrine da comunidade com CI | médio |
 
 As fases 3 e 4 podem rodar em paralelo, porque não mexem nos mesmos arquivos. O Limpo vem
@@ -520,3 +522,33 @@ Fase 4 (painel):
   - as prévias das peças por variação (hoje, só a da primeira);
   - a legenda de exemplo e a demo em vídeo no detalhe;
   - fonte própria da marca no formulário (só as fontes do kit).
+
+Fase 5 (meu estilo):
+
+- **Criar é conversa, não formulário.** A skill `topclip-estilo` conduz: insumos → paleta →
+  até 5 perguntas → 4 direções → ajuste fino → aprovar. O painel só faz o que é botão:
+  remixar ("Fazer o meu a partir deste"), exportar, apagar e importar arrastando.
+- **Ciclo de versão:** o remix nasce rascunho `0.1.0`; cada `ajustar` sobe o último número;
+  `aprovar` valida, renderiza a galeria inteira e leva a `1.0.0` (depois `1.1.0`...). O
+  painel mostra o selo "rascunho".
+- **`ajustar` fala por chaves** (`cor.acento=#FF5A1F`, `tipografia.peso.titulo=400`,
+  `energia=calmo`, `legenda.corpo=76`, `variacao.escuro.cor.fundo=#0A0A0A`...). Com qualquer
+  erro, nada muda. Estilo oficial nunca se ajusta: remixa primeiro.
+- **A amostra cumpre o "4 direções no clipe da pessoa"** (e o que a fase 4 deixou para
+  depois): um quadro do vídeo dela em cada estilo, com uma frase por cima e a legenda.
+  Sem contorno no estilo, a frase vai num cartão (texto solto sem contorno some na parede
+  clara).
+- **A paleta é k-means em Lab, local.** O acento é a cor mais **viva** (preto e cinza não são
+  acento), de preferência com 3:1 contra o fundo; o texto, o maior contraste.
+- **Exportar tira o código e a marca.** O `.topclip-estilo` é um zip com uma pasta (o id).
+  A importação recusa:
+  - código e qualquer extensão fora de dados, imagem, fonte e vídeo;
+  - caminho com `..` ou absoluto, e link simbólico;
+  - mais de 400 itens ou 25 MB;
+  - nome de estilo oficial e pacote inválido.
+
+  O estilo entra como "comunidade".
+- **`pecas/compose_modelo.py`:** o estilo de cenas overlay que chega sem compose (o
+  importado) recebe as cenas-exemplo genéricas das peças, M1 a M9.
+- **O painel aponta o `meu_estilo.MINHA` para a pasta dele**, e os testes, para uma
+  temporária: nenhum teste toca na `minha-biblioteca` de verdade.

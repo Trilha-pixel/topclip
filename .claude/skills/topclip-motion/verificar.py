@@ -80,7 +80,7 @@ if meus:
     ok(f"{len(meus)} asset(s) seus em minha-biblioteca/assets/")
 for f in ("lib/motor.py", "lib/kit.py", "lib/desenho.py", "lib/captions.py",
           "lib/cutout.py", "lib/crt.py", "lib/night_photo.py", "lib/render_template.py",
-          "lib/compose_template.py", "lib/transcrever.py", "lib/estilo.py",
+          "lib/compose_template.py", "lib/transcrever.py", "lib/estilo.py", "lib/meu_estilo.py",
           "exemplo/desenho_usuario.py", "referencias/legenda.md",
           "referencias/armadilhas.md", "referencias/receitas.md", "IDENTIDADE.md"):
     (ok if (S / f).exists() else erro)(f)

@@ -172,6 +172,10 @@ que leu da transcrição, `"estilo_recomendado": {"id": "limpo", "variacao": "es
 "porque": "aula de saúde, tom calmo"}` (o `porque` é uma linha curta, sem jargão). É só
 sugestão: quem escolhe é a pessoa.
 
+Se ela quiser um estilo **com a cara da marca dela** e ainda não tiver, pare aqui e use a
+skill `topclip-estilo` (paleta dos posts, quatro direções num quadro do próprio clipe,
+aprovar). Depois volte com `--estilo <id do estilo dela>`.
+
 **Assets:** procure primeiro em `biblioteca/assets/` e `minha-biblioteca/assets/`. O
 que não existir, o Claude desenha em código (seção 3 da `topclip-motion`). Todo asset
 novo aprovado vai para `minha-biblioteca/assets/` com uma linha no

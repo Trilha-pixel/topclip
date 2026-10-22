@@ -778,6 +778,75 @@ def salvar_marca(dados: dict) -> dict:
     return marca()
 
 
+# ------------------------------------------------------------------ o estilo da pessoa
+# Remixar, importar, exportar e apagar (fase 5). Quem faz é o lib/meu_estilo.py da skill;
+# o painel só chama, apontando para a minha-biblioteca dele (que os testes trocam).
+# Criar e ajustar um estilo é conversa com o Claude (skill topclip-estilo), não formulário.
+IMPORTAR_MAX = 25 * 1024 * 1024     # o mesmo teto do pacote; em base64 o pedido chega ~1/3 maior
+
+
+def modulo_meu_estilo():
+    lib = str(ESTILO_PY.parent)
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    import meu_estilo
+    meu_estilo.MINHA = MINHA
+    return meu_estilo
+
+
+def _chama(fn, *args, **kw):
+    """Erro de uso do meu_estilo vira a mensagem que a tela mostra."""
+    mod = modulo_meu_estilo()
+    try:
+        return fn(mod)(*args, **kw)
+    except mod.ErroEstilo as e:
+        raise ValueError(str(e).replace("\n  ", " · ")) from None
+
+
+def remixar_estilo(dados: dict) -> dict:
+    nome = str(dados.get("nome") or "").strip()[:60]
+    novo = str(dados.get("id") or "").strip() or slug(nome)[:31]
+    if not nome:
+        raise ValueError("Dê um nome para o seu estilo.")
+    p = _chama(lambda m: m.remixar, RAIZ, str(dados.get("base") or ""), novo, nome)
+    return estilo_detalhe(p.name)
+
+
+def importar_estilo(dados: dict) -> dict:
+    import base64
+    import tempfile
+    try:
+        bruto = base64.b64decode(str(dados.get("conteudo") or "").split(",", 1)[-1], validate=True)
+    except ValueError:
+        raise ValueError("Não consegui ler o arquivo. Envie um .topclip-estilo.") from None
+    if not bruto:
+        raise ValueError("O arquivo veio vazio.")
+    if len(bruto) > IMPORTAR_MAX:
+        raise ValueError("O arquivo passou de 25 MB.")
+    with tempfile.TemporaryDirectory(prefix="topclip-importar-") as d:
+        arq = Path(d) / "estilo.topclip-estilo"
+        arq.write_bytes(bruto)
+        p = _chama(lambda m: m.importar, RAIZ, arq, bool(dados.get("substituir")))
+    return estilo_detalhe(p.name)
+
+
+def apagar_estilo(eid: str) -> dict:
+    nome = _chama(lambda m: m.apagar, RAIZ, eid)
+    return {"ok": True, "apagado": nome, "padrao": preferencias()}
+
+
+def exportar_estilo(eid: str) -> Path:
+    """O .topclip-estilo numa pasta temporária: quem serve apaga a pasta depois."""
+    import tempfile
+    pasta = Path(tempfile.mkdtemp(prefix="topclip-exportar-"))
+    try:
+        return _chama(lambda m: m.exportar, RAIZ, eid, pasta)
+    except ValueError:
+        import shutil
+        shutil.rmtree(pasta, ignore_errors=True)
+        raise
+
+
 _saude_cache: dict = {}
 
 
@@ -1326,6 +1395,17 @@ class Painel(BaseHTTPRequestHandler):
                     return
                 falta -= len(bloco)
 
+    def _baixar(self, p: Path):
+        """Um arquivo para o navegador salvar (não abrir): o .topclip-estilo exportado."""
+        dados = p.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "application/zip")
+        self.send_header("Content-Disposition", f'attachment; filename="{quote(p.name)}"')
+        self.send_header("Content-Length", str(len(dados)))
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(dados)
+
     def _corpo(self, limite=1_000_000) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
         if n > limite:
@@ -1379,6 +1459,17 @@ class Painel(BaseHTTPRequestHandler):
             return self._json(biblioteca())
         if rota == "/api/estilos":
             return self._json(estilos())
+        m = re.fullmatch(r"/api/estilos/([^/]+)/exportar", rota)
+        if m:
+            try:
+                arq = exportar_estilo(m.group(1))
+            except ValueError as e:
+                return self._erro(str(e))
+            try:
+                return self._baixar(arq)
+            finally:
+                import shutil
+                shutil.rmtree(arq.parent, ignore_errors=True)
         m = re.fullmatch(r"/api/estilos/([^/]+)", rota)
         if m:
             d = estilo_detalhe(m.group(1))
@@ -1401,9 +1492,18 @@ class Painel(BaseHTTPRequestHandler):
             return self._erro("origem não permitida", HTTPStatus.FORBIDDEN)
         try:
             # o logo da marca chega em base64 dentro do JSON: o servidor é só biblioteca padrão
-            corpo = self._corpo(LOGO_MAX * 4 // 3 + 100_000 if rota == "/api/marca" else 1_000_000)
+            limite = {"/api/marca": LOGO_MAX * 4 // 3 + 100_000,
+                      "/api/estilos/importar": IMPORTAR_MAX * 4 // 3 + 100_000}.get(rota, 1_000_000)
+            corpo = self._corpo(limite)
             if rota == "/api/marca":
                 return self._json(salvar_marca(corpo))
+            if rota == "/api/estilos/remixar":
+                return self._json(remixar_estilo(corpo))
+            if rota == "/api/estilos/importar":
+                return self._json(importar_estilo(corpo))
+            m = re.fullmatch(r"/api/estilos/([^/]+)/apagar", rota)
+            if m:
+                return self._json(apagar_estilo(m.group(1)))
             if rota == "/api/marca/conferir":          # o aviso de contraste enquanto a pessoa mexe
                 return self._json({"avisos": avisos_da_marca({"cores": corpo.get("cores") or {}})})
             if rota == "/api/preferencias":

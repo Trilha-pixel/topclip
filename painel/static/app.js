@@ -1049,7 +1049,12 @@ async function telaBiblioteca(partes = []) {
     <div class="secao-topo"><div><h2 class="subtitulo">Estilos</h2>
       <p class="explica">Clique num estilo para ver as peças nele. O seu padrão vale quando o projeto não escolhe outro.</p></div></div>
     ${estilos.length ? grade(oficiais) : `<div class="vazio papel"><p class="lead" style="margin:0 auto">Nenhum estilo encontrado.</p></div>`}
-    ${seus.length ? `<h3 class="prateleira-sub">Seus estilos</h3>${grade(seus)}` : ""}
+    <h3 class="prateleira-sub">Seus estilos</h3>
+    ${seus.length ? grade(seus) : `<p class="explica">Peça ao Claude <i>“cria o meu estilo”</i>: ele tira a paleta dos seus posts, mostra quatro caminhos num quadro do seu vídeo e monta o estilo com a sua cara. Ou abra um estilo acima e use <i>Fazer o meu a partir deste</i>.</p>`}
+    <label class="importar-estilo papel" tabindex="0">
+      <input type="file" accept=".topclip-estilo" hidden>
+      <b>Recebeu um estilo?</b> Arraste o arquivo <code>.topclip-estilo</code> aqui ou <span class="link">escolha no computador</span>.
+    </label>
   </section>
 
   ${sel ? `<section class="prateleira papel painel-etapa" id="pecas">${prateleiraPecas(estilos, sel)}</section>` : ""}
@@ -1084,6 +1089,7 @@ async function telaBiblioteca(partes = []) {
     document.getElementById("pecas").innerHTML = prateleiraPecas(estilos, sel);
     ligarChips();
   };
+  ligarImportar(app.querySelector(".importar-estilo"));
   const ligarChips = () => document.querySelectorAll("#pecas .chip").forEach((b) => (b.onclick = () => trocar(b.dataset.estilo)));
   app.querySelectorAll(".estilo-cartao").forEach((c) => {
     c.addEventListener("click", (ev) => { if (!ev.target.closest("a")) trocar(c.dataset.estilo); });
@@ -1100,14 +1106,26 @@ async function telaEstilo(id) {
   const { padrao } = e;
   const [energia, energiaExplica] = ENERGIA[e.energia] || [rotulo(e.energia), ""];
   const veioDoProjeto = rotaAnterior && rotaAnterior.startsWith("#/projeto/");
+  const rascunho = e.dono === "seu" && String(e.versao || "").startsWith("0.");
   app.innerHTML = `
   <a class="voltar" href="${veioDoProjeto ? esc(rotaAnterior) : "#/biblioteca"}">← ${veioDoProjeto ? "voltar ao projeto" : "biblioteca"}</a>
   <div class="cabeca-projeto">
     <div>
-      <h1 class="titulo">${esc(e.nome)}${e.dono === "seu" ? ` <span class="selo-seu">seu</span>` : ""}</h1>
+      <h1 class="titulo">${esc(e.nome)}${e.dono === "seu" ? ` <span class="selo-seu">${e.origem === "comunidade" ? "importado" : "seu"}</span>` : ""}${rascunho ? ` <span class="selo-rascunho">rascunho</span>` : ""}</h1>
       ${e.descricao ? `<p class="lead">${esc(e.descricao)}</p>` : ""}
+      ${rascunho ? `<p class="explica">Ainda é rascunho: peça ao Claude <i>“aprova o estilo ${esc(e.nome)}”</i> para gerar a galeria e fechar a versão 1.0.</p>` : ""}
     </div>
   </div>
+  <div class="acoes-estilo">
+    <button class="botao claro pequeno" data-acao="remixar">Fazer o meu a partir deste</button>
+    ${e.valido ? `<a class="botao claro pequeno" href="/api/estilos/${encodeURIComponent(e.id)}/exportar" download>Exportar para compartilhar</a>` : ""}
+    ${e.dono === "seu" ? `<button class="botao pequeno perigo" data-acao="apagar">Apagar este estilo</button>` : ""}
+  </div>
+  <form class="remixar papel" hidden>
+    <label>Nome do seu estilo <input name="nome" maxlength="60" placeholder="${esc(e.nome)} da minha marca" required></label>
+    <button class="botao pequeno" type="submit">Criar</button>
+    <p class="explica">Vira uma cópia sua, em rascunho. Depois peça ao Claude para trocar as cores, as fontes ou a energia — por exemplo, <i>“deixa o meu estilo com o laranja da minha marca”</i>.</p>
+  </form>
   <div class="estilo-fatos">
     <div><span class="rotulo-fato">energia</span><b>${esc(energia)}</b><small>${esc(energiaExplica)}</small></div>
     <div><span class="rotulo-fato">bom para</span><b>${esc(e.bom_para.join(", ") || "—")}</b></div>
@@ -1151,6 +1169,88 @@ async function telaEstilo(id) {
       aviso(`<b>Não salvou:</b> ${esc(err.message)}`);
     }
   }));
+
+  const form = app.querySelector("form.remixar");
+  app.querySelector('[data-acao="remixar"]').onclick = () => {
+    form.hidden = !form.hidden;
+    if (!form.hidden) form.querySelector("input").focus();
+  };
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const botao = form.querySelector("button");
+    botao.disabled = true;
+    try {
+      const novo = await api("/api/estilos/remixar", { method: "POST", body: { base: e.id, nome: form.nome.value } });
+      location.hash = `#/biblioteca/estilo/${encodeURIComponent(novo.id)}`;
+      aviso(`<b>Criado:</b> ${esc(novo.nome)} é seu. Peça ao Claude para ajustar as cores, as fontes ou a energia.`);
+    } catch (err) {
+      botao.disabled = false;
+      aviso(`<b>Não criou:</b> ${esc(err.message)}`);
+    }
+  };
+  const apagar = app.querySelector('[data-acao="apagar"]');
+  if (apagar) apagar.onclick = async () => {
+    if (!confirm(`Apagar o estilo ${e.nome}? Os vídeos que já usaram ele continuam como estão.`)) return;
+    apagar.disabled = true;
+    try {
+      await api(`/api/estilos/${encodeURIComponent(e.id)}/apagar`, { method: "POST", body: {} });
+      location.hash = "#/biblioteca";
+      aviso(`<b>Apagado:</b> ${esc(e.nome)}.`);
+    } catch (err) {
+      apagar.disabled = false;
+      aviso(`<b>Não apagou:</b> ${esc(err.message)}`);
+    }
+  };
+}
+
+// ------------------------------------------------------------------ importar um estilo
+// O arquivo .topclip-estilo vai em base64 no JSON (o servidor é só biblioteca padrão).
+function lerComoBase64(arquivo) {
+  return new Promise((ok, falha) => {
+    const r = new FileReader();
+    r.onload = () => ok(String(r.result).split(",", 2)[1] || "");
+    r.onerror = () => falha(new Error("não consegui ler o arquivo"));
+    r.readAsDataURL(arquivo);
+  });
+}
+
+async function importarEstilo(arquivo) {
+  if (!/\.topclip-estilo$/i.test(arquivo.name)) {
+    aviso("<b>Não é um estilo:</b> o arquivo precisa terminar em .topclip-estilo.");
+    return;
+  }
+  const conteudo = await lerComoBase64(arquivo);
+  let corpo = { nome: arquivo.name, conteudo };
+  for (;;) {
+    try {
+      const e = await api("/api/estilos/importar", { method: "POST", body: corpo });
+      location.hash = `#/biblioteca/estilo/${encodeURIComponent(e.id)}`;
+      aviso(`<b>Importado:</b> ${esc(e.nome)} já está nos seus estilos.`);
+      return;
+    } catch (err) {
+      if (!corpo.substituir && /já tem um estilo/.test(err.message)
+          && confirm(`${err.message.replace(/ \(use.*\)$/, "")}. Trocar pelo do arquivo?`)) {
+        corpo = { ...corpo, substituir: true };
+        continue;
+      }
+      aviso(`<b>Não importou:</b> ${esc(err.message)}`);
+      return;
+    }
+  }
+}
+
+function ligarImportar(zona) {
+  if (!zona) return;
+  const input = zona.querySelector("input[type=file]");
+  input.onchange = () => input.files[0] && importarEstilo(input.files[0]);
+  zona.addEventListener("dragover", (ev) => { ev.preventDefault(); zona.classList.add("arrastando"); });
+  zona.addEventListener("dragleave", () => zona.classList.remove("arrastando"));
+  zona.addEventListener("drop", (ev) => {
+    ev.preventDefault();
+    zona.classList.remove("arrastando");
+    const f = ev.dataTransfer.files[0];
+    if (f) importarEstilo(f);
+  });
 }
 
 // ------------------------------------------------------------------ minha marca

@@ -1,7 +1,8 @@
 # TopClip
 
-Vídeo longo → clipes verticais 9:16 com motion e legenda. Três skills em
-`.claude/skills/`: `topclip` (fluxo completo), `topclip-corte`, `topclip-motion`.
+Vídeo longo → clipes verticais 9:16 com motion e legenda. Quatro skills em
+`.claude/skills/`: `topclip` (fluxo completo), `topclip-corte`, `topclip-motion` e
+`topclip-estilo` (criar o estilo da pessoa, remixar, exportar e importar).
 
 ## Regras do repositório
 
@@ -28,6 +29,8 @@ Vídeo longo → clipes verticais 9:16 com motion e legenda. Três skills em
   `estilo/resolvido.json`. Formato e plano: `docs/proposta-estilos.md`. As peças que os
   estilos compartilham ficam em `biblioteca/pecas/` (nunca cor ou fonte fixa: tudo vem
   do estilo). Mexeu num estilo ou numa peça: `./topclip estilo previa <id>` regera a galeria.
+  Estilo da pessoa (remixar, ajustar, aprovar, exportar, importar, paleta, amostra no
+  clipe): skill `topclip-estilo`. Estilo oficial nunca se edita — remixa.
 - **Assets desenhados numa run vão para `minha-biblioteca/`**, fora do git: função em
   `minha-biblioteca/desenho.py` (molde em `.claude/skills/topclip-motion/exemplo/desenho_usuario.py`),
   PNG em `minha-biblioteca/assets/`, linha em `minha-biblioteca/MANIFESTO.md`. Nunca em

@@ -9,6 +9,8 @@
 #   ./topclip motion transcrever <video> <saida.json>
 #   ./topclip estilo listar         os estilos oficiais e os seus (minha-biblioteca/)
 #   ./topclip estilo validar <id>   confere um pacote de estilo
+#   ./topclip estilo remixar|ajustar|aprovar|exportar|importar|apagar|paleta|amostra ...
+#                                   o seu estilo (./topclip estilo -h; skill topclip-estilo)
 #   ./topclip baixar <link> [projetos/<nome>]   baixa o vídeo de um link (YouTube, Instagram)
 #   ./topclip painel                abre o painel no navegador (http://127.0.0.1:7777)
 #   ./topclip log <projeto> "msg"   anota no diário do projeto (aparece no painel)
