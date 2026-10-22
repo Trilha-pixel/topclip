@@ -28,17 +28,18 @@ def _painel(img, w, h, estilo, cor, texto, cor_texto, cx, cabe):
         return ImageOps.fit(im.convert("RGBA"), (w, h), Image.LANCZOS)
     p = Image.new("RGBA", (w, h), estilo.cor(cor))
     if texto:
+        texto = estilo.caixa(texto)
         tam = int(h * 0.12)
         fonte = estilo.fonte("numero", tam, 700)
         if fonte.getlength(texto) > cabe:
             fonte = estilo.fonte("numero", int(tam * cabe / fonte.getlength(texto)), 700)
-        t = linha(texto, fonte, estilo.cor(cor_texto))
+        t = estilo.linha(texto, fonte, estilo.cor(cor_texto))
         p.alpha_composite(t, (int(cx - t.width / 2), (h - t.height) // 2))
     return p
 
 
 def _pilula(texto, estilo, fundo_cor, cor_texto, tamanho=34):
-    t = linha(texto, estilo.fonte("apoio", tamanho, 600), estilo.cor(cor_texto))
+    t = linha(estilo.caixa(texto), estilo.fonte("apoio", tamanho, 600), estilo.cor(cor_texto))
     p = retangulo(t.width + tamanho * 1.2, t.height + tamanho * 0.5, tamanho, estilo.cor(fundo_cor))
     p.alpha_composite(t, ((p.width - t.width) // 2, (p.height - t.height) // 2))
     return p
@@ -86,5 +87,6 @@ def quadro(f, inicio, fim, estilo, antes=None, depois=None, textos=(None, None),
         comp.alpha_composite(p, (w - p.width - 28, 28))
     if not estilo.escuro:
         comp = com_sombra(comp, desfoque=28, opacidade=0.14, dy=12)
-    cola(tela, comp, ((x0 + x1) / 2, (y0 + y1) / 2), k, (1 - ent) * 36 - sai * 18)
+    cola(tela, comp, ((x0 + x1) / 2, (y0 + y1) / 2), k, (1 - ent) * estilo.desloca * 1.2 - sai * 18,
+         escala=estilo.escala(ent))
     return tela

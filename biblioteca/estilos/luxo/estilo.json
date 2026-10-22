@@ -1,0 +1,35 @@
+{
+  "id": "luxo",
+  "nome": "Luxo",
+  "versao": "1.0.0",
+  "topclip": ">=1.0",
+  "origem": "oficial",
+  "autor": "Felipe Top",
+  "licenca": "MIT",
+  "descricao": "Serifa fina, latão sobre preto, filete Art Deco e movimento lento.",
+  "bom_para": ["mentoria", "imóveis", "estética", "moda", "alto padrão"],
+  "energia": "calmo",
+  "variacoes": {
+    "latao": {"nome": "Latão", "tokens": {}},
+    "bordo": {"nome": "Bordô", "tokens": {
+      "cor.fundo": "#2A0C11",
+      "cor.superficie": "#3A1219",
+      "cor.linha": "#6E4B2E",
+      "cor.acento": "#D9B76E"
+    }},
+    "marfim": {"nome": "Marfim", "tokens": {
+      "cor.fundo": "#F2EDE4",
+      "cor.superficie": "#FBF8F2",
+      "cor.texto": "#1A1714",
+      "cor.apoio": "#6B6258",
+      "cor.linha": "#D8CDB8",
+      "cor.acento": "#8E6E33",
+      "cor.sobre_acento": "#FFFFFF"
+    }}
+  },
+  "pecas": ["contador", "marca_texto", "troca_palavra", "desfoque", "cartao", "moldura",
+            "brilho", "lottie"],
+  "slots_da_marca": ["cor.acento", "fonte.titulo", "logo"],
+  "cenas": "overlay",
+  "codigo": true
+}

@@ -13,6 +13,8 @@ porque a ideia (o que a peça faz e como entra) é delas.
 | `cascata` | Animated List — Magic UI | MIT |
 | `antes_depois` | Image Comparison — Motion Primitives | MIT |
 | `cartao` | — (cartão de conteúdo genérico) | — |
+| `brilho` | Animated Shiny Text — Magic UI | MIT |
+| `moldura` | — (filete duplo com leques Art Deco, desenhado para o Luxo) | — |
 | `lottie` | renderiza com thorvg-python (wrapper LGPL, ThorVG MIT), instalado como dependência | LGPL / MIT |
 
 **Fora do repositório por licença:** React Bits (MIT + Commons Clause, que proíbe até a

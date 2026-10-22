@@ -11,8 +11,8 @@ padrao, quando a frase termina de entrar) — trave na palavra do transcript.
 """
 from PIL import Image
 
-from .base import (acha_palavra, arco, bloco, cola, lin, mascara_retangulo, quebra,
-                   recorta, retangulo, traco, vazio)
+from .base import (acha_palavra, arco, cola, lin, mascara_retangulo, quebra, recorta,
+                   retangulo, traco, vazio)
 
 EXEMPLO = dict(inicio=0, fim=96, f=60, dados=dict(
     texto="Quanto mais barato, piores os clientes", palavra="piores", tipo="marca"))
@@ -29,13 +29,16 @@ def quadro(f, inicio, fim, estilo, texto, palavra=None, tipo="marca", marca_em=N
         return tela
     ent, sai = estilo.envelope(f, inicio, fim)
     k = min(1.0, ent) * (1 - sai)
+    texto = estilo.caixa(texto)
+    palavra = estilo.caixa(palavra) if palavra else None
     fonte = estilo.fonte("titulo", tamanho, peso)
     linhas = quebra(fonte, texto, largura)
-    txt, caixas = bloco(linhas, fonte, estilo.cor(cor), entrelinha=1.14)
+    txt, caixas = estilo.bloco(linhas, fonte, estilo.cor(cor), entrelinha=1.14)
 
     m = 40                                          # respiro para a marca sair do texto
     lay = Image.new("RGBA", (txt.width + 2 * m, txt.height + 2 * m), (0, 0, 0, 0))
-    cx = acha_palavra(linhas, caixas, fonte, palavra) if palavra else None
+    cx = acha_palavra(linhas, caixas, fonte, palavra,
+                      pad=estilo.pad(fonte, estilo.cor(cor))) if palavra else None
     inicio_marca = marca_em if marca_em is not None else inicio + estilo.q_entrada
     pm = estilo.e_mov(lin(f, inicio_marca, inicio_marca + max(8, estilo.q_entrada * 0.8)))
 
@@ -44,13 +47,15 @@ def quadro(f, inicio, fim, estilo, texto, palavra=None, tipo="marca", marca_em=N
         pad = tamanho * 0.07                      # menos que meio espaco: nao encosta no vizinho
         bw, bh = (x1 - x0) + 2 * pad, (y1 - y0) * 0.86
         bx, by = x0 - pad + m, y0 + (y1 - y0) * 0.1 + m
+        # a barra cobre a palavra (com o contorno dela, quando o estilo tem) e a palavra e
+        # reescrita na cor sobre o acento, so onde a barra ja passou
+        lay.alpha_composite(txt, (m, m))
         barra = retangulo(bw * pm, bh, tamanho * 0.14, estilo.cor("acento"))
         lay.alpha_composite(barra, (int(bx), int(by)))
-        lay.alpha_composite(txt, (m, m))
-        # a palavra vira a cor sobre o acento, so onde a barra ja passou
-        sobre, _ = bloco(linhas, fonte, estilo.cor("sobre_acento"), entrelinha=1.14)
+        sobre, _ = estilo.bloco(linhas, fonte, estilo.cor("sobre_acento"), entrelinha=1.14)
+        desloc = estilo.pad(fonte, estilo.cor(cor)) - estilo.pad(fonte, estilo.cor("sobre_acento"))
         cheio = Image.new("RGBA", lay.size, (0, 0, 0, 0))
-        cheio.alpha_composite(sobre, (m, m))
+        cheio.alpha_composite(sobre, (m + desloc, m + desloc))
         lay.alpha_composite(recorta(cheio, mascara_retangulo(
             lay.size, (bx, by, bx + bw * pm, by + bh))))
     else:
@@ -68,5 +73,5 @@ def quadro(f, inicio, fim, estilo, texto, palavra=None, tipo="marca", marca_em=N
                           estilo.cor("acento"), pm)
                 lay.alpha_composite(el, (int(x0 - pw + m), int(y0 - ph + m)))
 
-    cola(tela, lay, centro, k, (1 - ent) * 30 - sai * 18)
+    cola(tela, lay, centro, k, (1 - ent) * estilo.desloca - sai * 18, escala=estilo.escala(ent))
     return tela

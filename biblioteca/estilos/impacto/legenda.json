@@ -1,0 +1,16 @@
+{
+  "fonte": "fonte.titulo",
+  "corpo": 84,
+  "enfase": 1.35,
+  "caixa_alta": true,
+  "cor": "#FFFFFF",
+  "destaque": "cor.acento",
+  "destaque_modo": "texto",
+  "destaques_por_clipe": 3,
+  "contorno": 8,
+  "sombra_dura": [0, 7],
+  "palavras_por_bloco": 2,
+  "duracao_alvo": 0.33,
+  "animacao": "pop",
+  "posicao": "rosto"
+}

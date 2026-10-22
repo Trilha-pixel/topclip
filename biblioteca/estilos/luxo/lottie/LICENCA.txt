@@ -1,0 +1,3 @@
+check.json — anel e check desenhados à mão no formato Lottie para o TopClip.
+Feito para os estilos do TopClip; mesma licença do repositório (MIT).
+A cor vem do slot "acento": a peça lottie troca pela cor do estilo e da marca.

@@ -307,15 +307,18 @@ O `render.py` e o `compose.py` leem o acabamento dali. Estilo que não for o Pap
 `estilo/ESTILO.md` do projeto antes de compor — ele manda sobre a `IDENTIDADE.md`.
 `./topclip estilo listar` mostra os disponíveis.
 
-**Estilos com cenas próprias** (o Limpo): o `compose.py` do projeto já vem com as
-cenas-exemplo do estilo, uma por **peça** (`pecas/`, copiada para o projeto):
+**Estilos com cenas próprias** (Limpo, Impacto, Luxo): o `compose.py` do projeto já vem
+com as cenas-exemplo do estilo, uma por **peça** (`pecas/`, copiada para o projeto):
 `contador`, `marca_texto`, `troca_palavra`, `desfoque`, `cascata`, `antes_depois`,
-`cartao`, `lottie`. Toda peça é `P.<peca>.quadro(f, inicio, fim, ESTILO, **dados)` e
-veste cor, fonte e movimento do estilo — nunca escreva cor ou fonte fixa numa cena
-dessas. Cenas desses estilos são **overlay** (`cutaway=False` no SHOTS): desenham o
-próprio fundo com `P.fundo(...)` e entram e saem em fade. A legenda também é a do
-estilo (`pecas/legenda.py`), com os mesmos blocos e tempos do `captions`. As cenas
-M1–M8 do `biblioteca/estilos/limpo/compose.py` são o exemplo de cada peça.
+`cartao`, `lottie`, `moldura`, `brilho`. Toda peça é
+`P.<peca>.quadro(f, inicio, fim, ESTILO, **dados)` e veste o estilo inteiro — cor, fonte,
+peso, caixa alta, contorno, sombra dura, pop e ritmo vêm do `estilo/resolvido.json`.
+Nunca escreva cor, fonte ou efeito fixo numa cena dessas: **a mesma cena troca de cara
+quando o projeto troca de estilo**. Cenas desses estilos são **overlay**
+(`cutaway=False` no SHOTS): tela cheia desenha o próprio fundo com `P.fundo(...)`;
+sobre o vídeo, `P.cinema(...)` põe as faixas de filme do Luxo. A legenda também é a do
+estilo (`pecas/legenda.py`), com os mesmos blocos e tempos do `captions`. O
+`compose.py` de cada pacote em `biblioteca/estilos/` é o exemplo de cada peça.
 
 `fontes/` tem que ficar ao lado de `motor.py` — a identidade depende dela e o motor
 falha com mensagem clara se não achar.

@@ -1,0 +1,19 @@
+{
+  "fonte": "fonte.italico",
+  "peso": 500,
+  "corpo": 60,
+  "enfase": 1.3,
+  "caixa_alta": false,
+  "cor": "#F5F0E6",
+  "fundo": "#0B0B0B",
+  "fundo_alfa": 0.62,
+  "destaque": "#D9B76E",
+  "destaque_modo": "texto",
+  "destaques_por_clipe": 2,
+  "contorno": 0,
+  "palavras_por_bloco": 4,
+  "duracao_alvo": 0.6,
+  "animacao": "fade",
+  "entrada_s": 0.25,
+  "posicao": "rosto"
+}

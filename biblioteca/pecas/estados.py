@@ -12,7 +12,7 @@ import sys
 from PIL import Image
 
 # eventos continuos nao contam como "ultimo evento" no --check
-CONTINUOS = ("fundo", "saida", "camera", "deriva")
+CONTINUOS = ("fundo", "cinema", "saida", "camera", "deriva")
 
 
 def _plate(nome, st, fr, glb):

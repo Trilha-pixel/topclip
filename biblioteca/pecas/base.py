@@ -77,6 +77,14 @@ class Estilo:
         self.q_entrada = sum(m["entrada_quadros"]) / 2
         self.q_saida = sum(m["saida_quadros"]) / 2
         self.stagger = m["stagger_quadros"]
+        self.desloca = m.get("deslocamento_entrada", 30)
+        # tipografia do estilo (em fracao do corpo): caixa alta, contorno e sombra dura do
+        # Impacto, peso e espacamento por papel de fonte do Luxo. Sem nada, texto limpo.
+        t = resolvido.get("tipografia") or {}
+        self.tipo = dict(caixa_alta=bool(t.get("caixa_alta")), contorno=float(t.get("contorno", 0)),
+                         cor_contorno=t.get("cor_contorno", "#000000"),
+                         sombra_dura=list(t.get("sombra_dura") or [0, 0]),
+                         peso=dict(t.get("peso") or {}), tracking=dict(t.get("tracking") or {}))
 
     @property
     def id(self):
@@ -117,7 +125,49 @@ class Estilo:
         return str(self.raiz / fontes.get(nome, fontes["apoio"]))
 
     def fonte(self, nome, tamanho, peso=None):
+        """A fonte do papel `nome`. O peso que o estilo fixa para o papel vence o da peca
+        (o Luxo pede titulo fino onde a peca pediria 700)."""
+        peso = self.tipo["peso"].get(nome, peso)
         return abre_fonte(self.caminho_fonte(nome), int(tamanho), peso)
+
+    # --- texto com a tipografia do estilo
+    def caixa(self, texto):
+        """O texto como o estilo escreve (caixa alta no Impacto). Aplique ANTES de medir."""
+        return texto.upper() if self.tipo["caixa_alta"] else texto
+
+    def tracking(self, nome, tamanho, padrao=0.0):
+        """Espacamento entre letras do papel `nome`, em px (o estilo da em fracao do corpo)."""
+        return self.tipo["tracking"].get(nome, padrao) * tamanho
+
+    def efeitos(self, fonte, cor=None):
+        """Contorno e sombra dura em px para esta fonte (o estilo da em fracao do corpo).
+        Letra que ja e da cor do contorno (preto sobre o amarelo) vai sem efeito: contorno
+        preto em letra preta vira borrao."""
+        s = fonte.size
+        dx, dy = self.tipo["sombra_dura"]
+        cc = self.tipo["cor_contorno"]
+        if cor is not None and _contraste("#%02X%02X%02X" % tuple(cor[:3]), cc) < 2.5:
+            return dict(contorno=0, cor_contorno=self.cor(cc), sombra=(0, 0))
+        return dict(contorno=int(round(self.tipo["contorno"] * s)), cor_contorno=self.cor(cc),
+                    sombra=(int(round(dx * s)), int(round(dy * s))))
+
+    def pad(self, fonte, cor=None):
+        """Margem que `linha` deixa em volta do texto (para quem mede palavra no bloco)."""
+        e = self.efeitos(fonte, cor)
+        return 2 + e["contorno"] + max(abs(e["sombra"][0]), abs(e["sombra"][1]))
+
+    def linha(self, texto, fonte, cor, tracking=0):
+        return linha(texto, fonte, cor, tracking, **self.efeitos(fonte, cor))
+
+    def bloco(self, linhas, fonte, cor, entrelinha=1.12, alinha="centro", tracking=0):
+        return bloco(linhas, fonte, cor, entrelinha, alinha, tracking, **self.efeitos(fonte, cor))
+
+    # --- movimento
+    def escala(self, ent):
+        """Escala da entrada: 1 nos perfis calmo e editorial; no energico a peca nasce
+        pequena e passa do tamanho (o 'pop'), pela curva de entrada que passa de 1."""
+        amp = self.mov.get("escala_entrada", 0)
+        return 1.0 if not amp else max(0.0, 1 - amp * (1 - ent))
 
     def entrada(self, f, inicio, dur=None):
         """0 -> 1 ao longo da entrada que comeca em `inicio` (curva do perfil)."""
@@ -192,10 +242,13 @@ def opaco(camada, k):
     return out
 
 
-def cola(tela, camada, centro, k=1.0, dy=0.0, dx=0.0):
-    """Cola `camada` com o centro em `centro`, deslocada e com opacidade k."""
-    if k <= 0:
+def cola(tela, camada, centro, k=1.0, dy=0.0, dx=0.0, escala=1.0):
+    """Cola `camada` com o centro em `centro`, deslocada, escalada e com opacidade k."""
+    if k <= 0 or escala <= 0.02:
         return tela
+    if abs(escala - 1.0) > 1e-3:
+        camada = camada.resize((max(1, int(camada.width * escala)),
+                                max(1, int(camada.height * escala))), Image.LANCZOS)
     x = int(round(centro[0] - camada.width / 2 + dx))
     y = int(round(centro[1] - camada.height / 2 + dy))
     tela.alpha_composite(opaco(camada, k), (x, y))
@@ -303,27 +356,36 @@ def quebra(fonte, texto, largura, tracking=0):
     return out
 
 
-def linha(texto, fonte, cor, tracking=0):
+def linha(texto, fonte, cor, tracking=0, contorno=0, cor_contorno=(0, 0, 0, 255), sombra=(0, 0)):
     """Uma linha num layer justo na METRICA da fonte (ascendente a descendente), para
-    que linhas com e sem acento tenham a mesma altura e alinhem pela linha de base."""
+    que linhas com e sem acento tenham a mesma altura e alinhem pela linha de base.
+    `contorno` e `sombra` (dura, deslocada) em px; sem eles, o layer e o de sempre."""
     asc, desc = fonte.getmetrics()
-    w = int(largura_texto(fonte, texto, tracking)) + 4
-    lay = Image.new("RGBA", (max(4, w), asc + desc), (0, 0, 0, 0))
+    extra = contorno + max(abs(sombra[0]), abs(sombra[1]))
+    p = 2 + extra
+    w = int(largura_texto(fonte, texto, tracking)) + 2 * p
+    lay = Image.new("RGBA", (max(4, w), asc + desc + 2 * extra), (0, 0, 0, 0))
     d = ImageDraw.Draw(lay)
-    if tracking:
-        x = 2
-        for c in texto:
-            d.text((x, 0), c, font=fonte, fill=cor)
-            x += fonte.getlength(c) + tracking
-    else:
-        d.text((2, 0), texto, font=fonte, fill=cor)
+
+    def escreve(x, y, cor_txt):
+        kw = dict(stroke_width=contorno, stroke_fill=cor_contorno) if contorno else {}
+        if tracking:
+            for c in texto:
+                d.text((x, y), c, font=fonte, fill=cor_txt, **kw)
+                x += fonte.getlength(c) + tracking
+        else:
+            d.text((x, y), texto, font=fonte, fill=cor_txt, **kw)
+
+    if sombra != (0, 0):
+        escreve(p + sombra[0], extra + sombra[1], cor_contorno)
+    escreve(p, extra, cor)
     return lay
 
 
-def bloco(linhas, fonte, cor, entrelinha=1.12, alinha="centro", tracking=0):
+def bloco(linhas, fonte, cor, entrelinha=1.12, alinha="centro", tracking=0, **efeitos):
     """Varias linhas empilhadas. Devolve (layer, caixas): `caixas[i]` = (x, y, w, h) de
     cada linha no layer, para quem precisa marcar uma palavra."""
-    lays = [linha(l, fonte, cor, tracking) for l in linhas]
+    lays = [linha(l, fonte, cor, tracking, **efeitos) for l in linhas]
     passo = int(fonte.size * entrelinha)
     w = max(l.width for l in lays)
     h = passo * (len(lays) - 1) + lays[-1].height
@@ -336,17 +398,20 @@ def bloco(linhas, fonte, cor, entrelinha=1.12, alinha="centro", tracking=0):
     return out, caixas
 
 
-def acha_palavra(linhas, caixas, fonte, palavra, tracking=0):
-    """Caixa (x0, y0, x1, y1) da primeira ocorrencia de `palavra` no bloco, ou None."""
+def acha_palavra(linhas, caixas, fonte, palavra, tracking=0, pad=2):
+    """Caixa (x0, y0, x1, y1) da primeira ocorrencia de `palavra` no bloco, ou None.
+    `pad` e a margem da `linha` (Estilo.pad: muda com contorno e sombra)."""
     alvo = palavra.lower().strip(".,!?;:\"'()")
-    for l, (x, y, _, h) in zip(linhas, caixas):
+    asc, desc = fonte.getmetrics()
+    for l, (x, y, _, _) in zip(linhas, caixas):
         pos = 0
         for p in l.split(" "):
             if p.lower().strip(".,!?;:\"'()") == alvo or p.lower() == palavra.lower():
                 limpa = p.rstrip(".,!?;:\"')")
-                x0 = x + 2 + largura_texto(fonte, l[:pos], tracking) + (tracking if pos else 0)
+                x0 = x + pad + largura_texto(fonte, l[:pos], tracking) + (tracking if pos else 0)
                 x1 = x0 + largura_texto(fonte, limpa, tracking)
-                return (x0, y, x1, y + h)
+                y0 = y + pad - 2
+                return (x0, y0, x1, y0 + asc + desc)
             pos += len(p) + 1
     return None
 
@@ -362,6 +427,21 @@ def recorta(camada, mascara):
     out = camada.copy()
     out.putalpha(ImageChops.multiply(out.getchannel("A"), mascara))
     return out
+
+
+def cinema(f, inicio, fim, estilo, altura=0.1, cor="#000000"):
+    """Faixas de cinema (letterbox) que crescem de cima e de baixo e voltam na saida. Sobre
+    o video, dao o tom de filme do Luxo sem cobrir o rosto."""
+    if not (inicio <= f <= fim):
+        return vazio()
+    ent, sai = estilo.envelope(f, inicio, fim)
+    h = int(H * altura * min(1.0, ent) * (1 - sai))
+    tela = vazio()
+    if h > 0:
+        d = ImageDraw.Draw(tela)
+        d.rectangle([0, 0, W, h], fill=estilo.cor(cor))
+        d.rectangle([0, H - h, W, H], fill=estilo.cor(cor))
+    return tela
 
 
 def fundo(f, inicio, fim, estilo, cor="fundo"):

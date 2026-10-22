@@ -145,15 +145,32 @@ Saída por clipe: `clip-vertical.mp4` limpo (sem legenda, sem motion) e
 Para cada clipe que o usuário aprovou na entrega dos cortes:
 
 ```bash
-./topclip motion novo projetos/<nome>/motion/<clipe>
+./topclip motion novo projetos/<nome>/motion/<clipe> --estilo <id> --variacao <v>
 cp <run>/output/.../clip-vertical.mp4 projetos/<nome>/motion/<clipe>/00_brief/fonte.mp4
 ```
 
 Depois invoque a skill `topclip-motion` sobre esse projeto. A transcrição do motion
 é **do clipe**, não do episódio: gere com `./topclip motion transcrever`.
 
-**Estilo:** sem pedido do usuário, é o Papel. Pedido outro: `--estilo <id>` no
-`motion novo` (`./topclip estilo listar` mostra os disponíveis).
+**Estilo** (o `<id>` e a `<v>` acima): a pessoa escolhe no painel, na etapa Motion do
+projeto, e a escolha fica em `projetos/<nome>/escolhas.json`:
+
+```json
+{"estilo": {"id": "limpo", "variacao": "escuro"}}
+```
+
+Sem `estilo` ali, vale o padrão dela, em `minha-biblioteca/preferencias.json` (mesmo
+formato: `{"estilo": "limpo", "variacao": "escuro"}`); sem os dois, o Papel. Pedido na
+conversa vale mais que os arquivos. Confirme em uma linha antes de criar ("motion no
+Limpo, escuro"); `./topclip estilo listar` mostra os disponíveis. A marca da pessoa
+(`minha-biblioteca/marca/`, que ela edita no painel em Biblioteca → Minha marca) entra
+sozinha onde o estilo deixa, e o `motion novo` avisa o que ficou de fora.
+
+No portão dos verticais, diga as duas opções de escolher o estilo: aqui na conversa ou
+no painel. Para o painel marcar um como **recomendado**, grave no `projeto.json`, pelo
+que leu da transcrição, `"estilo_recomendado": {"id": "limpo", "variacao": "escuro",
+"porque": "aula de saúde, tom calmo"}` (o `porque` é uma linha curta, sem jargão). É só
+sugestão: quem escolhe é a pessoa.
 
 **Assets:** procure primeiro em `biblioteca/assets/` e `minha-biblioteca/assets/`. O
 que não existir, o Claude desenha em código (seção 3 da `topclip-motion`). Todo asset

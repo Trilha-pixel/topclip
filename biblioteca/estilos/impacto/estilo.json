@@ -1,0 +1,21 @@
+{
+  "id": "impacto",
+  "nome": "Impacto",
+  "versao": "1.0.0",
+  "topclip": ">=1.0",
+  "origem": "oficial",
+  "autor": "Felipe Top",
+  "licenca": "MIT",
+  "descricao": "Caixa alta, contorno preto, um acento amarelo (ou verde) e entrada em pop.",
+  "bom_para": ["vendas", "negócios", "motivação", "fitness", "finanças"],
+  "energia": "energico",
+  "variacoes": {
+    "amarelo": {"nome": "Amarelo", "tokens": {}},
+    "verde": {"nome": "Verde", "tokens": {"cor.acento": "#22D65A"}}
+  },
+  "pecas": ["contador", "marca_texto", "troca_palavra", "cascata", "antes_depois",
+            "cartao", "lottie"],
+  "slots_da_marca": ["cor.acento", "fonte.titulo", "logo"],
+  "cenas": "overlay",
+  "codigo": true
+}

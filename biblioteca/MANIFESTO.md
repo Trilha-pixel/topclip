@@ -16,10 +16,13 @@ confere um pacote. Formato: `docs/proposta-estilos.md`.
 | --- | --- | --- | --- |
 | `papel` | editorial | marfim | storytelling, marketing, negócios, educação |
 | `limpo` | calmo | claro, escuro | educação, saúde, produtividade, B2B, tecnologia |
+| `impacto` | enérgico | amarelo, verde | vendas, negócios, motivação, fitness, finanças |
+| `luxo` | calmo | latão, bordô, marfim | mentoria, imóveis, estética, moda, alto padrão |
 
 As **peças** (`pecas/`) são os componentes que os estilos compartilham — contador,
-marca-texto, troca de palavra, desfoque, cascata, antes e depois, cartão e Lottie. Cada
-uma veste o estilo do projeto; créditos das ideias em `pecas/CREDITOS.md`.
+marca-texto, troca de palavra, desfoque, cascata, antes e depois, cartão, Lottie, moldura
+e brilho. Cada uma veste o estilo do projeto (cor, fonte, peso, caixa alta, contorno,
+ritmo); créditos das ideias em `pecas/CREDITOS.md`.
 
 ## Regras para entrar
 

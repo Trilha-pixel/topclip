@@ -36,7 +36,7 @@ PERFIS = {
         "entrada_quadros": [12, 17], "saida_quadros": [7, 10], "overshoot": [0, 0],
         "stagger_quadros": 3, "coreografia_max_s": 0.9, "tela_min_s": 2.5,
         "eventos_por_10s": [1, 2], "simultaneos": 1, "transicao": "dissolve",
-        "push_camera": [0, 0.02],
+        "push_camera": [0, 0.02], "escala_entrada": 0, "deslocamento_entrada": 30,
     },
     "editorial": {
         "curva_entrada": [0.05, 0.7, 0.1, 1], "curva_saida": [0.3, 0, 0.8, 0.15],
@@ -44,7 +44,7 @@ PERFIS = {
         "entrada_quadros": [8, 12], "saida_quadros": [5, 6], "overshoot": [0, 0.02],
         "stagger_quadros": 2, "coreografia_max_s": 0.6, "tela_min_s": 1.5,
         "eventos_por_10s": [2, 4], "simultaneos": 2, "transicao": "corte_wipe",
-        "push_camera": [0.03, 0.06],
+        "push_camera": [0.03, 0.06], "escala_entrada": 0, "deslocamento_entrada": 26,
     },
     "energico": {
         "curva_entrada": [0.34, 1.56, 0.64, 1], "curva_saida": [0.7, 0, 0.84, 0],
@@ -53,13 +53,17 @@ PERFIS = {
         "stagger_quadros": 1, "coreografia_max_s": 0.4, "tela_min_s": 0.8,
         "eventos_por_10s": [4, 7], "simultaneos": 3, "transicao": "corte_beat",
         "push_camera": [0.08, 0.15],
+        # o "pop": a peca nasce pequena e passa do tamanho pela curva que passa de 1
+        # (pico ~1,085 -> escala ~1,10); sem deslizar, porque o pop ja e o gesto
+        "escala_entrada": 1.18, "deslocamento_entrada": 0,
     },
 }
 TRANSICOES = {"dissolve", "corte_wipe", "corte_beat"}
 
-# As pecas da v1 (biblioteca/pecas/, fase 2). O estilo declara quais usa.
+# As pecas (biblioteca/pecas/: 8 na fase 2, moldura e brilho na 3). O estilo declara quais usa.
 PECAS = {"contador", "marca_texto", "troca_palavra", "desfoque", "cascata",
-         "antes_depois", "cartao", "lottie"}
+         "antes_depois", "cartao", "lottie", "moldura", "brilho"}
+DESTAQUES = {"pilula", "texto"}
 
 # Fontes que viajam com a skill: o estilo pode pedir pelo nome, sem trazer o arquivo.
 FONTES_DO_KIT = {
@@ -307,6 +311,7 @@ def validar(pasta, exigir_previa=True):
     boil = ext.get("boil", None)
     if boil is not None and (not isinstance(boil, (int, float)) or not 0 <= boil <= 2):
         erros.append("boil deve ser null (sem boil) ou numero entre 0 e 2")
+    erros += _erros_tipografia(ext.get("tipografia"), tok)
 
     # legenda.json
     for k, tipo in {"corpo": int, "palavras_por_bloco": int, "destaques_por_clipe": int,
@@ -326,6 +331,15 @@ def validar(pasta, exigir_previa=True):
     if "duracao_alvo" in leg and (not isinstance(leg["duracao_alvo"], (int, float))
                                   or not 0.2 <= leg["duracao_alvo"] <= 2.0):
         erros.append("legenda.duracao_alvo deve ser numero entre 0,2 e 2 segundos")
+    if leg.get("destaque_modo", "pilula") not in DESTAQUES:
+        erros.append(f"legenda.destaque_modo deve ser um de {sorted(DESTAQUES)}")
+    sd = leg.get("sombra_dura")
+    if sd is not None and not (isinstance(sd, list) and len(sd) == 2
+                               and all(isinstance(v, int) and -20 <= v <= 20 for v in sd)):
+        erros.append("legenda.sombra_dura deve ser [dx, dy] em px inteiros entre -20 e 20")
+    if "entrada_s" in leg and (not isinstance(leg["entrada_s"], (int, float))
+                               or not 0.05 <= leg["entrada_s"] <= 0.6):
+        erros.append("legenda.entrada_s deve ser numero entre 0,05 e 0,6 segundos")
     for k in ("fonte", "fonte_enfase"):
         if k in leg and _ref(leg[k], tok, pasta) is None:
             erros.append(f"legenda.{k} '{leg[k]}' nao resolve (token, fonte do kit ou arquivo)")
@@ -372,6 +386,34 @@ def validar(pasta, exigir_previa=True):
     if not (pasta / "preview" / "demo.mp4").is_file():
         avisos.append("sem preview/demo.mp4 (a galeria mostra so a capa)")
     return erros, avisos
+
+
+def _erros_tipografia(t, tok):
+    """`$extensions.topclip.tipografia`, opcional. Medidas em fracao do corpo da fonte."""
+    if t is None:
+        return []
+    if not isinstance(t, dict):
+        return ["tipografia deve ser um objeto"]
+    erros = []
+    if "caixa_alta" in t and not isinstance(t["caixa_alta"], bool):
+        erros.append("tipografia.caixa_alta deve ser true ou false")
+    if "contorno" in t and (not isinstance(t["contorno"], (int, float)) or not 0 <= t["contorno"] <= 0.2):
+        erros.append("tipografia.contorno deve ser fracao do corpo entre 0 e 0,2")
+    if "cor_contorno" in t and not RE_HEX.match(str(t["cor_contorno"])):
+        erros.append("tipografia.cor_contorno deve ser #RRGGBB")
+    sd = t.get("sombra_dura")
+    if sd is not None and not (isinstance(sd, list) and len(sd) == 2 and
+                               all(isinstance(v, (int, float)) and -0.2 <= v <= 0.2 for v in sd)):
+        erros.append("tipografia.sombra_dura deve ser [dx, dy] em fracao do corpo, entre -0,2 e 0,2")
+    for papel, v in (t.get("peso") or {}).items():
+        if token(tok, f"fonte.{papel}") is None:
+            erros.append(f"tipografia.peso: papel de fonte '{papel}' nao existe em tokens.json")
+        elif not isinstance(v, int) or not 100 <= v <= 900:
+            erros.append(f"tipografia.peso.{papel} deve ser inteiro entre 100 e 900")
+    for papel, v in (t.get("tracking") or {}).items():
+        if not isinstance(v, (int, float)) or not -0.1 <= v <= 0.5:
+            erros.append(f"tipografia.tracking.{papel} deve ser fracao do corpo entre -0,1 e 0,5")
+    return erros
 
 
 def _ref(valor, tokens, pasta):
@@ -479,6 +521,7 @@ def resolver(pasta, variacao=None, marca=None):
         "cenas": est.get("cenas", "cutaway"),
         "cor": cores, "fonte": fontes, "movimento": movimento,
         "acabamento": ext["acabamento"], "boil": ext.get("boil"), "traco": ext["traco"],
+        "tipografia": ext.get("tipografia") or {},
         "legenda": legenda,
         "marca": {"aplicado": aplicado, "recusado": recusado, "logo": logo},
     }

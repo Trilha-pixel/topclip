@@ -110,16 +110,18 @@ function marcarNav(qual) {
 
 let relogio = null;            // atualização ao vivo da tela atual
 let escolhaNaoSalva = false;   // não redesenhar por cima de uma escolha em andamento
+let rotaAtual = null, rotaAnterior = null;   // o "voltar" do estilo leva para onde a pessoa estava
 
 async function rotear() {
   clearInterval(relogio);
   escolhaNaoSalva = false;
+  [rotaAnterior, rotaAtual] = [rotaAtual, location.hash];
   const partes = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   window.scrollTo(0, 0);
   esconderBarra();
   try {
     if (partes[0] === "projeto" && partes[1]) { marcarNav("inicio"); return await telaProjeto(partes[1], partes[2]); }
-    if (partes[0] === "biblioteca") { marcarNav("biblioteca"); return await telaBiblioteca(); }
+    if (partes[0] === "biblioteca") { marcarNav("biblioteca"); return await telaBiblioteca(partes); }
     if (partes[0] === "instalacao") { marcarNav("instalacao"); return await telaInstalacao(); }
     marcarNav("inicio");
     return await telaInicio();
@@ -414,7 +416,9 @@ async function telaProjeto(slug, etapa) {
     momentos: new Set((p.escolhas.momentos || []).filter((id) => !feitos.has(id))),
     cortes: new Set((p.escolhas.cortes || []).filter((id) => !feitos.has(id))),
   };
-  const corpo = { momentos: blocoMomentos, cortes: blocoCortes, vertical: blocoVertical, motion: blocoMotion, entrega: blocoEntrega }[ativa](p);
+  // a etapa de motion mostra a escolha do estilo; sem a lista, o resto da etapa segue igual
+  const estilos = ativa === "motion" ? await api("/api/estilos").catch(() => null) : null;
+  const corpo = { momentos: blocoMomentos, cortes: blocoCortes, vertical: blocoVertical, motion: blocoMotion, entrega: blocoEntrega }[ativa](p, estilos);
 
   app.innerHTML = `
   <a class="voltar" href="#/">← todos os projetos</a>
@@ -436,6 +440,7 @@ async function telaProjeto(slug, etapa) {
   app.querySelector('[data-acao="abrir"]').onclick = () => api(`/api/projetos/${slug}/abrir`, { method: "POST" }).catch((e) => aviso(esc(e.message)));
   app.querySelector('[data-acao="apagar"]').onclick = () => abrirApagarProjeto(p);
   ligarEscolhas(p, ativa);
+  if (estilos) ligarEstilo(p, estilos);
   acompanharAtividade(slug, etapa, ativa);
 }
 
@@ -602,25 +607,121 @@ function blocoVertical(p) {
   <div class="verticais">
     ${p.verticais.map((v) => `<div class="vertical"><video src="${v.video}" controls preload="metadata" playsinline></video><div class="rotulo">${esc(v.nome)}</div></div>`).join("")}
   </div>
-  ${proximoPasso("quer motion e legenda? diga ao Claude:", "coloca motion nos verticais aprovados")}`;
+  ${proximoPasso("quer motion e legenda? diga ao Claude:", "coloca motion nos verticais aprovados")}
+  <p class="explica" style="margin-top:14px"><a class="link" href="#/projeto/${esc(p.slug)}/motion">antes, escolha o estilo do motion →</a></p>`;
 }
 
-function blocoMotion(p) {
+function blocoMotion(p, estilos) {
   if (!p.motion.length) {
     return `
     <div class="secao-topo"><div><h2 class="subtitulo">Motion</h2>
-      <p class="explica">O Claude escolhe as frases que têm objeto, desenha os elementos em código e monta as cenas no estilo TopClip Papel, cada uma presa à palavra exata da fala.</p></div></div>
+      <p class="explica">O Claude escolhe as frases que têm objeto, desenha os elementos em código e monta as cenas no estilo que você escolher aqui, cada uma presa à palavra exata da fala.</p></div></div>
+    ${blocoEstilo(p, estilos)}
     ${proximoPasso("com os verticais prontos, peça:", "coloca motion nos verticais aprovados")}`;
   }
-  return p.motion.map((m) => `
+  return blocoEstilo(p, estilos) + p.motion.map((m) => `
     <div class="motion-bloco">
-      <div class="secao-topo"><h2 class="subtitulo">${esc(m.nome)}</h2>${m.master ? `<span class="tag forte">master pronto</span>` : `<span class="tag">em produção</span>`}</div>
+      <div class="secao-topo"><h2 class="subtitulo">${esc(m.nome)}</h2><span class="tags">${m.estilo ? `<span class="tag">estilo ${esc(m.estilo)}</span>` : ""}${m.master ? `<span class="tag forte">master pronto</span>` : `<span class="tag">em produção</span>`}</span></div>
       <div class="verticais">
         ${m.master ? `<div class="vertical"><video src="${m.master}" controls preload="metadata" playsinline></video><div class="rotulo">master final</div></div>`
           : m.rascunho ? `<div class="vertical"><video src="${m.rascunho}" controls preload="metadata" playsinline></video><div class="rotulo">rascunho (revisão)</div></div>` : ""}
         ${m.quadros.map((q) => `<div class="vertical"><img src="${q}" alt="" loading="lazy"><div class="rotulo">${esc(decodeURIComponent(q.split("/").pop()))}</div></div>`).join("")}
       </div>
     </div>`).join("");
+}
+
+// ------------------------------------------------------------------ estilo do motion (no projeto)
+// 3 estilos à vista — o recomendado pelo Claude, o escolhido e o seu padrão vêm primeiro — e
+// o resto em "ver todos". Clicar já salva em escolhas.json, como "estilo": {id, variacao}.
+let estiloTodosAbertos = false;
+let estiloDobraAberta = false;
+
+function blocoEstilo(p, lista) {
+  const validos = lista ? lista.estilos.filter((e) => e.valido) : [];
+  if (!validos.length || !p.estilo) return "";
+  const est = p.estilo;
+  const porId = Object.fromEntries(validos.map((e) => [e.id, e]));
+  const rec = est.recomendado && porId[est.recomendado.id];
+  const ids = [...new Set([rec && rec.id, est.escolhido && est.escolhido.id, est.padrao.estilo, ...validos.map((e) => e.id)])]
+    .filter((id) => porId[id]);
+  const nomeVale = nomeEstilo(porId[est.vale.id], est.vale.variacao) || est.nome;
+  const origem = est.escolhido ? "escolhido para este projeto" : est.padrao.salvo ? "o seu padrão" : "o padrão do TopClip";
+
+  const cartao = (id) => {
+    const e = porId[id];
+    const vale = est.vale.id === id;
+    const vid = vale ? est.vale.variacao : (rec && rec.id === id && est.recomendado.variacao) || (e.variacoes[0] || {}).id;
+    const v = e.variacoes.find((x) => x.id === vid) || e.variacoes[0] || {};
+    return `
+    <article class="escolha-estilo ${vale ? "escolhido" : ""}" data-escolher="${esc(id)}" data-variacao="${esc(v.id || "")}" tabindex="0" role="radio" aria-checked="${vale}">
+      ${rec && rec.id === id ? `<span class="selo-recomendado">recomendado</span>` : ""}
+      <div class="escolha-capa">${v.capa ? `<img src="${v.capa}" alt="Prévia do estilo ${esc(e.nome)}" loading="lazy">` : ""}</div>
+      <div class="escolha-corpo">
+        <h4>${esc(e.nome)}</h4>
+        <div class="mudo">${esc(energiaTxt(e.energia))}${e.bom_para.length ? ` · ${esc(e.bom_para.slice(0, 2).join(", "))}` : ""}</div>
+        ${e.variacoes.length > 1 ? `<div class="escolha-variacoes">${e.variacoes.map((x) =>
+          `<button type="button" class="chip ${vale && x.id === est.vale.variacao ? "ativo" : ""}" data-variacao="${esc(x.id)}" data-capa="${esc(x.capa || "")}">${bolinha(x)}${esc(x.nome)}</button>`).join("")}</div>` : ""}
+        <span class="escolha-status">${vale ? "✓ vai sair neste" : "usar este"}</span>
+      </div>
+    </article>`;
+  };
+  const primeiros = ids.slice(0, 3), resto = ids.slice(3);
+  const conteudo = `
+    <p class="explica">Vale para os clipes que o Claude ainda vai fazer. Agora: <b>${esc(nomeVale)}</b> — ${origem}.
+      ${est.escolhido ? `<button class="link" data-estilo-padrao>voltar ao meu padrão</button>` : ""}</p>
+    ${rec && est.recomendado.porque ? `<p class="explica"><span class="mao">o Claude recomenda o estilo ${esc(rec.nome)}:</span> ${esc(est.recomendado.porque)}</p>` : ""}
+    <div class="escolha-estilos">${primeiros.map(cartao).join("")}</div>
+    ${resto.length ? `<div class="escolha-estilos" data-resto ${estiloTodosAbertos ? "" : "hidden"}>${resto.map(cartao).join("")}</div>` : ""}
+    <div class="estilo-motion-acoes">
+      ${resto.length ? `<button class="link" data-ver-todos>${estiloTodosAbertos ? "mostrar só 3" : `ver todos os estilos (${ids.length})`}</button>` : ""}
+      <a class="link" href="#/biblioteca">comparar as peças de cada estilo na biblioteca</a>
+    </div>`;
+  // com clipe já no motion, a escolha vale para os próximos: fica dobrada para não tomar a tela
+  if (p.motion.length) {
+    return `<details class="estilo-motion dobra" id="estilo-motion" ${estiloDobraAberta ? "open" : ""}>
+      <summary><span class="subtitulo">Estilo dos próximos clipes</span> <b>${esc(nomeVale)}</b> <span class="link">trocar</span></summary>${conteudo}</details>`;
+  }
+  return `<section class="estilo-motion" id="estilo-motion"><h3 class="subtitulo">Estilo do motion</h3>${conteudo}</section>`;
+}
+
+function ligarEstilo(p, lista) {
+  const caixa = document.getElementById("estilo-motion");
+  if (!caixa) return;
+  const redesenhar = () => { caixa.outerHTML = blocoEstilo(p, lista); ligarEstilo(p, lista); };
+  const salvar = async (estilo) => {
+    const agora = p.estilo.escolhido;
+    if (estilo && agora && agora.id === estilo.id && agora.variacao === estilo.variacao) return;
+    try {
+      const r = await api(`/api/projetos/${encodeURIComponent(p.slug)}/escolhas`, { method: "POST", body: { estilo } });
+      p.estilo.escolhido = r.estilo || null;
+      p.estilo.vale = r.estilo || { id: p.estilo.padrao.estilo, variacao: p.estilo.padrao.variacao };
+      redesenhar();
+      const e = lista.estilos.find((x) => x.id === p.estilo.vale.id);
+      aviso(r.estilo ? `<b>Estilo salvo: ${esc(nomeEstilo(e, p.estilo.vale.variacao))}.</b> Agora diga ao Claude para seguir com o motion.`
+        : `<b>Pronto:</b> o motion sai no seu padrão.`);
+    } catch (err) {
+      aviso(`<b>Não salvou:</b> ${esc(err.message)}`);
+    }
+  };
+  caixa.querySelectorAll("[data-escolher]").forEach((c) => {
+    const img = c.querySelector(".escolha-capa img");
+    const capa = img && img.getAttribute("src");
+    c.addEventListener("click", (ev) => {
+      const chip = ev.target.closest("button.chip");
+      salvar({ id: c.dataset.escolher, variacao: chip ? chip.dataset.variacao : c.dataset.variacao });
+    });
+    c.addEventListener("keydown", (ev) => {
+      if (ev.target === c && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); salvar({ id: c.dataset.escolher, variacao: c.dataset.variacao }); }
+    });
+    // passar o mouse numa variação mostra a capa dela antes de escolher
+    c.querySelectorAll("button.chip").forEach((b) => {
+      b.addEventListener("mouseenter", () => { if (img && b.dataset.capa) img.src = b.dataset.capa; });
+      b.addEventListener("mouseleave", () => { if (img) img.src = capa; });
+    });
+  });
+  caixa.querySelector("[data-estilo-padrao]")?.addEventListener("click", () => salvar(null));
+  caixa.querySelector("[data-ver-todos]")?.addEventListener("click", () => { estiloTodosAbertos = !estiloTodosAbertos; redesenhar(); });
+  if (caixa.tagName === "DETAILS") caixa.addEventListener("toggle", () => (estiloDobraAberta = caixa.open));
 }
 
 function blocoEntrega(p) {
@@ -832,20 +933,401 @@ function acompanharAtividade(slug, etapa, ativa) {
 }
 
 // ------------------------------------------------------------------ biblioteca
-async function telaBiblioteca() {
-  const { assets } = await api("/api/biblioteca");
+// Estilos de motion, as peças que eles vestem, a marca e os objetos desenhados. O visual de
+// cada estilo só aparece dentro das prévias (imagens de `./topclip estilo previa`): o painel
+// continua no Papel.
+const ENERGIA = {
+  calmo: ["calmo", "movimento lento e suave"],
+  editorial: ["editorial", "ritmo de revista: entra rápido e assenta"],
+  energico: ["enérgico", "rápido e com impacto"],
+};
+const PECAS = {
+  contador: ["Contador", "o número conta até o valor dito"],
+  marca_texto: ["Marca-texto", "destaca a palavra na frase"],
+  troca_palavra: ["Troca de palavra", "a palavra muda no mesmo lugar"],
+  desfoque: ["Desfoque", "o texto entra saindo do borrão"],
+  cascata: ["Lista", "os itens entram um por um"],
+  antes_depois: ["Antes e depois", "duas imagens e um divisor"],
+  cartao: ["Cartão", "título e texto numa etiqueta"],
+  moldura: ["Moldura", "filete que se desenha em volta da cena"],
+  brilho: ["Brilho", "um reflexo de luz passa pelo título"],
+  lottie: ["Ícone animado", "animação pronta, nas cores do estilo"],
+};
+// o que cada espaço do estilo pega da marca (MARCA_PARA_TOKEN do lib/estilo.py)
+const SLOTS = { "cor.acento": "a cor primária", "cor.apoio": "a cor secundária", "cor.texto": "a cor do texto",
+  "fonte.titulo": "a fonte do título", "fonte.apoio": "a fonte do texto", logo: "o logo" };
+const hex = (c, reserva = "#d9d4c8") => (/^#[0-9a-f]{6}$/i.test(c || "") ? c : reserva);
+const energiaTxt = (e) => (ENERGIA[e] || [rotulo(e)])[0];
+const listaFalada = (xs) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} e ${xs[xs.length - 1]}`);
+const marcaNoEstilo = (e) => listaFalada(e.slots_da_marca.map((s) => SLOTS[s]).filter(Boolean));
+const nomeEstilo = (e, vid) => (e ? [e.nome, (e.variacoes.find((v) => v.id === vid) || {}).nome].filter(Boolean).join(" · ") : "");
+
+// a bolinha de uma variação: o fundo e o acento dela
+const bolinha = (v, ativa = false) =>
+  `<span class="bolinha${ativa ? " ativa" : ""}" style="--fundo:${hex(v.fundo)};--acento:${hex(v.acento)}" title="${esc(v.nome || "")}"></span>`;
+
+let estiloDasPecas = null;     // o estilo cujas peças a Biblioteca mostra — troca com um clique
+
+function cartaoEstilo(e, padrao, selecionado) {
+  const ehPadrao = padrao.estilo === e.id;
+  const capa = (ehPadrao && (e.variacoes.find((v) => v.id === padrao.variacao) || {}).capa) || e.capa;
+  return `
+  <article class="estilo-cartao papel ${selecionado ? "selecionado" : ""}" data-estilo="${esc(e.id)}" tabindex="0" role="button" aria-pressed="${selecionado}">
+    ${ehPadrao ? `<span class="selo-padrao">seu padrão</span>` : ""}
+    <div class="estilo-capa">${capa ? `<img src="${capa}" alt="Prévia do estilo ${esc(e.nome)}" loading="lazy">` : `<span>sem prévia ainda</span>`}</div>
+    <div class="estilo-nome"><h3>${esc(e.nome)}</h3>${e.dono === "seu" ? `<span class="selo-seu">seu</span>` : ""}</div>
+    <div class="estilo-energia"><b>${esc(energiaTxt(e.energia))}</b>${e.bom_para.length ? ` · bom para ${esc(e.bom_para.slice(0, 3).join(", "))}` : ""}</div>
+    ${e.valido ? "" : `<p class="estilo-erro">Este estilo tem um problema e não pode ser usado agora.</p>`}
+    <div class="estilo-rodape">
+      <span class="bolinhas" title="${e.variacoes.length} ${e.variacoes.length === 1 ? "variação" : "variações"}">${e.variacoes.map((v) => bolinha(v, ehPadrao && v.id === padrao.variacao)).join("")}</span>
+      <a class="link" href="#/biblioteca/estilo/${esc(e.id)}">ver o estilo</a>
+    </div>
+  </article>`;
+}
+
+// As peças de um estilo, sempre na mesma ordem: trocar de estilo troca só as imagens.
+function gradePecas(e, ordem = e.pecas.map((p) => p.id)) {
+  if (!e.pecas.length) {
+    return `<div class="vazio-pecas">O estilo ${esc(e.nome)} não usa as peças prontas: as cenas dele são desenhadas uma a uma, para cada fala.</div>`;
+  }
+  const dele = Object.fromEntries(e.pecas.map((p) => [p.id, p]));
+  return `<div class="pecas">${ordem.map((id) => {
+    const p = dele[id];
+    const [nome, txt] = PECAS[id] || [rotulo(id), ""];
+    return `<figure class="peca ${p ? "" : "ausente"}">
+      <div class="peca-quadro">${p && p.imagem ? `<img src="${p.imagem}" alt="${esc(nome)} no estilo ${esc(e.nome)}" loading="lazy">`
+        : `<span>${p ? "sem prévia ainda" : `o estilo ${esc(e.nome)} não usa`}</span>`}</div>
+      <figcaption><b>${esc(nome)}</b>${esc(txt)}</figcaption>
+    </figure>`;
+  }).join("")}</div>`;
+}
+
+function prateleiraPecas(lista, sel) {
+  // a ordem de PECAS, e no fim as que o painel ainda não conhece: igual em todo estilo
+  const existem = new Set(lista.flatMap((e) => e.pecas.map((p) => p.id)));
+  const ordem = [...new Set([...Object.keys(PECAS), ...existem])].filter((id) => existem.has(id));
+  return `
+  <div class="secao-topo"><div><h2 class="subtitulo">Peças <span class="mudo">no estilo ${esc(sel.nome)}</span></h2>
+    <p class="explica">As mesmas animações vestem a cara de cada estilo. Troque o estilo e veja.</p></div></div>
+  <div class="chips" role="tablist" aria-label="Ver as peças no estilo">${lista.map((e) =>
+    `<button class="chip ${e.id === sel.id ? "ativo" : ""}" data-estilo="${esc(e.id)}" role="tab" aria-selected="${e.id === sel.id}">${bolinha(e.variacoes[0] || {})}${esc(e.nome)}</button>`).join("")}</div>
+  ${gradePecas(sel, ordem)}`;
+}
+
+function cartaoMarca(m) {
+  const c = m.marca.cores;
+  return `
+  <a class="marca-cartao papel fita" href="#/biblioteca/marca">
+    <span class="marca-amostras">${["primaria", "secundaria", "texto"].map((k) =>
+      c[k] ? `<span style="background:${hex(c[k])}"></span>` : `<span class="vazia"></span>`).join("")}</span>
+    ${m.logo ? `<img class="marca-logo" src="${m.logo}" alt="seu logo">` : ""}
+    <span>
+      <b>${m.existe && m.marca.nome ? esc(m.marca.nome) : "Minha marca"}</b>
+      <span>${m.existe ? "Suas cores, fontes e logo. Entram só onde cada estilo deixa." : "Coloque suas cores, fontes e logo. Eles entram nos estilos que aceitam marca."}</span>
+      <span class="link">${m.existe ? "editar minha marca" : "configurar minha marca"} →</span>
+    </span>
+  </a>`;
+}
+
+async function telaBiblioteca(partes = []) {
+  if (partes[1] === "estilo" && partes[2]) return telaEstilo(partes[2]);
+  if (partes[1] === "marca") return telaMarca();
+  const [{ estilos, padrao }, { assets }, m] = await Promise.all([api("/api/estilos"), api("/api/biblioteca"), api("/api/marca")]);
+  // as peças começam no estilo escolhido antes, senão no seu padrão, senão no primeiro que tem peças
+  let sel = estilos.find((e) => e.id === estiloDasPecas) || estilos.find((e) => e.id === padrao.estilo && e.pecas.length)
+    || estilos.find((e) => e.pecas.length) || estilos[0];
+  const oficiais = estilos.filter((e) => e.dono === "oficial");
+  const seus = estilos.filter((e) => e.dono !== "oficial");
+  const grade = (lista) => `<div class="estilos">${lista.map((e) => cartaoEstilo(e, padrao, sel && e.id === sel.id)).join("")}</div>`;
   app.innerHTML = `
   <section style="margin-bottom:40px">
     <h1 class="manchete">A <span class="marca">biblioteca</span></h1>
-    <p class="lead">Todo objeto desenhado num vídeo fica aqui para o próximo. Quanto mais você usa, mais coisa já vem pronta.</p>
+    <p class="lead">Os estilos do motion, as peças que eles animam, a sua marca e tudo que já foi desenhado. Cada projeto escolhe o estilo na etapa Motion.</p>
   </section>
-  ${assets.length ? `<div class="assets">${assets.map((a, i) => `
-    <figure class="asset papel ${i % 3 === 1 ? "fita" : ""}" style="margin:0">
-      <div class="vitrine ${a.arquivo.startsWith("BG_") ? "fundo" : ""}"><img src="${a.url}" alt="${esc(a.objeto || a.arquivo)}" loading="lazy"></div>
-      <h4>${esc(a.arquivo)}</h4>
-      <p>${esc(a.objeto || "")}</p>
-    </figure>`).join("")}</div>`
-  : `<div class="vazio papel"><h3 class="titulo">Biblioteca vazia</h3><p class="lead" style="margin:14px auto">O primeiro vídeo com motion já começa a encher.</p></div>`}`;
+
+  <section class="prateleira">
+    <div class="secao-topo"><div><h2 class="subtitulo">Estilos</h2>
+      <p class="explica">Clique num estilo para ver as peças nele. O seu padrão vale quando o projeto não escolhe outro.</p></div></div>
+    ${estilos.length ? grade(oficiais) : `<div class="vazio papel"><p class="lead" style="margin:0 auto">Nenhum estilo encontrado.</p></div>`}
+    ${seus.length ? `<h3 class="prateleira-sub">Seus estilos</h3>${grade(seus)}` : ""}
+  </section>
+
+  ${sel ? `<section class="prateleira papel painel-etapa" id="pecas">${prateleiraPecas(estilos, sel)}</section>` : ""}
+
+  <section class="prateleira">
+    <div class="secao-topo"><h2 class="subtitulo">Minha marca</h2></div>
+    ${cartaoMarca(m)}
+  </section>
+
+  <section class="prateleira">
+    <div class="secao-topo"><div><h2 class="subtitulo">Objetos desenhados</h2>
+      <p class="explica">Todo objeto desenhado num vídeo fica aqui para o próximo. Quanto mais você usa, mais coisa já vem pronta.</p></div></div>
+    ${assets.length ? `<div class="assets">${assets.map((a, i) => `
+      <figure class="asset papel ${i % 3 === 1 ? "fita" : ""}" style="margin:0">
+        <div class="vitrine ${a.arquivo.startsWith("BG_") ? "fundo" : ""}"><img src="${a.url}" alt="${esc(a.objeto || a.arquivo)}" loading="lazy"></div>
+        <h4>${esc(a.arquivo)}${a.dono === "seu" ? ` <span class="selo-seu">seu</span>` : ""}</h4>
+        <p>${esc(a.objeto || "")}</p>
+      </figure>`).join("")}</div>`
+    : `<div class="vazio papel"><h3 class="titulo">Nada desenhado ainda</h3><p class="lead" style="margin:14px auto">O primeiro vídeo com motion já começa a encher.</p></div>`}
+  </section>`;
+
+  const trocar = (id) => {
+    const e = estilos.find((x) => x.id === id);
+    if (!e || !sel || e.id === sel.id) return;
+    sel = e;
+    estiloDasPecas = id;
+    app.querySelectorAll(".estilo-cartao").forEach((c) => {
+      const sim = c.dataset.estilo === id;
+      c.classList.toggle("selecionado", sim);
+      c.setAttribute("aria-pressed", sim);
+    });
+    document.getElementById("pecas").innerHTML = prateleiraPecas(estilos, sel);
+    ligarChips();
+  };
+  const ligarChips = () => document.querySelectorAll("#pecas .chip").forEach((b) => (b.onclick = () => trocar(b.dataset.estilo)));
+  app.querySelectorAll(".estilo-cartao").forEach((c) => {
+    c.addEventListener("click", (ev) => { if (!ev.target.closest("a")) trocar(c.dataset.estilo); });
+    c.addEventListener("keydown", (ev) => {
+      if (ev.target === c && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); trocar(c.dataset.estilo); }
+    });
+  });
+  ligarChips();
+}
+
+// ------------------------------------------------------------------ detalhe do estilo
+async function telaEstilo(id) {
+  const e = await api(`/api/estilos/${encodeURIComponent(id)}`);
+  const { padrao } = e;
+  const [energia, energiaExplica] = ENERGIA[e.energia] || [rotulo(e.energia), ""];
+  const veioDoProjeto = rotaAnterior && rotaAnterior.startsWith("#/projeto/");
+  app.innerHTML = `
+  <a class="voltar" href="${veioDoProjeto ? esc(rotaAnterior) : "#/biblioteca"}">← ${veioDoProjeto ? "voltar ao projeto" : "biblioteca"}</a>
+  <div class="cabeca-projeto">
+    <div>
+      <h1 class="titulo">${esc(e.nome)}${e.dono === "seu" ? ` <span class="selo-seu">seu</span>` : ""}</h1>
+      ${e.descricao ? `<p class="lead">${esc(e.descricao)}</p>` : ""}
+    </div>
+  </div>
+  <div class="estilo-fatos">
+    <div><span class="rotulo-fato">energia</span><b>${esc(energia)}</b><small>${esc(energiaExplica)}</small></div>
+    <div><span class="rotulo-fato">bom para</span><b>${esc(e.bom_para.join(", ") || "—")}</b></div>
+    <div><span class="rotulo-fato">sua marca</span>
+      <b>${e.slots_da_marca.length ? "entra" : "não entra"}</b>
+      <small>${e.slots_da_marca.length ? `usa ${esc(marcaNoEstilo(e))}.` : "As cores e as fontes deste estilo são fixas."}
+        <a class="link" href="#/biblioteca/marca">minha marca</a></small></div>
+  </div>
+  ${e.valido ? "" : `<div class="estilo-problema papel"><b>Este estilo tem um problema e não pode ser usado agora.</b>
+    <ul>${e.erros.map((x) => `<li>${esc(x)}</li>`).join("")}</ul></div>`}
+
+  <section class="papel painel-etapa prateleira">
+    <div class="secao-topo"><div><h2 class="subtitulo">${e.variacoes.length === 1 ? "Variação" : `${e.variacoes.length} variações`}</h2>
+      <p class="explica">O mesmo jeito de mexer, com outra paleta. A que você usar como padrão vale para os vídeos novos, até o projeto escolher outra.</p></div></div>
+    <div class="variacoes-grade">${e.variacoes.map((v) => {
+      const ehPadrao = padrao.estilo === e.id && padrao.variacao === v.id;
+      return `<figure class="variacao-cartao ${ehPadrao ? "padrao" : ""}">
+        <div class="variacao-capa">${v.capa ? `<img src="${v.capa}" alt="${esc(nomeEstilo(e, v.id))}">` : `<span>sem prévia ainda</span>`}</div>
+        <figcaption>${bolinha(v)}<b>${esc(v.nome)}</b>
+          ${ehPadrao ? `<span class="selo-padrao">✓ seu padrão</span>`
+            : e.valido ? `<button class="botao claro pequeno" data-padrao="${esc(v.id)}">Usar como padrão</button>` : ""}</figcaption>
+      </figure>`;
+    }).join("")}</div>
+    ${e.demo ? `<video class="estilo-demo" src="${e.demo}" controls muted loop playsinline preload="metadata"></video>` : ""}
+  </section>
+
+  <section class="papel painel-etapa prateleira">
+    <div class="secao-topo"><div><h2 class="subtitulo">Peças</h2>
+      <p class="explica">As animações prontas que o Claude usa neste estilo, presas à palavra da fala.</p></div></div>
+    ${gradePecas(e)}
+  </section>`;
+
+  app.querySelectorAll("[data-padrao]").forEach((b) => (b.onclick = async () => {
+    b.disabled = true;
+    try {
+      const r = await api("/api/preferencias", { method: "POST", body: { estilo: e.id, variacao: b.dataset.padrao } });
+      await telaEstilo(id);
+      aviso(`<b>Pronto:</b> os vídeos novos saem no ${esc(nomeEstilo(e, r.variacao))}, a menos que o projeto escolha outro.`);
+    } catch (err) {
+      b.disabled = false;
+      aviso(`<b>Não salvou:</b> ${esc(err.message)}`);
+    }
+  }));
+}
+
+// ------------------------------------------------------------------ minha marca
+const MARCA_COR = { primaria: "Primária", secundaria: "Secundária", texto: "Texto" };
+const MARCA_COR_INICIAL = { primaria: "#2E82F7", secundaria: "#DBD653", texto: "#111111" };
+const fontesDaMarca = {};
+
+// cada fonte numa família à parte ("marca Inter"): a amostra nunca troca a fonte do painel
+function carregarFonteDaMarca(f) {
+  const familia = `marca ${f.nome}`;
+  if (!fontesDaMarca[familia]) {
+    fontesDaMarca[familia] = new FontFace(familia, `url("${f.url}")`, { weight: "100 900" }).load()
+      .then((ff) => { document.fonts.add(ff); return familia; }).catch(() => null);
+  }
+  return fontesDaMarca[familia];
+}
+
+async function telaMarca() {
+  const [m, { estilos }] = await Promise.all([api("/api/marca"), api("/api/estilos")]);
+  const cores = { ...MARCA_COR_INICIAL };
+  Object.entries(m.marca.cores).forEach(([k, v]) => { if (v) cores[k] = v; });
+  const fontes = { titulo: m.marca.fontes.titulo || "Archivo Black", texto: m.marca.fontes.texto || "Inter" };
+  const kit = m.fontes_do_kit.map((f) => f.nome);
+  const opcoes = (atual) => (atual && !kit.includes(atual) ? `<option value="${esc(atual)}" selected>${esc(atual.split("/").pop())} (sua)</option>` : "")
+    + kit.map((n) => `<option value="${esc(n)}" ${n === atual ? "selected" : ""}>${esc(n)}</option>`).join("");
+  let logoNovo = null, tirarLogo = false;
+
+  app.innerHTML = `
+  <a class="voltar" href="#/biblioteca">← biblioteca</a>
+  <div class="cabeca-projeto"><div>
+    <h1 class="titulo">Minha <span class="marca">marca</span></h1>
+    <p class="lead">Suas cores, fontes e logo. Cada estilo diz onde a marca pode entrar: assim ela aparece sem estragar o estilo.</p>
+  </div></div>
+  <div class="marca-tela">
+    <form class="papel painel-etapa marca-form" autocomplete="off">
+      <div class="campo-duplo">
+        <div class="campo"><label for="m-nome">Nome da marca</label><input id="m-nome" name="nome" value="${esc(m.marca.nome)}" placeholder="Felipe Top"></div>
+        <div class="campo"><label for="m-arroba">Seu @</label><input id="m-arroba" name="arroba" value="${esc(m.marca.arroba)}" placeholder="@seuperfil"></div>
+      </div>
+      <fieldset class="campo"><legend>Cores</legend>
+        ${Object.entries(MARCA_COR).map(([k, nome]) => `
+        <div class="cor-linha">
+          <input type="color" data-cor="${k}" value="${hex(cores[k]).toLowerCase()}" aria-label="Cor: ${nome}">
+          <span>${nome}</span>
+          <input class="hex" data-hex="${k}" value="${esc(cores[k])}" maxlength="7" spellcheck="false" aria-label="Código da cor: ${nome}">
+        </div>`).join("")}
+      </fieldset>
+      <div class="campo-duplo">
+        <div class="campo"><label for="m-titulo">Fonte do título</label><select id="m-titulo" data-fonte="titulo">${opcoes(fontes.titulo)}</select></div>
+        <div class="campo"><label for="m-texto">Fonte do texto</label><select id="m-texto" data-fonte="texto">${opcoes(fontes.texto)}</select></div>
+      </div>
+      <div class="campo"><label>Logo</label>
+        <div class="logo-linha">
+          <div class="logo-caixa" data-logo-caixa></div>
+          <div class="logo-acoes">
+            <label class="botao claro pequeno">Escolher PNG<input type="file" accept="image/png" data-logo hidden></label>
+            <button type="button" class="link" data-tirar-logo hidden>tirar o logo</button>
+            <small>PNG com fundo transparente, até 5 MB.</small>
+          </div>
+        </div>
+      </div>
+      <div class="avisos-marca" data-avisos aria-live="polite"></div>
+      <div class="erro" data-erro hidden></div>
+      <div class="modal-acoes"><button class="botao" type="submit">Salvar minha marca</button></div>
+    </form>
+    <aside class="marca-lado">
+      <div class="papel painel-etapa">
+        <h3 class="subtitulo">Como fica</h3>
+        <div class="amostra" data-amostra>
+          <img class="amostra-logo" alt="" hidden>
+          <div class="amostra-titulo"></div>
+          <div class="amostra-texto"></div>
+          <span class="amostra-faixa"></span>
+        </div>
+        <small class="mudo">Seu texto sobre a cor primária, com a secundária na faixa. É só uma amostra: no vídeo, cada estilo usa a marca do jeito dele.</small>
+      </div>
+      <div class="papel painel-etapa onde-entra">
+        <h3 class="subtitulo">Onde ela entra</h3>
+        <ul>${estilos.map((e) => `<li><a href="#/biblioteca/estilo/${esc(e.id)}">${esc(e.nome)}</a>
+          ${e.slots_da_marca.length ? `usa ${esc(marcaNoEstilo(e))}` : `<span class="mudo">não usa: cores e fontes fixas</span>`}</li>`).join("")}</ul>
+      </div>
+    </aside>
+  </div>`;
+
+  const form = app.querySelector(".marca-form");
+  const amostra = app.querySelector("[data-amostra]");
+  const caixaAvisos = form.querySelector("[data-avisos]");
+  const erro = form.querySelector("[data-erro]");
+  const mostrarErro = (msg) => { erro.hidden = !msg; erro.textContent = msg || ""; };
+
+  const pintar = () => {
+    amostra.style.background = hex(cores.primaria);
+    amostra.style.color = hex(cores.texto);
+    amostra.querySelector(".amostra-faixa").style.background = hex(cores.secundaria);
+    amostra.querySelector(".amostra-titulo").textContent = form.nome.value.trim() || "Sua marca";
+    amostra.querySelector(".amostra-texto").textContent = form.arroba.value.trim() || "o texto do vídeo fica assim";
+  };
+  const mostrarLogo = (url) => {
+    form.querySelector("[data-logo-caixa]").innerHTML = url ? `<img src="${esc(url)}" alt="seu logo">` : `<span>sem logo</span>`;
+    const img = amostra.querySelector(".amostra-logo");
+    img.hidden = !url;
+    if (url) img.src = url;
+    form.querySelector("[data-tirar-logo]").hidden = !url;
+  };
+  // o aviso de contraste vem do servidor (a conta do lib/estilo.py), enquanto a pessoa mexe
+  const mostrarAvisos = (avisos) => {
+    caixaAvisos.innerHTML = (avisos.length ? avisos.map((a) => `<p>${esc(a)}</p>`).join("")
+      : `<p class="ok">Contraste bom: o texto se lê bem sobre a cor primária.</p>`)
+      + (m.aviso_logo && !logoNovo && !tirarLogo ? `<p>${esc(m.aviso_logo)}</p>` : "");
+  };
+  let espera = null;
+  const reconferir = () => {
+    clearTimeout(espera);
+    espera = setTimeout(async () => {
+      const r = await api("/api/marca/conferir", { method: "POST", body: { cores } }).catch(() => null);
+      if (r) mostrarAvisos(r.avisos);
+    }, 250);
+  };
+  const aplicarFonte = async (qual, alvo) => {
+    const f = m.fontes_do_kit.find((x) => x.nome === fontes[qual]);
+    alvo.style.fontFamily = "";
+    const familia = f && (await carregarFonteDaMarca(f));
+    if (familia && fontes[qual] === f.nome) alvo.style.fontFamily = `"${familia}", var(--texto)`;
+  };
+
+  form.querySelectorAll("[data-cor]").forEach((inp) => inp.addEventListener("input", () => {
+    cores[inp.dataset.cor] = inp.value.toUpperCase();
+    form.querySelector(`[data-hex="${inp.dataset.cor}"]`).value = cores[inp.dataset.cor];
+    pintar(); reconferir();
+  }));
+  form.querySelectorAll("[data-hex]").forEach((inp) => inp.addEventListener("input", () => {
+    const v = (inp.value.trim().startsWith("#") ? "" : "#") + inp.value.trim();
+    if (!/^#[0-9a-f]{6}$/i.test(v)) return;
+    cores[inp.dataset.hex] = v.toUpperCase();
+    form.querySelector(`[data-cor="${inp.dataset.hex}"]`).value = v.toLowerCase();
+    pintar(); reconferir();
+  }));
+  form.nome.addEventListener("input", pintar);
+  form.arroba.addEventListener("input", pintar);
+  form.querySelectorAll("[data-fonte]").forEach((s) => s.addEventListener("change", () => {
+    fontes[s.dataset.fonte] = s.value;
+    aplicarFonte(s.dataset.fonte, amostra.querySelector(s.dataset.fonte === "titulo" ? ".amostra-titulo" : ".amostra-texto"));
+  }));
+  form.querySelector("[data-logo]").addEventListener("change", (ev) => {
+    const arq = ev.target.files[0];
+    if (!arq) return;
+    if (arq.type !== "image/png") return mostrarErro("O logo precisa ser um arquivo PNG.");
+    if (arq.size > 5_000_000) return mostrarErro("O logo passou de 5 MB. Use um PNG menor.");
+    const leitor = new FileReader();
+    leitor.onload = () => { logoNovo = leitor.result; tirarLogo = false; mostrarLogo(logoNovo); mostrarErro(""); reconferir(); };
+    leitor.readAsDataURL(arq);
+  });
+  form.querySelector("[data-tirar-logo]").onclick = () => { logoNovo = null; tirarLogo = true; mostrarLogo(null); reconferir(); };
+
+  form.onsubmit = async (ev) => {
+    ev.preventDefault();
+    const botao = form.querySelector('[type="submit"]');
+    botao.disabled = true;
+    const corpo = { nome: form.nome.value, arroba: form.arroba.value, cores, fontes };
+    if (logoNovo) corpo.logo = logoNovo;
+    else if (tirarLogo) corpo.remover_logo = true;
+    try {
+      await api("/api/marca", { method: "POST", body: corpo });
+      await telaMarca();
+      aviso(`<b>Marca salva.</b> Ela entra nos próximos vídeos, nos estilos que aceitam marca.`);
+    } catch (err) {
+      mostrarErro(err.message);
+      botao.disabled = false;
+    }
+  };
+
+  pintar();
+  mostrarLogo(m.logo);
+  if (m.existe) mostrarAvisos(m.avisos);
+  else reconferir();                       // as cores de partida também passam pela conta
+  aplicarFonte("titulo", amostra.querySelector(".amostra-titulo"));
+  aplicarFonte("texto", amostra.querySelector(".amostra-texto"));
 }
 
 // ------------------------------------------------------------------ instalação

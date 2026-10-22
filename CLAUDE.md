@@ -14,11 +14,13 @@ Vídeo longo → clipes verticais 9:16 com motion e legenda. Três skills em
   baixa; projeto do painel com `link` no `projeto.json`: `./topclip baixar projetos/<nome>`.
   Nunca peça para a pessoa baixar à mão (skill `topclip`, "Vídeo de link").
 - Antes do primeiro projeto: `./topclip verificar`. Faltou algo: `./topclip instalar`.
-- **Painel** (`./topclip painel`, código em `painel/`): o usuário escolhe momentos e
-  cortes por lá. Quando ele disser que escolheu no painel, leia
+- **Painel** (`./topclip painel`, código em `painel/`): o usuário escolhe momentos,
+  cortes e o estilo do motion por lá. Quando ele disser que escolheu no painel, leia
   `projetos/<nome>/escolhas.json` (numa conversa nova, sem projeto dito: o atualizado
   por último). Corte com entrega já está pronto — siga só com os novos, na mesma run
-  (skill `topclip`, "Voltando depois para fazer o resto"). A identidade visual do painel é a mesma do motion
+  (skill `topclip`, "Voltando depois para fazer o resto"). O estilo é o `estilo` de
+  `escolhas.json`, senão o de `minha-biblioteca/preferencias.json`, senão o Papel
+  (skill `topclip`, seção do motion). A identidade visual do painel é a mesma do motion
   (TopClip Papel) — não troque fontes nem paleta.
 - **Estilos de motion** (`./topclip estilo listar`): os oficiais em `biblioteca/estilos/`,
   os do usuário em `minha-biblioteca/estilos/`. O projeto escolhe com

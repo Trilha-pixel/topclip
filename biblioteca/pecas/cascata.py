@@ -8,9 +8,7 @@ Ideia do Animated List do Magic UI (MIT).
 `entradas`: o quadro em que cada item entra — trave cada um na palavra do transcript.
 Sem elas, o intervalo e de 3 x o stagger do perfil (no minimo 8 quadros).
 """
-from PIL import Image
-
-from .base import (circulo, cola, com_sombra, lin, linha, quebra, retangulo, traco, vazio)
+from .base import circulo, cola, com_sombra, lin, linha, quebra, retangulo, traco, vazio
 
 EXEMPLO = dict(inicio=0, fim=110, f=70, dados=dict(
     itens=["Cobra mais caro", "Atende menos clientes", "Lucra mais no fim do mês"]))
@@ -21,9 +19,10 @@ MARCADORES = ("check", "numero")
 def _cartao(texto, num, estilo, largura, tamanho, marcador, pc):
     fonte = estilo.fonte("apoio", tamanho, 600)
     pad, icone = int(tamanho * 0.62), int(tamanho * 1.05)
-    linhas = quebra(fonte, texto, largura - 3 * pad - icone)
+    linhas = quebra(fonte, estilo.caixa(texto), largura - 3 * pad - icone)
     passo = int(tamanho * 1.22)
-    h = max(icone, passo * (len(linhas) - 1) + fonte.getmetrics()[0] + fonte.getmetrics()[1]) + 2 * pad
+    alt_l = sum(fonte.getmetrics())
+    h = max(icone, passo * (len(linhas) - 1) + alt_l) + 2 * pad
     borda = (2, estilo.cor("linha")) if estilo.escuro else None
     card = retangulo(largura, h, tamanho * 0.5, estilo.cor("superficie"), borda)
     ic = circulo(icone, estilo.cor("acento"))
@@ -35,9 +34,11 @@ def _cartao(texto, num, estilo, largura, tamanho, marcador, pc):
         n = linha(str(num), estilo.fonte("numero", int(icone * 0.5), 700), estilo.cor("sobre_acento"))
         ic.alpha_composite(n, ((icone - n.width) // 2, (icone - n.height) // 2))
     card.alpha_composite(ic, (pad, (h - icone) // 2))
-    ty = (h - (passo * (len(linhas) - 1) + sum(fonte.getmetrics()))) // 2
+    ty = (h - (passo * (len(linhas) - 1) + alt_l)) // 2
+    extra = estilo.pad(fonte, estilo.cor("texto")) - 2
     for i, l in enumerate(linhas):
-        card.alpha_composite(linha(l, fonte, estilo.cor("texto")), (2 * pad + icone, ty + i * passo))
+        card.alpha_composite(estilo.linha(l, fonte, estilo.cor("texto")),
+                             (2 * pad + icone - extra, ty + i * passo - extra))
     return card if estilo.escuro else com_sombra(card, desfoque=22, opacidade=0.12, dy=8, margem=40)
 
 
@@ -64,6 +65,6 @@ def quadro(f, inicio, fim, estilo, itens, entradas=None, centro=(540, 900), larg
         k = estilo.entrada(f, e)
         if k > 0:
             cola(tela, c, (centro[0], y + a / 2), min(1.0, k) * (1 - sai),
-                 (1 - k) * 36 - sai * 18)
+                 (1 - k) * (estilo.desloca * 1.2) - sai * 18, escala=estilo.escala(k))
         y += a + espaco
     return tela

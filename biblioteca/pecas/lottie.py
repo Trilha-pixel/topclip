@@ -77,5 +77,5 @@ def quadro(f, inicio, fim, estilo, arquivo, centro=(540, 860), largura=520, slot
     cv.draw(True)
     cv.sync()
     lay = cv.get_pillow().copy()
-    cola(tela, lay, centro, min(1.0, ent) * (1 - sai), -sai * 16)
+    cola(tela, lay, centro, min(1.0, ent) * (1 - sai), -sai * 16, escala=estilo.escala(ent))
     return tela

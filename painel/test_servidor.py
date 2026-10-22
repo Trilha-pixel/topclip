@@ -1,6 +1,7 @@
 """Testes do painel. Rodam com ./topclip testes."""
 from __future__ import annotations
 
+import base64
 import json
 import shutil
 import tempfile
@@ -625,3 +626,241 @@ class MinhaBiblioteca(ComProjetosTemporarios):
     def test_midia_da_minha_biblioteca_e_permitida(self):
         self.assertTrue(S.dentro(S.MINHA / "assets" / "GARRAFA.png", S.PROJETOS, S.BIBLIOTECA, S.MINHA))
         self.assertFalse(S.dentro(S.MINHA / ".." / "README.md", S.PROJETOS, S.BIBLIOTECA, S.MINHA))
+
+
+def um_png(alfa=True, largura=2):
+    """PNG feito à mão (o painel não usa PIL): RGBA, ou RGB sem transparência."""
+    import struct
+    import zlib
+    tipo, px = (6, b"\x00\x00\x00\x00") if alfa else (2, b"\xff\x00\x00")
+    linhas = b"".join(b"\x00" + px * largura for _ in range(2))
+    bloco = lambda t, d: struct.pack(">I", len(d)) + t + d + struct.pack(">I", zlib.crc32(t + d))
+    return (b"\x89PNG\r\n\x1a\n" + bloco(b"IHDR", struct.pack(">IIBBBBB", largura, 2, 8, tipo, 0, 0, 0))
+            + bloco(b"IDAT", zlib.compress(linhas)) + bloco(b"IEND", b""))
+
+
+class EstilosMarcaPreferencias(ComProjetosTemporarios):
+    """A fase 4 da docs/proposta-estilos.md (seção 12): a estante de estilos, a marca, o
+    padrão da pessoa e a escolha do estilo no projeto. A minha-biblioteca vai para a pasta
+    temporária; os estilos oficiais são os do repositório."""
+    pedir = Http.pedir
+
+    def setUp(self):
+        super().setUp()
+        self._orig_estilos = (S.MINHA, S.ATV.PROJETOS)
+        S.MINHA = self.tmp / "minha-biblioteca"
+        S.ATV.PROJETOS = S.PROJETOS
+        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), S.Painel)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
+
+    def tearDown(self):
+        self.srv.shutdown()
+        self.srv.server_close()
+        S.MINHA, S.ATV.PROJETOS = self._orig_estilos
+        super().tearDown()
+
+    def postar(self, rota, dados):
+        return self.pedir(rota, {"Content-Type": "application/json", "Origin": self.base}, dados)
+
+    def meu_estilo(self, eid="meu-limpo", **troca):
+        """Um estilo do usuário: cópia do Limpo com outro id e origem "meu"."""
+        pasta = S.MINHA / "estilos" / eid
+        shutil.copytree(S.BIBLIOTECA / "estilos" / "limpo", pasta)
+        est = json.loads((pasta / "estilo.json").read_text(encoding="utf-8"))
+        est.update(id=eid, nome="Meu Limpo", origem="meu", **troca)
+        (pasta / "estilo.json").write_text(json.dumps(est, ensure_ascii=False), encoding="utf-8")
+        return pasta
+
+    def quebrado(self):
+        pasta = S.MINHA / "estilos" / "quebrado"
+        pasta.mkdir(parents=True)
+        (pasta / "estilo.json").write_text('{"id": "quebrado", "nome": "Quebrado"}', encoding="utf-8")
+
+    # -- estilos
+    def test_lista_os_oficiais_e_os_seus(self):
+        self.meu_estilo()
+        self.meu_estilo("limpo")                      # mesmo id de um oficial: vale o oficial
+        self.quebrado()
+        status, _, corpo = self.pedir("/api/estilos")
+        self.assertEqual(status, 200)
+        d = json.loads(corpo)
+        ids = [e["id"] for e in d["estilos"]]
+        por_id = {e["id"]: e for e in d["estilos"]}
+        self.assertEqual(ids[0], "papel")                                     # o padrão na frente
+        self.assertEqual(ids.count("limpo"), 1)
+        self.assertEqual((por_id["limpo"]["nome"], por_id["limpo"]["dono"]), ("Limpo", "oficial"))
+        self.assertEqual(ids[-2:], ["meu-limpo", "quebrado"])                 # os seus depois dos oficiais
+        self.assertEqual((por_id["papel"]["valido"], por_id["papel"]["energia"]), (True, "editorial"))
+        limpo = por_id["limpo"]
+        self.assertEqual([v["id"] for v in limpo["variacoes"]], ["claro", "escuro"])
+        self.assertIn("/midia/biblioteca/estilos/limpo/preview/capa.png", limpo["variacoes"][0]["capa"])
+        self.assertIn("/preview/capa-escuro.png", limpo["variacoes"][1]["capa"])
+        oficial = json.loads((S.BIBLIOTECA / "estilos" / "limpo" / "estilo.json").read_text(encoding="utf-8"))
+        self.assertEqual(limpo["variacoes"][1]["fundo"], oficial["variacoes"]["escuro"]["tokens"]["cor.fundo"])
+        self.assertTrue(limpo["bom_para"])
+        self.assertEqual((por_id["meu-limpo"]["dono"], por_id["meu-limpo"]["valido"]), ("seu", True))
+        self.assertFalse(por_id["quebrado"]["valido"])
+        self.assertTrue(por_id["quebrado"]["erros"])
+        self.assertEqual(d["padrao"], {"estilo": "papel", "variacao": "marfim", "salvo": False})
+        status, cab, _ = self.pedir(limpo["capa"])                              # a capa sai pelo /midia
+        self.assertEqual((status, cab["Content-Type"]), (200, "image/png"))
+
+    def test_detalhe_do_estilo(self):
+        status, _, corpo = self.pedir("/api/estilos/limpo")
+        self.assertEqual(status, 200)
+        d = json.loads(corpo)
+        pecas = {p["id"]: p["imagem"] for p in d["pecas"]}
+        self.assertIn("/preview/pecas/contador.png", pecas["contador"])
+        self.assertEqual(self.pedir(pecas["contador"])[0], 200)
+        self.assertIn("cor.acento", d["slots_da_marca"])
+        self.assertEqual(d["padrao"]["estilo"], "papel")
+        self.assertEqual(json.loads(self.pedir("/api/estilos/papel")[2])["pecas"], [])
+        for rota in ("/api/estilos/nao-existe", "/api/estilos/..", "/api/estilos/%2E%2E%2Fpainel", "/api/estilos/A"):
+            self.assertEqual(self.pedir(rota)[0], 404, rota)
+
+    # -- marca
+    def test_marca_grava_no_formato_da_proposta_e_le(self):
+        png = um_png()
+        status, _, corpo = self.postar("/api/marca", {
+            "nome": "Felipe Top", "arroba": "@realfelipetop",
+            "cores": {"primaria": "#2e82f7", "secundaria": "#DBD653", "texto": "#111111"},
+            "fontes": {"titulo": "Archivo Black", "texto": "Inter"},
+            "logo": "data:image/png;base64," + base64.b64encode(png).decode()})
+        self.assertEqual(status, 200, corpo)
+        gravado = json.loads((S.MINHA / "marca" / "marca.json").read_text(encoding="utf-8"))
+        self.assertEqual(gravado, {"nome": "Felipe Top", "arroba": "@realfelipetop",
+                                   "cores": {"primaria": "#2E82F7", "secundaria": "#DBD653", "texto": "#111111"},
+                                   "fontes": {"titulo": "Archivo Black", "texto": "Inter"}, "logo": "logo.png"})
+        self.assertEqual((S.MINHA / "marca" / "logo.png").read_bytes(), png)
+        lido = json.loads(self.pedir("/api/marca")[2])
+        self.assertTrue(lido["existe"])
+        self.assertEqual(lido["marca"]["cores"]["primaria"], "#2E82F7")
+        self.assertEqual((lido["avisos"], lido["aviso_logo"]), ([], None))       # contraste bom, PNG com alfa
+        self.assertEqual(self.pedir(lido["logo"])[0], 200)
+        self.assertIn("Inter", [f["nome"] for f in lido["fontes_do_kit"]])
+        # o motion enxerga a marca que o painel gravou
+        r = S.modulo_estilo().resolver(S.BIBLIOTECA / "estilos" / "limpo", None, S.MINHA / "marca")
+        self.assertIn("cor.acento", r["marca"]["aplicado"])
+        self.assertIn("logo", r["marca"]["aplicado"])
+        # salvar só a cor não apaga o resto; tirar o logo tira do marca.json
+        self.postar("/api/marca", {"cores": {"secundaria": "#C94850"}, "remover_logo": True})
+        gravado = json.loads((S.MINHA / "marca" / "marca.json").read_text(encoding="utf-8"))
+        self.assertEqual((gravado["cores"]["secundaria"], gravado["cores"]["primaria"]), ("#C94850", "#2E82F7"))
+        self.assertNotIn("logo", gravado)
+        self.assertEqual(gravado["fontes"]["titulo"], "Archivo Black")
+
+    def test_marca_avisa_contraste_ruim_e_logo_sem_transparencia(self):
+        status, _, corpo = self.postar("/api/marca", {"cores": {"primaria": "#888888", "texto": "#777777"},
+                                                      "logo": base64.b64encode(um_png(alfa=False)).decode()})
+        self.assertEqual(status, 200)                              # é aviso, não erro: grava
+        d = json.loads(corpo)
+        self.assertTrue(any("4,5:1" in a for a in d["avisos"]), d["avisos"])
+        self.assertIn("transparente", d["aviso_logo"])
+        # o estilo que deixa a marca trocar a cor do texto: abaixo do mínimo, avisa qual
+        pasta = self.meu_estilo("texto-livre", slots_da_marca=["cor.acento", "cor.texto"])
+        fundo_claro = S.modulo_estilo().token(json.loads((pasta / "tokens.json").read_text(encoding="utf-8")), "cor.fundo")
+        avisos = S.avisos_da_marca({"cores": {"texto": fundo_claro}})
+        self.assertTrue(any("Meu Limpo" in a and "Claro" in a and "Escuro" not in a for a in avisos), avisos)
+        # a rota do aviso ao vivo faz a mesma conta
+        r = json.loads(self.postar("/api/marca/conferir", {"cores": {"primaria": "#888888", "texto": "#777777"}})[2])
+        self.assertTrue(any("4,5:1" in a for a in r["avisos"]))
+
+    def test_marca_recusa_o_que_nao_serve_sem_gravar_nada(self):
+        self.postar("/api/marca", {"cores": {"primaria": "#2E82F7"}})
+        antes = (S.MINHA / "marca" / "marca.json").read_bytes()
+        b64 = base64.b64encode
+        for dados in ({"cores": {"texto": "preto"}}, {"fontes": {"titulo": "Comic Sans"}},
+                      {"fontes": {"titulo": "../../servidor.py"}}, {"logo": b64(b"GIF89a" + b"x" * 40).decode()},
+                      {"logo": "isso não é base64"}, {"cores": {"primaria": "#123456"}, "logo": b64(b"x").decode()}):
+            status, _, corpo = self.postar("/api/marca", dados)
+            self.assertEqual(status, 400, dados)
+            self.assertIn("erro", json.loads(corpo))
+        self.assertEqual((S.MINHA / "marca" / "marca.json").read_bytes(), antes)
+        self.assertFalse((S.MINHA / "marca" / "logo.png").exists())
+        status = self.pedir("/api/marca", {"Content-Type": "application/json", "Origin": "https://site-malicioso.com"},
+                            {"nome": "invasao"})[0]
+        self.assertEqual(status, 403)
+
+    def test_logo_maior_que_1_mb_passa_pelo_limite_do_pedido(self):
+        grande = um_png() + bytes(1_500_000)          # o painel só lê o cabeçalho do PNG
+        status, _, corpo = self.postar("/api/marca", {"logo": base64.b64encode(grande).decode()})
+        self.assertEqual(status, 200, corpo[:200])
+        self.assertEqual((S.MINHA / "marca" / "logo.png").stat().st_size, len(grande))
+
+    # -- preferências
+    def test_preferencias_padrao_gravar_e_recusar(self):
+        self.assertEqual(json.loads(self.pedir("/api/preferencias")[2]),
+                         {"estilo": "papel", "variacao": "marfim", "salvo": False})
+        S.MINHA.mkdir(parents=True)
+        (S.MINHA / "preferencias.json").write_text('{"outra": 1}', encoding="utf-8")
+        status, _, corpo = self.postar("/api/preferencias", {"estilo": "limpo", "variacao": "escuro"})
+        self.assertEqual(status, 200, corpo)
+        self.assertEqual(json.loads((S.MINHA / "preferencias.json").read_text(encoding="utf-8")),
+                         {"outra": 1, "estilo": "limpo", "variacao": "escuro"})     # as outras chaves ficam
+        self.assertEqual(json.loads(self.pedir("/api/preferencias")[2]),
+                         {"estilo": "limpo", "variacao": "escuro", "salvo": True})
+        self.assertEqual(json.loads(self.postar("/api/preferencias", {"estilo": "limpo"})[2])["variacao"], "claro")
+        self.quebrado()
+        for dados in ({"estilo": "nao-existe"}, {"estilo": "limpo", "variacao": "neon"}, {"estilo": "../papel"},
+                      {"estilo": "quebrado"}):
+            self.assertEqual(self.postar("/api/preferencias", dados)[0], 400, dados)
+        self.assertEqual(json.loads(self.pedir("/api/preferencias")[2])["estilo"], "limpo")
+        # o projeto sem escolha usa o padrão
+        S.criar_projeto("Sem Escolha", "")
+        est = S.detalhe(S.PROJETOS / "sem-escolha")["estilo"]
+        self.assertEqual((est["escolhido"], est["vale"], est["nome"]), (None, {"id": "limpo", "variacao": "claro"}, "Limpo · Claro"))
+        # padrão que sumiu da biblioteca volta para o Papel
+        (S.MINHA / "preferencias.json").write_text('{"estilo": "apagado", "variacao": "x"}', encoding="utf-8")
+        self.assertEqual(S.preferencias()["estilo"], "papel")
+
+    # -- a escolha no projeto
+    def test_escolha_do_estilo_nao_apaga_momentos_e_cortes(self):
+        S.criar_projeto("Com Estilo", "")
+        proj = S.PROJETOS / "com-estilo"
+        S.salvar_escolhas(proj, {"momentos": ["moment-001"], "cortes": ["clip-002"]})
+        status, _, corpo = self.postar("/api/projetos/com-estilo/escolhas", {"estilo": {"id": "limpo", "variacao": "escuro"}})
+        self.assertEqual(status, 200, corpo)
+        esc = json.loads((proj / "escolhas.json").read_text(encoding="utf-8"))
+        self.assertEqual(esc["estilo"], {"id": "limpo", "variacao": "escuro"})
+        self.assertEqual((esc["momentos"], esc["cortes"]), (["moment-001"], ["clip-002"]))
+        S.salvar_escolhas(proj, {"cortes": ["clip-003"]})                    # e o resto não apaga o estilo
+        self.assertEqual(json.loads((proj / "escolhas.json").read_text(encoding="utf-8"))["estilo"],
+                         {"id": "limpo", "variacao": "escuro"})
+        d = S.detalhe(proj)["estilo"]
+        self.assertEqual((d["vale"], d["nome"]), ({"id": "limpo", "variacao": "escuro"}, "Limpo · Escuro"))
+        a = S.atividade(proj)
+        self.assertEqual(a["estado"], "avisar_claude")                          # agora é dizer ao Claude
+        self.assertTrue(any(e["msg"] == "você escolheu o estilo Limpo · Escuro para o motion" and e["etapa"] == "motion"
+                            for e in a["eventos"]))
+        # sem variação, a primeira; inválido: recusa sem tocar no arquivo
+        self.assertEqual(S.salvar_escolhas(proj, {"estilo": {"id": "papel"}})["estilo"], {"id": "papel", "variacao": "marfim"})
+        antes = (proj / "escolhas.json").read_bytes()
+        for e in ({"id": "nao-existe"}, {"id": "limpo", "variacao": "neon"}, {"id": "../limpo"}):
+            self.assertEqual(self.postar("/api/projetos/com-estilo/escolhas", {"estilo": e})[0], 400, e)
+        self.assertEqual((proj / "escolhas.json").read_bytes(), antes)
+        # null volta para o padrão, e os cortes continuam
+        S.salvar_escolhas(proj, {"estilo": None})
+        esc = json.loads((proj / "escolhas.json").read_text(encoding="utf-8"))
+        self.assertNotIn("estilo", esc)
+        self.assertEqual(esc["cortes"], ["clip-003"])
+        self.assertEqual(S.detalhe(proj)["estilo"]["vale"], {"id": "papel", "variacao": "marfim"})
+
+    def test_estilo_recomendado_pelo_claude(self):
+        S.criar_projeto("Recomendado", "")
+        proj = S.PROJETOS / "recomendado"
+        info = json.loads((proj / "projeto.json").read_text(encoding="utf-8"))
+        for rec, esperado in (({"id": "limpo", "variacao": "escuro", "porque": "aula calma"},
+                               {"id": "limpo", "variacao": "escuro", "porque": "aula calma"}),
+                              ("papel", {"id": "papel"}), ("nao-existe", None)):
+            info["estilo_recomendado"] = rec
+            (proj / "projeto.json").write_text(json.dumps(info), encoding="utf-8")
+            self.assertEqual(S.detalhe(proj)["estilo"]["recomendado"], esperado, rec)
+
+    def test_motion_mostra_o_estilo_que_congelou(self):
+        m = S.PROJETOS / "x" / "motion" / "clip-001"
+        (m / "estilo").mkdir(parents=True)
+        shutil.copy2(S.BIBLIOTECA / "estilos" / "limpo" / "estilo.json", m / "estilo" / "estilo.json")
+        (m / "estilo" / "resolvido.json").write_text('{"id": "limpo", "nome": "Limpo", "variacao": "escuro"}')
+        self.assertEqual(S.estilo_do_motion(m), "Limpo · Escuro")
+        self.assertIsNone(S.estilo_do_motion(S.PROJETOS / "x" / "motion" / "sem-estilo"))

@@ -10,10 +10,10 @@ interface e docs/proposta-estilos.md (secao 8) para o plano.
 O `./topclip motion novo` copia esta pasta para `<projeto>/pecas/`: o projeto congela a
 versao das pecas junto com a do estilo.
 """
-from . import (antes_depois, cartao, cascata, contador, desfoque, lottie, marca_texto,
-               troca_palavra)
-from .base import Estilo, W, H, carregar, cola, fundo, lin, vazio
+from . import (antes_depois, brilho, cartao, cascata, contador, desfoque, lottie, marca_texto,
+               moldura, troca_palavra)
+from .base import Estilo, W, H, carregar, cinema, cola, fundo, lin, vazio
 
 TODAS = {"contador": contador, "marca_texto": marca_texto, "troca_palavra": troca_palavra,
          "desfoque": desfoque, "cascata": cascata, "antes_depois": antes_depois,
-         "cartao": cartao, "lottie": lottie}
+         "cartao": cartao, "lottie": lottie, "moldura": moldura, "brilho": brilho}

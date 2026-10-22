@@ -65,6 +65,22 @@ class TestPecasNosEstilos(unittest.TestCase):
         self.assertGreaterEqual(feitos, 16)      # Limpo: 8 pecas x claro e escuro
 
 
+class TestComposeDosEstilos(unittest.TestCase):
+    def test_cenas_exemplo_de_cada_estilo_com_codigo(self):
+        """O compose.py de cada estilo oficial: --check passa e todo END desenha algo."""
+        for pasta in sorted(p.parent for p in OFICIAIS.glob("*/compose.py")):
+            with tempfile.TemporaryDirectory(prefix="topclip-compose-") as d:
+                proj = Path(d) / "p"
+                r = _topclip("motion", "novo", str(proj), "--estilo", pasta.name, "--sem-marca")
+                self.assertEqual(r.returncode, 0, r.stderr)
+                self.assertIn("OK", _roda(["compose.py", "--check"], proj))
+                out = _roda(["-c", "import compose as C\n"
+                                   "for s, (fn, st, fx) in C.SCENES.items():\n"
+                                   "    assert fx is None and fn(st['END'], overlay_only=True).getbbox(), s\n"
+                                   "    print(s)\n"], proj)
+                self.assertIn("M1", out, pasta.name)
+
+
 class TestPecas(unittest.TestCase):
     def test_curvas(self):
         e = bezier(0, 0, 0.38, 0.9)
@@ -100,6 +116,55 @@ class TestPecas(unittest.TestCase):
         self.assertEqual(est.hexa("superficie"), r["cor"]["fundo"])
         self.assertEqual(est.hexa("apoio"), r["cor"]["texto"])
         self.assertIn(est.hexa("sobre_acento"), ("#FFFFFF", "#111111"))
+
+
+class TestTipografiaEMovimento(unittest.TestCase):
+    """Fase 3: a tipografia e o movimento vem do estilo, e as pecas obedecem sozinhas."""
+
+    def test_impacto_caixa_alta_contorno_e_pop(self):
+        imp = _estilo(OFICIAIS / "impacto")
+        self.assertEqual(imp.caixa("Preço baixo"), "PREÇO BAIXO")
+        f = imp.fonte("titulo", 100)
+        e = imp.efeitos(f, imp.cor("texto"))
+        self.assertEqual((e["contorno"], e["sombra"]), (7, (0, 7)))
+        # letra preta sobre o amarelo vai sem contorno preto (senao vira borrao)
+        self.assertEqual(imp.efeitos(f, imp.cor("sobre_acento"))["contorno"], 0)
+        self.assertGreater(max(imp.escala(imp.e_entrada(t / 20)) for t in range(21)), 1.05)
+        self.assertEqual(imp.desloca, 0)
+
+    def test_limpo_e_luxo_sem_efeito_e_sem_pop(self):
+        for nome in ("limpo", "luxo"):
+            est = _estilo(OFICIAIS / nome)
+            self.assertEqual(est.caixa("Preço"), "Preço")
+            self.assertEqual(est.efeitos(est.fonte("titulo", 100))["contorno"], 0)
+            self.assertEqual(est.escala(0.3), 1.0)
+
+    def test_luxo_fixa_o_peso_fino(self):
+        from pecas.base import abre_fonte
+        luxo = _estilo(OFICIAIS / "luxo")
+        fino = luxo.fonte("titulo", 100, 700)            # a peca pede 700, o estilo entrega 380
+        pesado = abre_fonte(luxo.caminho_fonte("titulo"), 100, 700)
+        self.assertLess(fino.getlength("Mentoria"), pesado.getlength("Mentoria"))
+
+    def test_legenda_impacto_destaque_em_cor_sem_caixa(self):
+        leg = PL.para(_estilo(OFICIAIS / "impacto"))
+        im = leg.draw({"txt": "piores", "enf": True, "cor": (1, 1, 1)}, 99, 30, (1330, 1120))
+        import numpy as np
+        px = np.asarray(im.convert("RGBA")).reshape(-1, 4)
+        amarelo = ((px[:, 0] > 230) & (px[:, 1] > 210) & (px[:, 2] < 40) & (px[:, 3] > 200)).sum()
+        self.assertGreater(int(amarelo), 2000)           # a palavra em amarelo...
+        bb = im.getbbox()
+        self.assertLess(bb[2] - bb[0], 700)              # ...sem pilula larga em volta
+
+    def test_cinema_e_moldura(self):
+        luxo = _estilo(OFICIAIS / "luxo")
+        c = P.cinema(40, 0, 100, luxo)
+        self.assertEqual(c.getpixel((540, 5))[3], 255)        # faixa de cima
+        self.assertEqual(c.getpixel((540, 960))[3], 0)        # o meio fica livre
+        self.assertIsNone(P.cinema(40, 50, 100, luxo).getbbox())
+        m = P.moldura.quadro(60, 0, 96, luxo, caixa=(150, 560, 930, 1360))
+        self.assertIsNotNone(m.getbbox())
+        self.assertEqual(m.getpixel((540, 960))[3], 0)        # moldura e so o filete
 
 
 class TestLegenda(unittest.TestCase):

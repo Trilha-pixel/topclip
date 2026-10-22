@@ -1,11 +1,15 @@
 # Proposta: estilos de motion e a nova Biblioteca
 
-> **Estado: APROVADA. Fases 1 e 2 implementadas** em 2026-10-22.
+> **Estado: APROVADA. Fases 1, 2 e 3 implementadas** em 2026-10-22.
 > Fase 1: `lib/estilo.py`, `biblioteca/estilos/papel/`, `./topclip estilo listar|validar`,
 > `motion novo --estilo`, `minha-biblioteca/` e a regressão do Papel (`tests/test_estilo.py`).
 > Fase 2: as 8 peças em `biblioteca/pecas/`, a legenda por estilo, o estilo Limpo (claro e
 > escuro), `./topclip estilo previa` e o rascunho do clip-010 no Limpo (`tests/test_pecas.py`).
-> As fases 3 em diante ainda são proposta. O que mudou no caminho está na seção 16.
+> Fase 3: tipografia e pop por estilo, as peças `moldura` e `brilho`, o `cinema`, os estilos
+> Impacto (amarelo, verde) e Luxo (latão, bordô, marfim), e o clip-010 nos três estilos com
+> as MESMAS cenas. Fase 4: a aba Biblioteca, o detalhe do estilo, a escolha do estilo na
+> etapa Motion e Minha marca no painel. As fases 5 e v2 ainda são proposta.
+> O que mudou no caminho está na seção 16.
 > Base: a pesquisa de 2026-10-22 (bibliotecas web de motion, caminhos de renderização,
 > tendências de 2026, guias de motion, concorrentes) e o teste do Lottie sobre o clip-010.
 
@@ -434,8 +438,8 @@ Cada fase termina com `./topclip testes` e `./topclip verificar` passando.
 | --- | --- | --- |
 | 1. Fundação ✓ | formato do pacote, validador, `minha-biblioteca/`, `motion novo --estilo`, Papel como pacote, teste de regressão | feito em 2026-10-22 |
 | 2. Peças + Limpo ✓ | as 8 peças em `traco: "limpo"`, o estilo Limpo completo (com legenda), um clipe real no Limpo | feito em 2026-10-22 |
-| 3. Impacto + Luxo | os dois estilos, a legenda `pop`, as variações | médio |
-| 4. Painel | Biblioteca, detalhe, escolha na etapa de motion, Minha marca | médio |
+| 3. Impacto + Luxo ✓ | os dois estilos, a legenda `pop`, as variações | feito em 2026-10-22 |
+| 4. Painel ✓ | Biblioteca, detalhe, escolha na etapa de motion, Minha marca | feito em 2026-10-22 |
 | 5. Meu estilo | criar com o Claude, remixar, exportar e importar | médio |
 | v2 | vitrine da comunidade com CI | médio |
 
@@ -475,3 +479,44 @@ Decidido no caminho, com o motivo:
   e fonte que falta cai em `apoio`. Assim um estilo criado pelo usuário serve a toda peça.
 - **O Limpo tem uma animação Lottie própria** (`lottie/check.json`, MIT, cor no slot
   `acento`), feita à mão no formato Lottie — nenhum arquivo de terceiros no repositório.
+
+Fase 3:
+
+- **`$extensions.topclip.tipografia`** (opcional): `caixa_alta`, `contorno` e `sombra_dura`
+  em fração do corpo, `cor_contorno`, `peso` por papel de fonte e `tracking` por papel.
+  As peças escrevem por `Estilo.linha/bloco/caixa` e herdam tudo: o Impacto ganha caixa
+  alta com contorno sem uma linha nas peças, o Luxo ganha títulos finos (380) onde a peça
+  pede 700. **Texto da cor do contorno vai sem efeito** (preto sobre o amarelo virava
+  borrão com contorno preto).
+- **Perfis ganharam `escala_entrada` e `deslocamento_entrada`.** No enérgico, a peça nasce
+  pequena e passa do tamanho (~110%) pela curva que passa de 1 — o "pop" —, sem deslizar.
+  Calmo e editorial seguem deslizando, sem escala.
+- **Peças novas:** `moldura` (filete duplo que se desenha, com leques Art Deco) e `brilho`
+  (reflexo que passa uma vez no título). Helper novo: `P.cinema` (faixas de letterbox).
+- **`legenda.json` ganhou `destaque_modo`** (`pilula` ou `texto`), **`sombra_dura`** (px) e
+  **`entrada_s`**. Com `destaque_modo: "texto"` a palavra muda de cor e fica na caixa da
+  legenda, se houver (Luxo), ou solta com contorno (Impacto).
+- **A legenda do Luxo ganhou faixa preta translúcida**: a itálica fina marfim sumia na
+  camisa branca do clip-010, como o branco do Limpo antes da etiqueta. Toda legenda nova
+  precisa ser vista sobre roupa clara antes de aprovar.
+- **A fonte Anton ganhou o `OFL-Anton.txt`** (copyright lido da própria fonte): ela viajava
+  no kit sem o arquivo de licença.
+- **Prova da arquitetura:** o clip-010 saiu no Limpo, no Impacto e no Luxo com o mesmo
+  `compose.py`, sem mudar uma linha — só o `--estilo` do `motion novo`.
+
+Fase 4 (painel):
+
+- **O padrão do usuário mora em `minha-biblioteca/preferencias.json`**
+  (`{"estilo", "variacao"}`). A escolha do projeto vale primeiro, depois a preferência, e
+  por último o Papel.
+- **O selo "recomendado" lê `estilo_recomendado` do `projeto.json`**, que a skill `topclip`
+  passa a gravar.
+- **Rota extra `POST /api/marca/conferir`**, para o aviso de contraste ao vivo. O contraste
+  é medido contra a cor primária e contra o fundo de cada estilo que deixa a marca trocar a
+  cor do texto.
+- **"Seus assets" virou "Objetos desenhados"** na tela, porque "assets" é jargão.
+- **Ficou para depois:**
+  - o quadro do clipe do próprio usuário em cada estilo (por enquanto, a prévia do pacote);
+  - as prévias das peças por variação (hoje, só a da primeira);
+  - a legenda de exemplo e a demo em vídeo no detalhe;
+  - fonte própria da marca no formulário (só as fontes do kit).

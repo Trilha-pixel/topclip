@@ -423,7 +423,8 @@ def detalhe(proj: Path) -> dict:
         rascunhos = sorted((m / "12_master").glob("RASCUNHO*.mp4"))
         motion.append({"nome": m.name, "quadros": [url_midia(q) for q in quadros[:12]],
                        "master": url_midia(master) if master else None,
-                       "rascunho": url_midia(rascunhos[-1]) if rascunhos and not master else None})
+                       "rascunho": url_midia(rascunhos[-1]) if rascunhos and not master else None,
+                       "estilo": estilo_do_motion(m)})
 
     entregas = [{"nome": e.stem, "video": url_midia(e), "mb": round(e.stat().st_size / 1e6, 1)}
                 for e in sorted((proj / "entregas").glob("*.mp4"))]
@@ -431,6 +432,7 @@ def detalhe(proj: Path) -> dict:
     return {**base, "run": run.name if run else None, "momentos": momentos, "cortes": cortes,
             "gate": doc_cortes.get("estimate_gate") or doc_momentos.get("estimate_gate") or 7.5,
             "verticais": verticais, "motion": motion, "entregas": entregas, "escolhas": escolhas,
+            "estilo": estilo_do_projeto(proj, escolhas),
             # baixado pelo link, o vídeo mora na pasta do projeto: apagar leva ele junto
             "video_no_projeto": bool(base["video"]) and dentro(Path(base["video"]).expanduser(), proj)}
 
@@ -474,6 +476,306 @@ def biblioteca() -> dict:
             itens.append({"arquivo": p.name, "url": url_midia(p), "dono": dono,
                           **linhas.get(p.name, {})})
     return {"assets": itens}
+
+
+# ------------------------------------------------------------------ estilos, marca e preferências
+# Os pacotes de estilo (docs/proposta-estilos.md): os oficiais em biblioteca/estilos/, os do
+# usuário em minha-biblioteca/estilos/. Quem confere o pacote e mede o contraste é o
+# lib/estilo.py da skill de motion — o painel só lê. O visual de cada estilo aparece só
+# nas prévias (preview/*.png, de `./topclip estilo previa`): nada é desenhado aqui.
+ESTILO_PY = RAIZ / ".claude" / "skills" / "topclip-motion" / "lib" / "estilo.py"
+RE_ESTILO = re.compile(r"[a-z0-9][a-z0-9-]{1,30}")
+CONTRASTE_MIN = 4.5                 # o mesmo mínimo do resolver para a cor de texto da marca
+LOGO_MAX = 5_000_000                # bytes do PNG; em base64 o pedido chega ~1/3 maior
+MARCA_CORES = {"primaria": "primária", "secundaria": "secundária", "texto": "do texto"}
+MARCA_FONTES = {"titulo": "do título", "texto": "do texto"}
+_estilo_mod = None
+
+
+def modulo_estilo():
+    """O lib/estilo.py da skill, carregado pelo caminho: não mora num pacote do painel."""
+    global _estilo_mod
+    if _estilo_mod is None:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("topclip_estilo", ESTILO_PY)
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        _estilo_mod = mod
+    return _estilo_mod
+
+
+def pastas_de_estilos() -> list[tuple[Path, str]]:
+    return [(BIBLIOTECA / "estilos", "oficial"), (MINHA / "estilos", "seu")]
+
+
+def achar_estilo(eid) -> Path | None:
+    """Oficial primeiro, como o `estilo.achar`: um estilo seu com o mesmo id não o esconde."""
+    if not isinstance(eid, str) or not RE_ESTILO.fullmatch(eid):
+        return None
+    for base, _ in pastas_de_estilos():
+        if (base / eid / "estilo.json").is_file():
+            return base / eid
+    return None
+
+
+def _url_se_existe(p: Path):
+    # ?v=: a prévia regerada no mesmo nome não fica presa no cache do navegador
+    return f"{url_midia(p)}?v={p.stat().st_mtime_ns}" if p.is_file() else None
+
+
+def _ler_dict(p: Path) -> dict:
+    """JSON de um pacote que pode ter sido escrito à mão: o que não for objeto vira {}."""
+    d = ler_json(p, {})
+    return d if isinstance(d, dict) else {}
+
+
+def _lista(v) -> list:
+    return [x for x in v if isinstance(x, str)] if isinstance(v, list) else []
+
+
+def _variacoes(est: dict) -> dict:
+    v = est.get("variacoes")
+    return {k: x for k, x in v.items() if isinstance(x, dict)} if isinstance(v, dict) else {}
+
+
+def resumo_estilo(pasta: Path, dono: str) -> dict:
+    mod = modulo_estilo()
+    est = _ler_dict(pasta / "estilo.json")
+    tok = _ler_dict(pasta / "tokens.json")
+    try:
+        erros, avisos = mod.validar(pasta)
+    except Exception as e:              # pacote quebrado não derruba a aba
+        erros, avisos = [f"não consegui conferir o pacote: {e}"], []
+    variacoes = []
+    for i, (vid, v) in enumerate(_variacoes(est).items()):
+        troca = v.get("tokens") if isinstance(v.get("tokens"), dict) else {}
+        cor = lambda c: troca.get(f"cor.{c}") or mod.token(tok, f"cor.{c}")
+        # a capa da 1a variação é a capa.png; as outras, capa-<variação>.png (`estilo previa`)
+        capa = pasta / "preview" / ("capa.png" if i == 0 else f"capa-{vid}.png")
+        variacoes.append({"id": vid, "nome": v.get("nome") or vid, "capa": _url_se_existe(capa),
+                          "fundo": cor("fundo"), "acento": cor("acento"), "texto": cor("texto")})
+    pecas = [{"id": x, "imagem": _url_se_existe(pasta / "preview" / "pecas" / f"{x}.png")}
+             for x in _lista(est.get("pecas")) if RE_ESTILO.fullmatch(x.replace("_", "-"))]
+    return {
+        "id": pasta.name, "nome": str(est.get("nome") or pasta.name), "descricao": str(est.get("descricao") or ""),
+        "energia": est.get("energia"), "bom_para": _lista(est.get("bom_para")), "versao": est.get("versao"),
+        "origem": est.get("origem"), "dono": dono, "variacoes": variacoes,
+        "capa": variacoes[0]["capa"] if variacoes else None, "pecas": pecas,
+        "slots_da_marca": _lista(est.get("slots_da_marca")),
+        "demo": _url_se_existe(pasta / "preview" / "demo.mp4"),
+        "valido": not erros, "erros": erros, "avisos": avisos,
+    }
+
+
+def estilos() -> dict:
+    """Oficiais e os seus, o padrão (o Papel) na frente; um id repetido vale o oficial."""
+    padrao = getattr(modulo_estilo(), "PADRAO", "papel")
+    vistos, lista = set(), []
+    for base, dono in pastas_de_estilos():
+        for p in sorted(base.glob("*/estilo.json")) if base.is_dir() else []:
+            if p.parent.name not in vistos:
+                vistos.add(p.parent.name)
+                lista.append(resumo_estilo(p.parent, dono))
+    lista.sort(key=lambda e: (e["dono"] != "oficial", e["id"] != padrao))
+    return {"estilos": lista, "padrao": preferencias()}
+
+
+def estilo_detalhe(eid: str) -> dict | None:
+    pasta = achar_estilo(eid)
+    if not pasta:
+        return None
+    dono = "oficial" if pasta.parent == BIBLIOTECA / "estilos" else "seu"
+    return {**resumo_estilo(pasta, dono), "padrao": preferencias()}
+
+
+def conferir_escolha(eid, variacao=None) -> dict:
+    """{"id", "variacao"} de um estilo que existe e passa no validador. Sem variação, a primeira."""
+    pasta = achar_estilo(eid)
+    if not pasta:
+        raise ValueError("Esse estilo não está na biblioteca.")
+    erros, _ = modulo_estilo().validar(pasta)
+    if erros:
+        raise ValueError(f"O estilo {pasta.name} tem um problema e não pode ser usado: {erros[0]}")
+    existem = list(_variacoes(_ler_dict(pasta / "estilo.json")))
+    variacao = variacao or (existem[0] if existem else None)
+    if variacao not in existem:
+        raise ValueError(f"O estilo {pasta.name} não tem a variação “{variacao}”.")
+    return {"id": pasta.name, "variacao": variacao}
+
+
+def nome_do_estilo(eid, variacao=None, pasta: Path | None = None) -> str:
+    """'Limpo · Escuro' — o nome que a pessoa vê, não o id."""
+    est = _ler_dict((pasta or achar_estilo(eid) or Path("-")) / "estilo.json")
+    var = _variacoes(est).get(variacao) or {}
+    return " · ".join(x for x in (est.get("nome") or eid, var.get("nome")) if x)
+
+
+def preferencias() -> dict:
+    """O estilo padrão da pessoa (minha-biblioteca/preferencias.json); sem ele, o Papel."""
+    salvo = ler_json(MINHA / "preferencias.json", {})
+    salvo = salvo if isinstance(salvo, dict) else {}
+    eid, pasta = salvo.get("estilo"), achar_estilo(salvo.get("estilo"))
+    if not pasta:
+        eid = getattr(modulo_estilo(), "PADRAO", "papel")
+        pasta = achar_estilo(eid)
+    existem = list(_variacoes(_ler_dict(pasta / "estilo.json"))) if pasta else []
+    variacao = salvo.get("variacao") if salvo.get("estilo") == eid and salvo.get("variacao") in existem \
+        else (existem[0] if existem else None)
+    return {"estilo": eid, "variacao": variacao, "salvo": salvo.get("estilo") == eid}
+
+
+def salvar_preferencias(dados: dict) -> dict:
+    escolha = conferir_escolha(dados.get("estilo"), dados.get("variacao"))
+    atual = ler_json(MINHA / "preferencias.json", {})
+    atual = atual if isinstance(atual, dict) else {}      # outras preferências futuras ficam
+    atual.update(estilo=escolha["id"], variacao=escolha["variacao"])
+    MINHA.mkdir(parents=True, exist_ok=True)
+    (MINHA / "preferencias.json").write_text(json.dumps(atual, ensure_ascii=False, indent=1), encoding="utf-8")
+    return preferencias()
+
+
+def estilo_do_projeto(proj: Path, escolhas: dict) -> dict:
+    """O que a etapa de motion vai usar: a escolha do projeto, senão o padrão da pessoa.
+    `estilo_recomendado` no projeto.json é o que o Claude sugeriu pelo transcript."""
+    rec = (ler_json(proj / "projeto.json", {}) or {}).get("estilo_recomendado")
+    rec = {"id": rec} if isinstance(rec, str) else rec
+    rec = ({k: str(rec[k]) for k in ("id", "variacao", "porque") if rec.get(k)}
+           if isinstance(rec, dict) and achar_estilo(rec.get("id")) else None)
+    esc = escolhas.get("estilo")
+    esc = {"id": esc["id"], "variacao": esc.get("variacao")} if isinstance(esc, dict) and achar_estilo(esc.get("id")) else None
+    padrao = preferencias()
+    vale = esc or {"id": padrao["estilo"], "variacao": padrao["variacao"]}
+    return {"escolhido": esc, "recomendado": rec, "padrao": padrao, "vale": vale,
+            "nome": nome_do_estilo(vale["id"], vale["variacao"])}
+
+
+def estilo_do_motion(m: Path) -> str | None:
+    """O estilo que um projeto de motion congelou (estilo/resolvido.json), para a etiqueta."""
+    r = ler_json(m / "estilo" / "resolvido.json", None)
+    if not isinstance(r, dict) or not r.get("id"):
+        return None
+    return nome_do_estilo(r["id"], r.get("variacao"), m / "estilo")
+
+
+def _png(dados: bytes) -> dict | None:
+    """Largura, altura e transparência de um PNG, lendo só o cabeçalho (sem PIL no painel)."""
+    if len(dados) < 33 or dados[:8] != b"\x89PNG\r\n\x1a\n" or dados[12:16] != b"IHDR":
+        return None
+    tipo = dados[25]                     # 4 e 6: cinza e cor com alfa; nos outros, o bloco tRNS
+    return {"largura": int.from_bytes(dados[16:20], "big"), "altura": int.from_bytes(dados[20:24], "big"),
+            "transparente": tipo in (4, 6) or b"tRNS" in dados[:dados.find(b"IDAT")]}
+
+
+def _contraste_txt(r: float) -> str:
+    return f"{r:.1f}".replace(".", ",")
+
+
+def avisos_da_marca(m: dict) -> list[str]:
+    """A cor de texto precisa de 4,5:1 (a conta é o `estilo.contraste`): sobre a cor primária,
+    e sobre o fundo de cada estilo que deixa a marca trocar a cor do texto — ali, abaixo do
+    mínimo, o resolver fica com a cor do estilo."""
+    mod = modulo_estilo()
+    cores = m.get("cores") if isinstance(m.get("cores"), dict) else {}
+    hexa = lambda c: isinstance(c, str) and bool(mod.RE_HEX.match(c))
+    texto, avisos = cores.get("texto"), []
+    if not hexa(texto):
+        return avisos
+    if hexa(cores.get("primaria")):
+        r = mod.contraste(texto, cores["primaria"])
+        if r < CONTRASTE_MIN:
+            avisos.append(f"O texto sobre a cor primária fica com contraste {_contraste_txt(r)}:1. "
+                          f"Para ler bem no celular, o mínimo é 4,5:1.")
+    for base, _ in pastas_de_estilos():
+        for p in sorted(base.glob("*/estilo.json")) if base.is_dir() else []:
+            est = _ler_dict(p)
+            if "cor.texto" not in _lista(est.get("slots_da_marca")):
+                continue
+            tok = _ler_dict(p.parent / "tokens.json")
+            ruins = []
+            for vid, v in _variacoes(est).items():
+                troca = v.get("tokens") if isinstance(v.get("tokens"), dict) else {}
+                fundo = troca.get("cor.fundo") or mod.token(tok, "cor.fundo")
+                if hexa(fundo) and mod.contraste(texto, fundo) < CONTRASTE_MIN:
+                    ruins.append(v.get("nome") or vid)
+            if ruins:
+                avisos.append(f"No {est.get('nome') or p.parent.name} ({', '.join(ruins)}), o texto ficaria "
+                              f"difícil de ler sobre o fundo: ali o vídeo usa a cor de texto do estilo.")
+    return avisos
+
+
+def marca() -> dict:
+    pasta = MINHA / "marca"
+    m = ler_json(pasta / "marca.json", None)
+    existe = isinstance(m, dict)
+    m = m if existe else {}
+    cores = m.get("cores") if isinstance(m.get("cores"), dict) else {}
+    fontes = m.get("fontes") if isinstance(m.get("fontes"), dict) else {}
+    logo = pasta / m["logo"] if isinstance(m.get("logo"), str) and m["logo"] else None
+    logo = logo if logo and dentro(logo, pasta) and logo.is_file() else None
+    info = _png(logo.read_bytes()) if logo else None
+    return {
+        "existe": existe,
+        "marca": {"nome": m.get("nome") or "", "arroba": m.get("arroba") or "",
+                  "cores": {c: cores.get(c) for c in MARCA_CORES},
+                  "fontes": {f: fontes.get(f) for f in MARCA_FONTES}},
+        "logo": _url_se_existe(logo) if logo else None, "logo_info": info,
+        "fontes_do_kit": [{"nome": n, "url": "/fontes/" + quote(a)}
+                          for n, a in modulo_estilo().FONTES_DO_KIT.items()],
+        "avisos": avisos_da_marca(m),
+        "aviso_logo": "O logo não tem fundo transparente: no vídeo ele aparece dentro de um retângulo."
+                      if info and not info["transparente"] else None,
+    }
+
+
+def salvar_marca(dados: dict) -> dict:
+    """Grava minha-biblioteca/marca/marca.json (formato da seção 9) e o logo.png. Confere
+    tudo antes de gravar qualquer coisa; campos que o formulário não mandou ficam como estão."""
+    import base64
+    mod = modulo_estilo()
+    pasta = MINHA / "marca"
+    atual = ler_json(pasta / "marca.json", {})
+    atual = atual if isinstance(atual, dict) else {}
+    for campo in ("nome", "arroba"):
+        if campo in dados:
+            atual[campo] = str(dados[campo] or "").strip()[:80]
+    cores = dict(atual.get("cores") if isinstance(atual.get("cores"), dict) else {})
+    for c, nome in MARCA_CORES.items():
+        v = str((dados.get("cores") or {}).get(c) or "").strip()
+        if not v:
+            continue
+        if not mod.RE_HEX.match(v):
+            raise ValueError(f"A cor {nome} precisa estar no formato #RRGGBB (por exemplo, #2E82F7).")
+        cores[c] = v.upper()
+    fontes = dict(atual.get("fontes") if isinstance(atual.get("fontes"), dict) else {})
+    for f, nome in MARCA_FONTES.items():
+        v = str((dados.get("fontes") or {}).get(f) or "").strip()
+        if not v:
+            continue
+        # do kit, ou a fonte própria que já estava no marca.json (arquivo em marca/)
+        if v not in mod.FONTES_DO_KIT and not (v == fontes.get(f) and dentro(pasta / v, pasta)
+                                               and (pasta / v).is_file()):
+            raise ValueError(f"A fonte {nome} precisa ser uma das fontes do TopClip.")
+        fontes[f] = v
+    png = None
+    if dados.get("logo"):
+        try:
+            png = base64.b64decode(str(dados["logo"]).split(",", 1)[-1], validate=True)
+        except ValueError:
+            raise ValueError("Não consegui ler o logo. Envie um arquivo PNG.")
+        if len(png) > LOGO_MAX:
+            raise ValueError("O logo passou de 5 MB. Use um PNG menor.")
+        if not _png(png):
+            raise ValueError("O logo precisa ser um arquivo PNG.")
+    atual["cores"], atual["fontes"] = cores, fontes
+    if png:
+        atual["logo"] = "logo.png"
+    elif dados.get("remover_logo"):
+        atual.pop("logo", None)          # tira do marca.json; o arquivo fica onde está
+    pasta.mkdir(parents=True, exist_ok=True)
+    if png:
+        (pasta / "logo.png").write_bytes(png)
+    (pasta / "marca.json").write_text(json.dumps(atual, ensure_ascii=False, indent=1), encoding="utf-8")
+    return marca()
 
 
 _saude_cache: dict = {}
@@ -556,6 +858,14 @@ def salvar_escolhas(proj: Path, dados: dict) -> dict:
             atual[chave] = [str(x) for x in dados[chave]]
     if "observacao" in dados:
         atual["observacao"] = str(dados["observacao"])[:2000]
+    # o estilo do motion: {"id", "variacao"} conferido antes de gravar; null volta ao padrão
+    if "estilo" in dados:
+        e = dados["estilo"]
+        if e is None:
+            atual.pop("estilo", None)
+        else:
+            e = e if isinstance(e, dict) else {"id": e}
+            atual["estilo"] = conferir_escolha(e.get("id"), e.get("variacao"))
     atual["atualizado"] = datetime.now().isoformat(timespec="seconds")
     (proj / "escolhas.json").write_text(json.dumps(atual, ensure_ascii=False, indent=1), encoding="utf-8")
     for chave, nomes in (("momentos", ("momento", "momentos")), ("cortes", ("corte", "cortes"))):
@@ -563,6 +873,10 @@ def salvar_escolhas(proj: Path, dados: dict) -> dict:
             n = len(dados[chave])
             ATV.registrar(proj, f"você escolheu {n} {nomes[0] if n == 1 else nomes[1]} no painel", tipo="voce",
                           etapa=chave)
+    if "estilo" in dados:
+        e = atual.get("estilo")
+        ATV.registrar(proj, f"você escolheu o estilo {nome_do_estilo(e['id'], e['variacao'])} para o motion" if e
+                      else "você voltou para o seu estilo padrão no motion", tipo="voce", etapa="motion")
     return atual
 
 
@@ -1012,9 +1326,9 @@ class Painel(BaseHTTPRequestHandler):
                     return
                 falta -= len(bloco)
 
-    def _corpo(self) -> dict:
+    def _corpo(self, limite=1_000_000) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
-        if n > 1_000_000:
+        if n > limite:
             raise ValueError("pedido grande demais")
         return json.loads(self.rfile.read(n) or b"{}")
 
@@ -1063,6 +1377,16 @@ class Painel(BaseHTTPRequestHandler):
             return self._json(detalhe(p)) if p else self._erro("projeto não encontrado", HTTPStatus.NOT_FOUND)
         if rota == "/api/biblioteca":
             return self._json(biblioteca())
+        if rota == "/api/estilos":
+            return self._json(estilos())
+        m = re.fullmatch(r"/api/estilos/([^/]+)", rota)
+        if m:
+            d = estilo_detalhe(m.group(1))
+            return self._json(d) if d else self._erro("estilo não encontrado", HTTPStatus.NOT_FOUND)
+        if rota == "/api/marca":
+            return self._json(marca())
+        if rota == "/api/preferencias":
+            return self._json(preferencias())
         if rota == "/api/saude":
             return self._json(saude("forcar" in (urlparse(self.path).query or "")))
         return self._erro("rota não encontrada", HTTPStatus.NOT_FOUND)
@@ -1076,7 +1400,14 @@ class Painel(BaseHTTPRequestHandler):
         if not self._host_ok() or (origem and urlparse(origem).netloc != host):
             return self._erro("origem não permitida", HTTPStatus.FORBIDDEN)
         try:
-            corpo = self._corpo()
+            # o logo da marca chega em base64 dentro do JSON: o servidor é só biblioteca padrão
+            corpo = self._corpo(LOGO_MAX * 4 // 3 + 100_000 if rota == "/api/marca" else 1_000_000)
+            if rota == "/api/marca":
+                return self._json(salvar_marca(corpo))
+            if rota == "/api/marca/conferir":          # o aviso de contraste enquanto a pessoa mexe
+                return self._json({"avisos": avisos_da_marca({"cores": corpo.get("cores") or {}})})
+            if rota == "/api/preferencias":
+                return self._json(salvar_preferencias(corpo))
             if rota == "/api/projetos":
                 r = criar_projeto(corpo.get("nome", ""), corpo.get("video", ""), corpo.get("link", ""))
                 if corpo.get("link"):

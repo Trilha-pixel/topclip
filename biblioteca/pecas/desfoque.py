@@ -9,7 +9,7 @@ inteira entrar dentro do limite de coreografia do perfil (regra universal 6).
 """
 from PIL import Image, ImageFilter
 
-from .base import cola, largura_texto, linha, quebra, vazio
+from .base import cola, largura_texto, quebra, vazio
 
 EXEMPLO = dict(inicio=0, fim=96, f=40, dados=dict(texto="O preço baixo atrai o cliente errado"))
 
@@ -20,13 +20,15 @@ def quadro(f, inicio, fim, estilo, texto, centro=(540, 860), tamanho=92, largura
     if not inicio <= f <= fim:
         return tela
     _, sai = estilo.envelope(f, inicio, fim)
+    texto = estilo.caixa(texto)
     fonte = estilo.fonte("titulo", tamanho, peso)
     linhas = quebra(fonte, texto, largura)
     n = sum(len(l.split()) for l in linhas)
     teto = estilo.mov["coreografia_max_s"] * 24
     passo = min(estilo.stagger, teto / max(1, n - 1))
+    pad = estilo.pad(fonte, estilo.cor(cor)) - 2    # o que o contorno/sombra somam a palavra
 
-    m = int(desfoque_max * 2)
+    m = int(desfoque_max * 2) + pad
     alt = int(tamanho * 1.14)
     lay_w = int(max(largura_texto(fonte, l) for l in linhas)) + 2 * m
     lay = Image.new("RGBA", (lay_w, alt * len(linhas) + 2 * m), (0, 0, 0, 0))
@@ -37,15 +39,17 @@ def quadro(f, inicio, fim, estilo, texto, centro=(540, 860), tamanho=92, largura
         for p in l.split():
             kp = estilo.entrada(f, inicio + i * passo)
             if kp > 0:
-                pal = linha(p, fonte, estilo.cor(cor))
+                pal = estilo.linha(p, fonte, estilo.cor(cor))
                 r = desfoque_max * (1 - min(1.0, kp))
+                dy = (1 - kp) * 16
                 if r > 0.3:
-                    grande = Image.new("RGBA", (pal.width + 2 * m, pal.height + 2 * m), (0, 0, 0, 0))
-                    grande.alpha_composite(pal, (m, m))
+                    b = int(desfoque_max * 2)
+                    grande = Image.new("RGBA", (pal.width + 2 * b, pal.height + 2 * b), (0, 0, 0, 0))
+                    grande.alpha_composite(pal, (b, b))
                     pal = grande.filter(ImageFilter.GaussianBlur(r))
-                    pos = (int(x - m), int(m + li * alt - m + (1 - kp) * 16))
+                    pos = (int(x - b - pad), int(m + li * alt - b - pad + dy))
                 else:
-                    pos = (int(x), int(m + li * alt))
+                    pos = (int(x - pad), int(m + li * alt - pad + dy))
                 pal.putalpha(pal.getchannel("A").point(lambda v, a=min(1.0, kp): int(v * a)))
                 lay.alpha_composite(pal, pos)
             x += fonte.getlength(p) + espaco

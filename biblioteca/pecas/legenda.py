@@ -39,7 +39,9 @@ class Legenda:
 
     def quadros_entrada(self, fps):
         """Quantos quadros a entrada do bloco dura (0 = corte seco)."""
-        return 0 if self.c["animacao"] == "corte_seco" else max(1, round(0.13 * fps))
+        if self.c["animacao"] == "corte_seco":
+            return 0
+        return max(1, round(self.c.get("entrada_s", 0.13) * fps))
 
     def _fonte(self, enf, tamanho):
         caminho = self.c.get("fonte_enfase") if enf and self.c.get("fonte_enfase") else self.c["fonte"]
@@ -63,9 +65,11 @@ class Legenda:
         passo = int(fonte.size * 1.08)
         # Caixa atras do bloco: a pilula do acento no destaque; a `fundo` da legenda (a
         # etiqueta do Limpo) nos outros. Texto em caixa sai no maior contraste com ela.
-        caixa = c["destaque"] if destaque else c.get("fundo")
-        cor = self.e.cor(c["cor"])
-        if destaque:
+        # Com destaque_modo "texto" (Impacto, Luxo) o destaque e a cor da palavra, sem caixa.
+        pilula = destaque and c.get("destaque_modo", "pilula") == "pilula"
+        caixa = c["destaque"] if pilula else c.get("fundo")
+        cor = self.e.cor(c["destaque"] if destaque and not pilula else c["cor"])
+        if pilula:
             cor = self.e.cor(max(("#FFFFFF", "#111111"), key=lambda h: _contraste(h, caixa)))
 
         tinta = Image.new("RGBA", (W, H), (0, 0, 0, 0))
@@ -75,20 +79,23 @@ class Legenda:
         if caixa:
             larg = max(largura_texto(fonte, l) for l in linhas)
             px, py = fonte.size * 0.36, fonte.size * 0.2
-            alfa = 255 if destaque else int(255 * c.get("fundo_alfa", 0.94))
+            alfa = 255 if pilula else int(255 * c.get("fundo_alfa", 0.94))
             cx = retangulo(larg + 2 * px, total + 2 * py, fonte.size * 0.32, self.e.cor(caixa, alfa))
-            if not destaque:          # a etiqueta clara sobre camisa clara precisa de borda
+            if not pilula:            # a etiqueta clara sobre camisa clara precisa de borda
                 cx = com_sombra(cx, desfoque=14, opacidade=0.22, dy=4, margem=30)
                 tinta.alpha_composite(cx, (int((W - cx.width) / 2), int(y - py - 30)))
             else:
                 tinta.alpha_composite(cx, (int((W - cx.width) / 2), int(y - py)))
         d = ImageDraw.Draw(tinta)
+        sd = c.get("sombra_dura")
+        traco = dict(stroke_width=int(c["contorno"]), stroke_fill=(0, 0, 0, 255))
         for i, l in enumerate(linhas):
             x = (W - largura_texto(fonte, l)) / 2
-            d.text((x, y + i * passo), l, font=fonte, fill=cor,
-                   stroke_width=int(c["contorno"]), stroke_fill=(0, 0, 0, 255))
+            if sd:                    # sombra dura: o mesmo texto, preto e deslocado, por baixo
+                d.text((x + sd[0], y + i * passo + sd[1]), l, font=fonte, fill=(0, 0, 0, 255), **traco)
+            d.text((x, y + i * passo), l, font=fonte, fill=cor, **traco)
 
-        if not caixa and not c["contorno"]:
+        if not caixa and not c["contorno"] and not sd:
             # sombra macia: a fonte limpa sem sombra some no pescoco iluminado
             a = tinta.getchannel("A").filter(ImageFilter.GaussianBlur(9)).point(lambda v: int(v * 0.55))
             sombra = Image.new("RGBA", (W, H), (0, 0, 0, 0))
