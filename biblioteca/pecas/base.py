@@ -341,8 +341,24 @@ def largura_texto(fonte, texto, tracking=0):
     return fonte.getlength(texto) + tracking * max(0, len(texto) - 1)
 
 
-def quebra(fonte, texto, largura, tracking=0):
-    """Linhas que cabem em `largura`. Palavra sozinha nunca quebra; '\\n' forca linha."""
+def quebra(fonte, texto, largura, tracking=0, equilibra=True):
+    """Linhas que cabem em `largura`. Palavra sozinha nunca quebra; '\\n' forca linha.
+    `equilibra`: com o mesmo numero de linhas, a menor largura que ainda cabe — sem
+    palavra orfa ("CLIENTE QUE COMPRA DE / NOVO" vira "CLIENTE QUE / COMPRA DE NOVO")."""
+    out = _quebra(fonte, texto, largura, tracking)
+    if equilibra and len(out) > 1 and "\n" not in texto:
+        lo, hi = largura * 0.4, float(largura)
+        for _ in range(10):
+            meio = (lo + hi) / 2
+            if len(_quebra(fonte, texto, meio, tracking)) == len(out):
+                hi = meio
+            else:
+                lo = meio
+        out = _quebra(fonte, texto, hi, tracking)
+    return out
+
+
+def _quebra(fonte, texto, largura, tracking=0):
     out = []
     for paragrafo in texto.split("\n"):
         cur = []

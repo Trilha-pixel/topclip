@@ -62,7 +62,9 @@ TRANSICOES = {"dissolve", "corte_wipe", "corte_beat"}
 
 # As pecas (biblioteca/pecas/: 8 na fase 2, moldura e brilho na 3). O estilo declara quais usa.
 PECAS = {"contador", "marca_texto", "troca_palavra", "desfoque", "cascata",
-         "antes_depois", "cartao", "lottie", "moldura", "brilho"}
+         "antes_depois", "cartao", "lottie", "moldura", "brilho", "objeto"}
+# O lapis desenha os objetos (biblioteca/pecas/lapis.py). O Papel nao tem: desenha com o dele.
+LAPIS = {"limpo", "impacto", "luxo"}
 DESTAQUES = {"pilula", "texto"}
 
 # Fontes que viajam com a skill: o estilo pode pedir pelo nome, sem trazer o arquivo.
@@ -312,6 +314,10 @@ def validar(pasta, exigir_previa=True):
     if boil is not None and (not isinstance(boil, (int, float)) or not 0 <= boil <= 2):
         erros.append("boil deve ser null (sem boil) ou numero entre 0 e 2")
     erros += _erros_tipografia(ext.get("tipografia"), tok)
+    if ext.get("lapis") is not None and ext["lapis"] not in LAPIS:
+        erros.append(f"$extensions.topclip.lapis deve ser um de {sorted(LAPIS)}")
+    if "objeto" in (est.get("pecas") or []) and not ext.get("lapis"):
+        erros.append("a peca objeto precisa de $extensions.topclip.lapis (o jeito de desenhar)")
 
     # legenda.json
     for k, tipo in {"corpo": int, "palavras_por_bloco": int, "destaques_por_clipe": int,
@@ -521,7 +527,7 @@ def resolver(pasta, variacao=None, marca=None):
         "cenas": est.get("cenas", "cutaway"),
         "cor": cores, "fonte": fontes, "movimento": movimento,
         "acabamento": ext["acabamento"], "boil": ext.get("boil"), "traco": ext["traco"],
-        "tipografia": ext.get("tipografia") or {},
+        "tipografia": ext.get("tipografia") or {}, "lapis": ext.get("lapis"),
         "legenda": legenda,
         "marca": {"aplicado": aplicado, "recusado": recusado, "logo": logo},
     }

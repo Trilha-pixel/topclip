@@ -14,7 +14,7 @@
     "verde": {"nome": "Verde", "tokens": {"cor.acento": "#22D65A"}}
   },
   "pecas": ["contador", "marca_texto", "troca_palavra", "cascata", "antes_depois",
-            "cartao", "lottie"],
+            "cartao", "lottie", "objeto"],
   "slots_da_marca": ["cor.acento", "fonte.titulo", "logo"],
   "cenas": "overlay",
   "codigo": true

@@ -11,9 +11,10 @@ O `./topclip motion novo` copia esta pasta para `<projeto>/pecas/`: o projeto co
 versao das pecas junto com a do estilo.
 """
 from . import (antes_depois, brilho, cartao, cascata, contador, desfoque, lottie, marca_texto,
-               moldura, troca_palavra)
+               moldura, objeto, receitas, troca_palavra)
 from .base import Estilo, W, H, carregar, cinema, cola, fundo, lin, vazio
 
 TODAS = {"contador": contador, "marca_texto": marca_texto, "troca_palavra": troca_palavra,
          "desfoque": desfoque, "cascata": cascata, "antes_depois": antes_depois,
-         "cartao": cartao, "lottie": lottie, "moldura": moldura, "brilho": brilho}
+         "cartao": cartao, "lottie": lottie, "moldura": moldura, "brilho": brilho,
+         "objeto": objeto}

@@ -4,7 +4,8 @@ As previas de um estilo, renderizadas dentro de um projeto temporario. Quem cham
 de um projeto de motion.
 
     --capa NOME     arquivo da capa (a cena --cena, ou a primeira do compose, no END)
-    --pecas         tambem cada peca declarada pelo estilo, no EXEMPLO dela, sobre o fundo
+    --pecas         tambem cada peca declarada pelo estilo, no EXEMPLO dela, sobre o fundo,
+                    e a folha dos objetos no lapis do estilo (objetos.png), se ele desenha
 """
 import argparse
 import json
@@ -62,6 +63,10 @@ def main(argv=None):
             c = P.fundo(ex["f"], ex["inicio"] - 100, ex["fim"] + 100, estilo)
             c.alpha_composite(mod.quadro(ex["f"], ex["inicio"], ex["fim"], estilo, **dados))
             _salva(c, destino / "pecas" / f"{p}.png")
+        if estilo.r.get("lapis"):
+            f = destino / "objetos.png"
+            P.objeto.folha(estilo).convert("RGB").save(f, optimize=True)
+            print(f.relative_to(f.parents[1]))
 
 
 if __name__ == "__main__":

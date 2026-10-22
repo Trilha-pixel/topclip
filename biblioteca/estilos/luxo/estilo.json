@@ -28,7 +28,7 @@
     }}
   },
   "pecas": ["contador", "marca_texto", "troca_palavra", "desfoque", "cartao", "moldura",
-            "brilho", "lottie"],
+            "brilho", "lottie", "objeto"],
   "slots_da_marca": ["cor.acento", "fonte.titulo", "logo"],
   "cenas": "overlay",
   "codigo": true

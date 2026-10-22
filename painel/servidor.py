@@ -563,6 +563,8 @@ def resumo_estilo(pasta: Path, dono: str) -> dict:
         "capa": variacoes[0]["capa"] if variacoes else None, "pecas": pecas,
         "slots_da_marca": _lista(est.get("slots_da_marca")),
         "demo": _url_se_existe(pasta / "preview" / "demo.mp4"),
+        # o desenho do estilo: os objetos no lapis dele (`estilo previa`); o Papel nao tem
+        "objetos": _url_se_existe(pasta / "preview" / "objetos.png"),
         "valido": not erros, "erros": erros, "avisos": avisos,
     }
 
