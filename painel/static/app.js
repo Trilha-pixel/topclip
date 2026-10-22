@@ -130,15 +130,20 @@ async function rotear() {
 window.addEventListener("hashchange", rotear);
 
 // ------------------------------------------------------------------ início
-function trilha(etapas) {
+// "pronto", "a fazer" ou o % de quanto já foi
+const estadoTxt = (estado, pct) => (estado === "andamento" && pct > 0 ? `${pct}%` : ESTADO_TXT[estado]);
+
+function trilha(etapas, progresso = {}) {
   return `<div class="trilha">${ETAPAS.map((e, i) =>
-    `${i ? `<i class="${etapas[e.id] === "feito" ? "feito" : ""}"></i>` : ""}<span class="${etapas[e.id]}" title="${e.nome}: ${ESTADO_TXT[etapas[e.id]]}"></span>`).join("")}</div>`;
+    `${i ? `<i class="${etapas[e.id] === "feito" ? "feito" : ""}"></i>` : ""}<span class="${etapas[e.id]}" title="${e.nome}: ${estadoTxt(etapas[e.id], progresso[e.id])}"></span>`).join("")}</div>`;
 }
 
 function cartaoProjeto(p) {
   const iniciais = p.nome.split(/\s+/).slice(0, 2).map((s) => s[0] || "").join("").toUpperCase();
   const atual = ETAPAS.find((e) => e.id === p.etapa_atual);
   const pronto = Object.values(p.etapas).every((v) => v === "feito");
+  // fez 2 de 14 e volta depois para o resto: "tudo pronto!" esconderia os outros 12
+  const parcial = p.n_prontos > 0 && p.n_prontos < p.n_cortes;
   return `
   <a class="cartao papel fita" href="#/projeto/${esc(p.slug)}">
     ${p.demo ? `<span class="selo-demo">exemplo</span>` : ""}
@@ -146,9 +151,12 @@ function cartaoProjeto(p) {
       : ["sua_vez", "avisar_claude"].includes(p.atividade) ? `<span class="ativo-selo sua_vez"><i></i>sua vez</span>` : ""}
     <div class="capa">${p.capa ? `<img src="${p.capa}" alt="" loading="lazy">` : `<span class="iniciais">${esc(iniciais)}</span>`}</div>
     <h3>${esc(p.nome)}</h3>
-    <div class="meta">${esc(p.video || "sem vídeo definido")}</div>
-    ${trilha(p.etapas)}
-    <div class="trilha-rotulo">${pronto ? "tudo pronto!" : `próximo: ${esc(atual ? atual.nome.toLowerCase() : "")}`}</div>
+    <div class="meta">${esc(p.video || (p.link ? `baixando de ${p.link}` : "sem vídeo definido"))}</div>
+    ${trilha(p.etapas, p.progresso)}
+    <div class="trilha-rotulo">${parcial ? `${p.n_prontos} de ${p.n_cortes} cortes prontos`
+      : pronto ? "tudo pronto!" : atual && p.progresso && p.progresso[atual.id] > 0 && p.progresso[atual.id] < 100
+      ? `agora: ${esc(atual.nome.toLowerCase())} · ${p.progresso[atual.id]}%`
+      : `próximo: ${esc(atual ? atual.nome.toLowerCase() : "")}`}</div>
   </a>`;
 }
 
@@ -183,7 +191,7 @@ async function telaInicio() {
        </div>`}`;
 
   app.querySelectorAll('[data-acao="novo"]').forEach((b) => (b.onclick = abrirNovoProjeto));
-  const chave = (lista) => JSON.stringify(lista.map((p) => [p.slug, p.atividade, p.etapa_atual]));
+  const chave = (lista) => JSON.stringify(lista.map((p) => [p.slug, p.atividade, p.etapa_atual, p.n_prontos]));
   const antes = chave(projetos);
   relogio = setInterval(async () => {
     if (document.querySelector(".modal-fundo")) return;          // formulário aberto: não mexe
@@ -206,6 +214,11 @@ function abrirNovoProjeto() {
       <div class="soltar" data-soltar>
         <button type="button" class="botao" data-escolher>Escolher vídeo no computador</button>
         <span class="mao">ou arraste o arquivo para cá</span>
+      </div>
+      <div class="colar-link" data-colar-link>
+        <label for="link" class="mao">ou cole o link do YouTube ou do Instagram</label>
+        <input id="link" name="link" type="text" inputmode="url" spellcheck="false" placeholder="https://www.youtube.com/watch?v=…">
+        <small data-link-estado hidden></small>
       </div>
       <div class="escolhido" data-escolhido hidden>
         <span class="escolhido-icone" aria-hidden="true">▶</span>
@@ -244,17 +257,60 @@ function abrirNovoProjeto() {
     const base = arq.replace(/\.[^.]+$/, "").replace(/[_\-.]+/g, " ").replace(/\s+/g, " ").trim();
     return base.charAt(0).toUpperCase() + base.slice(1);
   };
+  const colarLink = form.querySelector("[data-colar-link]");
+  let linkConferido = "";
   const definirVideo = (caminho) => {
     form.video.value = caminho;
+    form.link.value = linkConferido = "";
     const arq = caminho.split("/").pop();
     escolhido.querySelector("[data-escolhido-nome]").textContent = arq;
     escolhido.querySelector("[data-escolhido-caminho]").textContent = caminho;
     escolhido.hidden = false;
-    soltar.hidden = true;
+    delete escolhido.dataset.tipo;
+    soltar.hidden = colarLink.hidden = true;
     if (!nomeMexido || !form.nome.value.trim()) form.nome.value = nomeDoArquivo(arq);
     mostrarErro("");
   };
-  form.querySelector("[data-trocar]").onclick = () => { escolhido.hidden = true; soltar.hidden = false; form.video.value = ""; };
+  form.querySelector("[data-trocar]").onclick = () => {
+    escolhido.hidden = true; soltar.hidden = colarLink.hidden = false;
+    form.video.value = form.link.value = linkConferido = "";
+  };
+
+  // Link do YouTube ou do Instagram: o servidor confere o vídeo (título, duração) na
+  // hora e só baixa quando o projeto é criado — para dentro de projetos/<nome>/.
+  const estadoLink = colarLink.querySelector("[data-link-estado]");
+  let conferindo = null;
+  const conferirLink = () => {
+    const link = form.link.value.trim();
+    if (!link) return Promise.resolve(false);
+    if (link === linkConferido) return Promise.resolve(true);
+    if (conferindo && conferindo.link === link) return conferindo.promessa;
+    mostrarErro("");
+    estadoLink.hidden = false;
+    estadoLink.textContent = "procurando o vídeo…";
+    const promessa = (async () => {
+      try {
+        const v = await api("/api/info-link", { method: "POST", body: { link } });
+        if (v.erro) { mostrarErro(v.erro); return false; }
+        form.video.value = "";
+        linkConferido = v.link;
+        escolhido.querySelector("[data-escolhido-nome]").textContent = v.titulo;
+        escolhido.querySelector("[data-escolhido-caminho]").textContent =
+          [v.site, v.duracao_txt, "baixa para o projeto quando você criar"].filter(Boolean).join(" · ");
+        escolhido.hidden = false;
+        escolhido.dataset.tipo = "link";
+        soltar.hidden = colarLink.hidden = true;
+        if (!nomeMexido || !form.nome.value.trim()) form.nome.value = v.titulo;
+        return true;
+      } catch (err) { mostrarErro(err.message); return false; }
+      finally { estadoLink.hidden = true; conferindo = null; }
+    })();
+    conferindo = { link, promessa };
+    return promessa;
+  };
+  form.link.addEventListener("paste", () => setTimeout(conferirLink, 0));
+  form.link.addEventListener("change", conferirLink);
+  form.link.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); conferirLink(); } });
   form.video.addEventListener("change", () => { if (form.video.value.trim()) definirVideo(form.video.value.trim().replace(/^['"]|['"]$/g, "")); });
 
   const botaoEscolher = form.querySelector("[data-escolher]");
@@ -293,10 +349,13 @@ function abrirNovoProjeto() {
 
   form.onsubmit = async (e) => {
     e.preventDefault();
+    if (form.link.value.trim() && !(await conferirLink())) return;
+    const link = linkConferido;
     try {
-      const r = await api("/api/projetos", { method: "POST", body: { nome: form.nome.value, video: form.video.value } });
+      const r = await api("/api/projetos", { method: "POST", body: { nome: form.nome.value, video: link ? "" : form.video.value, link } });
       form.innerHTML = `
         <h2 class="titulo">Agora é com o <span class="marca">Claude</span></h2>
+        ${link ? `<p class="explica"><b>O vídeo já está baixando</b> para dentro do projeto — o andamento aparece na página dele. Não precisa esperar: o Claude espera o download terminar.</p>` : ""}
         <p class="explica">Abra o Claude Code na pasta do TopClip e cole o comando abaixo. Ele começa pela transcrição e para quando tiver os momentos para você escolher — aqui no painel.</p>
         ${r.aviso ? `<p class="erro">${esc(r.aviso)}</p>` : ""}
         <div style="margin-top:22px">${comando(`/topclip projetos/${r.slug}`)}</div>
@@ -312,17 +371,36 @@ function abrirNovoProjeto() {
 
 // ------------------------------------------------------------------ projeto
 let escolhas = { momentos: new Set(), cortes: new Set() };
+const VISTO_BRANCO = VISTO.replace('stroke="#2a292c"', 'stroke="#fff"');
+
+// A cada volta do relógio: estado e % de cada etapa, sem redesenhar a tela
+function atualizarTrilha(etapas) {
+  if (!etapas) return;
+  app.querySelectorAll(".etapa[data-etapa]").forEach((b) => {
+    const e = etapas[b.dataset.etapa];
+    if (!e) return;
+    const era = ["feito", "andamento", "pendente"].find((c) => b.classList.contains(c));
+    if (era !== e.estado) {
+      b.classList.remove("feito", "andamento", "pendente");
+      b.classList.add(e.estado);
+      b.querySelector(".num").innerHTML = e.estado === "feito" ? VISTO_BRANCO : b.dataset.i;
+    }
+    b.querySelector(".barrinha i").style.width = `${e.pct}%`;
+    b.querySelector(".estado").textContent = estadoTxt(e.estado, e.pct);
+  });
+}
 
 function trilhaEtapas(p, ativa) {
   return `
   <div class="etapas">
     ${linhaAzul()}
     ${ETAPAS.map((e, i) => `
-      <button class="etapa ${p.etapas[e.id]}" data-etapa="${e.id}" aria-current="${e.id === ativa}">
-        <span class="num">${p.etapas[e.id] === "feito" ? VISTO.replace('stroke="#2a292c"', 'stroke="#fff"') : i + 1}</span>
+      <button class="etapa ${p.etapas[e.id]}" data-etapa="${e.id}" data-i="${i + 1}" aria-current="${e.id === ativa}">
+        <span class="num">${p.etapas[e.id] === "feito" ? VISTO_BRANCO : i + 1}</span>
         ${e.id === ativa ? `<svg class="circulo" viewBox="0 0 82 76" aria-hidden="true"><path d="${circuloMao(82, 76, i * 13 + 5)}"/></svg>` : ""}
         <span class="nome">${e.nome}</span>
-        <span class="estado">${ESTADO_TXT[p.etapas[e.id]]}</span>
+        <span class="barrinha" aria-hidden="true"><i style="width:${(p.progresso || {})[e.id] || 0}%"></i></span>
+        <span class="estado">${estadoTxt(p.etapas[e.id], (p.progresso || {})[e.id])}</span>
       </button>`).join("")}
   </div>`;
 }
@@ -330,9 +408,11 @@ function trilhaEtapas(p, ativa) {
 async function telaProjeto(slug, etapa) {
   const p = await api(`/api/projetos/${encodeURIComponent(slug)}`);
   const ativa = ETAPAS.some((e) => e.id === etapa) ? etapa : p.etapa_atual;
+  // o que já saiu (ou está saindo) não volta para a escolha: marcar de novo refaria o trabalho
+  const feitos = new Set([...p.momentos, ...p.cortes].filter((x) => x.feito).map((x) => x.id));
   escolhas = {
-    momentos: new Set(p.escolhas.momentos || []),
-    cortes: new Set(p.escolhas.cortes || []),
+    momentos: new Set((p.escolhas.momentos || []).filter((id) => !feitos.has(id))),
+    cortes: new Set((p.escolhas.cortes || []).filter((id) => !feitos.has(id))),
   };
   const corpo = { momentos: blocoMomentos, cortes: blocoCortes, vertical: blocoVertical, motion: blocoMotion, entrega: blocoEntrega }[ativa](p);
 
@@ -341,9 +421,12 @@ async function telaProjeto(slug, etapa) {
   <div class="cabeca-projeto">
     <div>
       <h1 class="titulo">${esc(p.nome)}</h1>
-      <div class="caminho">${p.video ? `🎬 ${esc(p.video)}` : "sem vídeo definido"}${p.run ? ` · run ${esc(p.run)}` : ""}</div>
+      <div class="caminho">${p.video ? `🎬 ${esc(p.video)}` : p.link ? `🔗 baixando de ${esc(p.link)}` : "sem vídeo definido"}${p.run ? ` · run ${esc(p.run)}` : ""}</div>
     </div>
-    <button class="botao claro pequeno" data-acao="abrir">Abrir pasta</button>
+    <div class="cabeca-acoes">
+      <button class="link apagar" data-acao="apagar">apagar projeto</button>
+      <button class="botao claro pequeno" data-acao="abrir">Abrir pasta</button>
+    </div>
   </div>
   ${trilhaEtapas(p, ativa)}
   <section class="atividade papel" id="atividade"><div class="mudo mono">carregando a atividade…</div></section>
@@ -351,8 +434,53 @@ async function telaProjeto(slug, etapa) {
 
   app.querySelectorAll("[data-etapa]").forEach((b) => (b.onclick = () => (location.hash = `#/projeto/${slug}/${b.dataset.etapa}`)));
   app.querySelector('[data-acao="abrir"]').onclick = () => api(`/api/projetos/${slug}/abrir`, { method: "POST" }).catch((e) => aviso(esc(e.message)));
+  app.querySelector('[data-acao="apagar"]').onclick = () => abrirApagarProjeto(p);
   ligarEscolhas(p, ativa);
-  acompanharAtividade(slug, etapa);
+  acompanharAtividade(slug, etapa, ativa);
+}
+
+// Vai para a Lixeira do computador, não some de vez: criou errado, é só apagar; apagou errado, dá para tirar de lá.
+function abrirApagarProjeto(p) {
+  const n = p.entregas.length;
+  const itens = [
+    n ? `Vão junto os <b>${n} ${n === 1 ? "clipe pronto" : "clipes prontos"}</b> da Entrega. Se quiser guardar, baixe antes.` : "",
+    p.video_no_projeto ? "Vai junto o vídeo, que está dentro da pasta do projeto."
+      : p.video ? `O vídeo original fica onde está: <span class="mono">${esc(p.video)}</span>` : "",
+  ].filter(Boolean);
+  const fundo = document.createElement("div");
+  fundo.className = "modal-fundo";
+  fundo.innerHTML = `
+  <div class="modal papel fita" role="dialog" aria-modal="true">
+    <h2 class="titulo">Apagar este projeto?</h2>
+    <p class="explica">A pasta de <b>${esc(p.nome)}</b> vai para a <b>Lixeira</b> do computador. Mudou de ideia? É só tirar de lá.</p>
+    ${itens.length ? `<ul class="apagar-lista">${itens.map((i) => `<li>${i}</li>`).join("")}</ul>` : ""}
+    ${p.atividade === "rodando" ? `<p class="erro">O TopClip está trabalhando neste projeto agora. Espere terminar (ou pare o Claude) e apague depois.</p>` : ""}
+    <div class="erro" data-erro hidden></div>
+    <div class="modal-acoes">
+      <button type="button" class="botao claro" data-fechar>Cancelar</button>
+      <button type="button" class="botao perigo" data-confirmar ${p.atividade === "rodando" ? "disabled" : ""}>Apagar projeto</button>
+    </div>
+  </div>`;
+  document.body.appendChild(fundo);
+  const fechar = () => fundo.remove();
+  fundo.addEventListener("click", (e) => { if (e.target === fundo || e.target.closest("[data-fechar]")) fechar(); });
+  const confirmar = fundo.querySelector("[data-confirmar]");
+  confirmar.onclick = async () => {
+    confirmar.disabled = true;
+    confirmar.textContent = "Apagando…";
+    try {
+      await api(`/api/projetos/${encodeURIComponent(p.slug)}/apagar`, { method: "POST" });
+      fechar();
+      location.hash = "#/";
+      aviso(`<b>Projeto apagado.</b> Está na Lixeira, se precisar.`);
+    } catch (err) {
+      const erro = fundo.querySelector("[data-erro]");
+      erro.hidden = false;
+      erro.textContent = err.message;
+      confirmar.textContent = "Apagar projeto";
+      confirmar.disabled = false;
+    }
+  };
 }
 
 const pedirAoClaude = (p) => `/topclip projetos/${p.slug}`;
@@ -377,7 +505,7 @@ function blocoMomentos(p) {
   </div>
   <div class="lista">
     ${p.momentos.map((m) => `
-      <article class="momento ${escolhas.momentos.has(m.id) ? "escolhido" : ""}" data-item="momentos" data-id="${esc(m.id)}" tabindex="0" role="checkbox" aria-checked="${escolhas.momentos.has(m.id)}">
+      <article class="momento ${escolhas.momentos.has(m.id) ? "escolhido" : ""} ${m.feito || ""}" ${m.feito ? "" : `data-item="momentos" data-id="${esc(m.id)}" tabindex="0" role="checkbox" aria-checked="${escolhas.momentos.has(m.id)}"`}>
         <div class="momento-lado">
           <span class="tempo">${esc(m.inicio)} → ${esc(m.fim)}</span>
           ${m.nota != null ? `<span class="nota ${m.abaixo_do_gate.length ? "fraca" : ""}">${num(m.nota)}<small>/10</small><span class="nota-rotulo">nota estimada</span></span>` : ""}
@@ -385,6 +513,7 @@ function blocoMomentos(p) {
         <div>
           <p class="citacao">${esc(m.quote)}</p>
           <div class="tags">
+            ${carimbo(m.feito, "tag")}
             ${m.abaixo_do_gate.length ? `<span class="tag risco">pode sair fraco</span>` : ""}
             ${m.trigger ? `<span class="tag forte">${esc(rotulo(m.trigger))}</span>` : ""}
             ${m.profile && rotulo(m.profile) !== rotulo(m.trigger) ? `<span class="tag">${esc(rotulo(m.profile))}</span>` : ""}
@@ -395,15 +524,19 @@ function blocoMomentos(p) {
           ${m.context_needed ? `<p class="detalhe"><b>Contexto:</b> ${esc(m.context_needed)}</p>` : ""}
           ${m.payoff_candidate ? `<p class="detalhe"><b>Fecha com:</b> ${esc(m.payoff_candidate)}</p>` : ""}
         </div>
-        <span class="marcar">${VISTO}</span>
+        <span class="marcar">${m.feito === "pronto" ? VISTO.replace('stroke="#2a292c"', 'stroke="#fff"') : VISTO}</span>
       </article>`).join("")}
   </div>
   <div data-depois-salvar hidden>${proximoPasso("agora diga ao Claude:", "escolhi no painel, pode seguir")}</div>`;
 }
 
-// Os que passariam no gate, melhor nota primeiro, no máximo o recomendado.
+// Os que passariam no gate, melhor nota primeiro, no máximo o recomendado — fora os já feitos.
 const melhoresMomentos = (p) =>
-  p.momentos.filter((m) => m.nota != null && !m.abaixo_do_gate.length).slice(0, MOMENTOS_RECOMENDADOS);
+  p.momentos.filter((m) => m.nota != null && !m.abaixo_do_gate.length && !m.feito).slice(0, MOMENTOS_RECOMENDADOS);
+
+// Corte (ou momento) que já saiu: o carimbo azul é o mesmo "feito" da trilha de etapas.
+const CARIMBO = { pronto: "✓ pronto", andamento: "em produção" };
+const carimbo = (feito, classe = "") => (feito ? `<span class="carimbo ${feito} ${classe}">${CARIMBO[feito]}</span>` : "");
 
 function blocoCortes(p) {
   if (!p.cortes.length) {
@@ -412,15 +545,20 @@ function blocoCortes(p) {
       <p class="explica">Com os momentos escolhidos, o Claude crava o início e o fim de cada corte no timing das palavras e gera uma prévia para você assistir.</p></div></div>
     ${p.momentos.length ? proximoPasso("escolheu os momentos? diga ao Claude:", "escolhi no painel, pode seguir") : proximoPasso("comece pelo Claude:", pedirAoClaude(p))}`;
   }
+  const prontos = p.cortes.filter((c) => c.feito === "pronto").length;
+  const faltam = p.cortes.filter((c) => !c.feito).length;
   return `
   <div class="secao-topo">
-    <div><h2 class="subtitulo">${p.cortes.length} cortes para assistir</h2>
-      <p class="explica">Assista e marque os que viram vertical. Os outros param aqui.</p></div>
-    <div style="display:flex;gap:16px"><button class="link" data-todos="cortes">marcar todos</button><button class="link" data-limpar="cortes">limpar</button></div>
+    <div><h2 class="subtitulo">${p.cortes.length} cortes para assistir${prontos ? ` <span class="mudo">(${prontos} ${prontos === 1 ? "pronto" : "prontos"})</span>` : ""}</h2>
+      <p class="explica">${prontos
+        ? `Os marcados com <span class="carimbo pronto em-linha">✓ pronto</span> já estão na Entrega. Marque os próximos que viram vertical.`
+        : "Assista e marque os que viram vertical. Os outros param aqui."}</p></div>
+    ${faltam ? `<div style="display:flex;gap:16px"><button class="link" data-todos="cortes">${faltam < p.cortes.length ? "marcar os que faltam" : "marcar todos"}</button><button class="link" data-limpar="cortes">limpar</button></div>` : ""}
   </div>
   <div class="cortes">
     ${p.cortes.map((c) => `
-      <article class="corte ${escolhas.cortes.has(c.id) ? "escolhido" : ""}" data-cartao="${esc(c.id)}">
+      <article class="corte ${escolhas.cortes.has(c.id) ? "escolhido" : ""} ${c.feito || ""}" data-cartao="${esc(c.id)}">
+        ${carimbo(c.feito)}
         ${c.preview ? `<video src="${c.preview}" controls preload="metadata" playsinline></video>`
                     : `<div class="sem-video">a prévia aparece aqui<br>quando o Claude cortar</div>`}
         <div class="corte-corpo">
@@ -439,9 +577,11 @@ function blocoCortes(p) {
           ${c.porque ? `<p class="detalhe"><b>Por que funciona:</b> ${esc(c.porque)}</p>` : ""}
           ${c.transcricao ? `<details class="detalhe"><summary>ler a fala do corte</summary><p>${esc(c.transcricao)}</p></details>` : ""}
           <div class="corte-rodape">
-            <button class="alternar" data-item="cortes" data-id="${esc(c.id)}" role="checkbox" aria-checked="${escolhas.cortes.has(c.id)}">
+            ${c.feito === "pronto" ? `<a class="link" href="#/projeto/${esc(p.slug)}/entrega">já está na entrega →</a>`
+              : c.feito ? `<span class="mudo mono">começado, ainda sem entrega</span>`
+              : `<button class="alternar" data-item="cortes" data-id="${esc(c.id)}" role="checkbox" aria-checked="${escolhas.cortes.has(c.id)}">
               <span class="marcar">${VISTO}</span> vira vertical
-            </button>
+            </button>`}
           </div>
         </div>
       </article>`).join("")}
@@ -476,7 +616,8 @@ function blocoMotion(p) {
     <div class="motion-bloco">
       <div class="secao-topo"><h2 class="subtitulo">${esc(m.nome)}</h2>${m.master ? `<span class="tag forte">master pronto</span>` : `<span class="tag">em produção</span>`}</div>
       <div class="verticais">
-        ${m.master ? `<div class="vertical"><video src="${m.master}" controls preload="metadata" playsinline></video><div class="rotulo">master final</div></div>` : ""}
+        ${m.master ? `<div class="vertical"><video src="${m.master}" controls preload="metadata" playsinline></video><div class="rotulo">master final</div></div>`
+          : m.rascunho ? `<div class="vertical"><video src="${m.rascunho}" controls preload="metadata" playsinline></video><div class="rotulo">rascunho (revisão)</div></div>` : ""}
         ${m.quadros.map((q) => `<div class="vertical"><img src="${q}" alt="" loading="lazy"><div class="rotulo">${esc(decodeURIComponent(q.split("/").pop()))}</div></div>`).join("")}
       </div>
     </div>`).join("");
@@ -489,9 +630,11 @@ function blocoEntrega(p) {
       <p class="explica">Os masters conferidos (duração, cadência e áudio idêntico ao original) chegam aqui, prontos para postar.</p></div></div>
     ${proximoPasso("quando o motion estiver pronto:", "pode entregar os clipes")}`;
   }
+  const faltam = p.cortes.filter((c) => !c.feito).length;
   return `
   <div class="secao-topo"><div><h2 class="subtitulo">${p.entregas.length} clipes prontos para postar</h2>
-    <p class="explica">Baixe ou abra a pasta. Bom post! 🎉</p></div>
+    <p class="explica">Baixe ou abra a pasta. Bom post! 🎉</p>
+    ${faltam ? `<p class="explica">Ainda tem ${faltam} ${faltam === 1 ? "corte que você não fez" : "cortes que você não fez"}. <a class="link" href="#/projeto/${esc(p.slug)}/cortes">escolher os próximos</a></p>` : ""}</div>
     <button class="botao pequeno" data-acao="abrir-entregas">Abrir pasta</button></div>
   <div class="verticais">
     ${p.entregas.map((e) => `<div class="vertical"><video src="${e.video}" controls preload="metadata" playsinline></video>
@@ -578,8 +721,40 @@ function horario(iso) {
 
 const ICONE_EVENTO = { inicio: "▶", fim: "✓", arquivo: "✓", erro: "✕", info: "•", progresso: "…", voce: "★", projeto: "+" };
 let atividadeAberta = false;
+let logDeTodas = false;        // o log mostra só a etapa aberta; "todas as etapas" junta tudo
 
-function desenharAtividade(slug, a) {
+const barraPct = (pct, cls = "ativ-barra") =>
+  pct != null ? `<span class="${cls}"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></span>` : "";
+
+// O passo a passo da etapa aberta: barra de quanto já foi e cada passo marcado.
+function blocoProgresso(nome, e) {
+  if (!e) return "";
+  const passo = (x) => `<li class="${x.feito ? "feito" : x.pct != null ? "andando" : ""}"><span class="marca">${x.feito ? VISTO_BRANCO : ""}</span>${esc(x.nome)}`
+    + `${!x.feito && (x.detalhe || x.pct != null) ? ` <small>${esc([x.detalhe, x.pct != null ? `${x.pct}%` : ""].filter(Boolean).join(" · "))}</small>` : ""}</li>`;
+  // o passo que está andando (tem %) vem antes do primeiro que falta
+  const daVez = (lista) => lista.find((x) => !x.feito && x.pct != null) || lista.find((x) => !x.feito);
+  const proximo = daVez([...(e.passos || []), ...(e.itens || []).flatMap((i) => i.passos)]);
+  const clipes = e.itens && e.itens.length ? `
+    <ul class="prog-clipes">${e.itens.map((i) => {
+      const prox = daVez(i.passos);
+      return `<li><b>${esc(i.nome)}</b>${barraPct(i.pct, "prog-barra")}<span class="prog-pct-mini">${i.pct}%</span>
+        <small>${prox ? `agora: ${esc(prox.nome)}${prox.pct != null ? ` · ${prox.pct}%` : ""}` : "master pronto"}</small></li>`;
+    }).join("")}</ul>` : "";
+  const vazio = e.itens && !e.itens.length ? `<p class="ativ-vazio">Cada clipe aprovado vira um projeto de motion — o avanço de cada um aparece aqui.</p>` : "";
+  return `
+    <div class="prog-etapa">
+      <div class="prog-cabeca">
+        <span class="prog-nome">${esc(nome)}</span><span class="prog-pct">${e.pct}%</span>
+        <span class="prog-agora">${e.estado === "feito" ? "etapa pronta" : !proximo ? ""
+          : proximo.pct != null ? `agora: ${esc(proximo.nome)} · ${proximo.pct}%` : `próximo passo: ${esc(proximo.nome)}`}</span>
+      </div>
+      ${barraPct(e.pct, "prog-barra")}
+      ${e.passos && e.passos.length ? `<ol class="prog-passos">${e.passos.map(passo).join("")}</ol>` : ""}
+      ${clipes}${vazio}
+    </div>`;
+}
+
+function desenharAtividade(slug, a, ativa) {
   const caixa = document.getElementById("atividade");
   if (!caixa) return;
   const ultimo = a.eventos[0];
@@ -593,11 +768,11 @@ function desenharAtividade(slug, a) {
   let agora;
   if (falhou) agora = `${esc(ultimo.msg)}<small>Veja a conversa com o Claude para o detalhe do erro.</small>`;
   else if (a.estado === "rodando") {
-    // progresso: hoje só a transcrição anota ("transcrevendo: 12:30 de 36:10 (35%)")
-    const r = a.rodando;
-    const barra = r.pct != null ? `<span class="ativ-barra"><i style="width:${Math.max(0, Math.min(100, r.pct))}%"></i></span>` : "";
-    const progresso = r.progresso ? `<small class="ativ-progresso">${barra}${esc(r.progresso)}</small>` : "";
-    agora = `${esc(r.msg)}${progresso}<small>começou ${ha(r.ha_s)} · o painel atualiza sozinho</small>`;
+    // cada comando aberto com a barra dele (dois motions em paralelo: duas barras)
+    const todos = a.rodando_todos && a.rodando_todos.length ? a.rodando_todos : [a.rodando];
+    agora = todos.map((r) => `<div class="ativ-cmd">${esc(r.msg)}${r.progresso
+      ? `<small class="ativ-progresso">${barraPct(r.pct)}${esc(r.progresso)}</small>` : ""}</div>`).join("")
+      + `<small>começou ${ha(todos[0].ha_s)} · o painel atualiza sozinho</small>`;
   }
   else if (a.estado === "ativo") agora = `${esc(ultimo.msg)}<small>última notícia ${ha(a.ultima_ha_s)}</small>`;
   else if (a.estado === "sua_vez") agora = `${esc(a.sua_vez.msg)} <button class="link" data-ir-etapa="${a.sua_vez.etapa}">escolher agora</button>`;
@@ -605,21 +780,31 @@ function desenharAtividade(slug, a) {
   else if (a.estado === "esperando_claude") agora = `Nada começou ainda. Cole no Claude Code, aberto na pasta do TopClip: ${comando(`/topclip projetos/${slug}`)}`;
   else agora = `${esc(ultimo ? ultimo.msg : "")}<small>última notícia ${ha(a.ultima_ha_s)} · se o Claude ainda estiver pensando, a próxima etapa aparece aqui sozinha</small>`;
 
-  const lista = atividadeAberta ? a.eventos : a.eventos.slice(0, 6);
+  const nomeEtapa = (ETAPAS.find((e) => e.id === ativa) || ETAPAS[0]).nome;
+  const daEtapa = logDeTodas ? a.eventos : a.eventos.filter((e) => e.etapa === ativa);
+  const lista = atividadeAberta ? daEtapa : daEtapa.slice(0, 6);
   caixa.innerHTML = `
     <div class="ativ-topo">
       <span class="ativ-estado ${cls}"><i></i>${rotulo}</span>
       <div class="ativ-agora">${agora}</div>
-      ${a.eventos.length > 6 ? `<button class="link" data-ativ-alternar>${atividadeAberta ? "ver menos" : `ver tudo (${a.eventos.length})`}</button>` : ""}
     </div>
-    ${a.eventos.length ? `<ul class="ativ-lista">${lista.map((e) => `
-      <li><time datetime="${esc(e.t)}">${horario(e.t)}</time><span class="ic ${e.tipo}">${ICONE_EVENTO[e.tipo] || "•"}</span><span>${esc(e.msg)}</span></li>`).join("")}</ul>`
-      : `<p class="ativ-vazio">O que o TopClip fizer neste projeto aparece aqui, ao vivo.</p>`}`;
-  caixa.querySelector("[data-ativ-alternar]")?.addEventListener("click", () => { atividadeAberta = !atividadeAberta; desenharAtividade(slug, a); });
+    ${blocoProgresso(nomeEtapa, (a.etapas || {})[ativa])}
+    <div class="ativ-log-cabeca">
+      <span>${logDeTodas ? "log de todas as etapas" : `log da etapa ${esc(nomeEtapa.toLowerCase())}`} (${daEtapa.length})</span>
+      <span class="ativ-log-acoes">
+        <button class="link" data-log-todas>${logDeTodas ? `só ${esc(nomeEtapa.toLowerCase())}` : "todas as etapas"}</button>
+        ${daEtapa.length > 6 ? `<button class="link" data-ativ-alternar>${atividadeAberta ? "ver menos" : `ver tudo`}</button>` : ""}
+      </span>
+    </div>
+    ${daEtapa.length ? `<ul class="ativ-lista">${lista.map((e) => `
+      <li><time datetime="${esc(e.t)}">${horario(e.t)}</time><span class="ic ${e.tipo}">${ICONE_EVENTO[e.tipo] || "•"}</span><span>${esc(e.msg)}${logDeTodas && e.etapa ? ` <small class="ativ-etapa">${esc(e.etapa)}</small>` : ""}</span></li>`).join("")}</ul>`
+      : `<p class="ativ-vazio">${a.eventos.length ? "Nada nesta etapa ainda — o que o TopClip fizer nela aparece aqui, ao vivo." : "O que o TopClip fizer neste projeto aparece aqui, ao vivo."}</p>`}`;
+  caixa.querySelector("[data-ativ-alternar]")?.addEventListener("click", () => { atividadeAberta = !atividadeAberta; desenharAtividade(slug, a, ativa); });
+  caixa.querySelector("[data-log-todas]")?.addEventListener("click", () => { logDeTodas = !logDeTodas; desenharAtividade(slug, a, ativa); });
   caixa.querySelector("[data-ir-etapa]")?.addEventListener("click", (e) => (location.hash = `#/projeto/${slug}/${e.target.dataset.irEtapa}`));
 }
 
-function acompanharAtividade(slug, etapa) {
+function acompanharAtividade(slug, etapa, ativa) {
   let assinatura = null, chaveAnterior = null;
   const rota = location.hash;
   const passo = async () => {
@@ -635,9 +820,10 @@ function acompanharAtividade(slug, etapa) {
       return;
     }
     assinatura = a.assinatura;
-    const chave = JSON.stringify([a.estado, a.eventos.slice(0, 12), a.sua_vez, a.rodando && a.rodando.msg, atividadeAberta]);
+    atualizarTrilha(a.etapas);
+    const chave = JSON.stringify([a.estado, a.eventos.slice(0, 12), a.sua_vez, a.rodando_todos, a.etapas, atividadeAberta, logDeTodas]);
     if (chave !== chaveAnterior || ["rodando", "ativo", "parado"].includes(a.estado)) {
-      desenharAtividade(slug, a);
+      desenharAtividade(slug, a, ativa);
       chaveAnterior = chave;
     }
   };

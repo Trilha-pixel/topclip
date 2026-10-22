@@ -44,12 +44,17 @@ palavra, e não diz onde a palavra começa. Três fontes, nesta ordem:
 
 1. **Legenda automática do YouTube**, se o vídeo estiver lá (mesmo já publicado).
    O VTT traz `<00:26:48.520><c>carrinhos</c>` — timing por palavra de graça.
+   Projeto que veio de link do YouTube (`./topclip baixar`) já tem: é o `legenda`
+   do `projeto.json` — passe-o como `[TRANSCRIPT]` no `init`. Vídeo local que também
+   está no YouTube:
    ```bash
-   yt-dlp "ytsearch3:TITULO DO VIDEO" --print "%(id)s | %(duration)s | %(channel)s"
+   ./topclip py -m yt_dlp "ytsearch3:TITULO DO VIDEO" --print "%(id)s | %(duration)s | %(channel)s"
    # confirmar pela duração batendo com o arquivo local, depois:
-   yt-dlp --write-auto-subs --sub-langs "pt-orig,pt" --sub-format vtt \
-     --skip-download -o "video.%(ext)s" "https://youtube.com/watch?v=ID"
+   ./topclip py -m yt_dlp --js-runtimes node --write-auto-subs --sub-langs "pt-orig" --sub-format vtt \
+     --skip-download -o "projetos/<nome>/legenda.%(ext)s" "https://youtube.com/watch?v=ID"
    ```
+   Use a faixa `-orig` (a do idioma falado); as outras são tradução e perdem o
+   tempo por palavra.
    `prepare` aceita o `.vtt` direto: o parser extrai o timestamp real de cada
    palavra, remove a duplicação da cue rolante e usa o `>>` como fronteira de
    troca de locutor.

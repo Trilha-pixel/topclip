@@ -52,6 +52,15 @@ Abra o Claude Code **dentro da pasta `topclip`** e peça:
 corta esse podcast: ~/Videos/meu-podcast.mp4
 ```
 
+O vídeo não precisa estar no computador — um link do YouTube ou do Instagram serve:
+
+```text
+corta esse podcast: https://www.youtube.com/watch?v=...
+```
+
+O TopClip baixa o vídeo (até 1080p) para `projetos/` e, no YouTube, aproveita a
+legenda automática com o tempo de cada palavra, o que pula a transcrição.
+
 Ou chame direto:
 
 | Comando | O que faz |
@@ -82,7 +91,9 @@ projeto? Clique em **Ver um exemplo**.
 
 Para começar um projeto, clique em **Novo projeto** e escolha o vídeo pelo Finder — ou
 simplesmente arraste o arquivo para o painel. Nada é copiado nem enviado: o painel só
-anota onde o vídeo está.
+anota onde o vídeo está. Também dá para **colar o link** de um vídeo do YouTube ou do
+Instagram: o painel mostra o título para você conferir e baixa o vídeo para dentro do
+projeto, com o andamento ao vivo.
 
 <p align="center">
   <img src="docs/img/painel-momentos.jpg" alt="Painel do TopClip: escolhendo os momentos de um podcast" width="100%">

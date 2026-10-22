@@ -224,7 +224,11 @@ def _parse_youtube_vtt(text: str, source: str) -> dict[str, Any]:
 
     O marcador `>>` do YouTube indica troca de locutor e vira fronteira de segmento.
     """
-    blocks = re.split(r"\n\s*\n", text.replace("\r\n", "\n"))
+    # A cue do início (e a de depois de pausa longa) abre com uma linha só com espaço,
+    # no lugar da linha anterior. Ela não separa cues: sem tirá-la, o split abaixo
+    # deixaria o texto da cue sem cabeçalho e a frase perderia o tempo por palavra.
+    texto = re.sub(r"(-->[^\n]*\n)[ \t]+\n", r"\1", text.replace("\r\n", "\n"))
+    blocks = re.split(r"\n\s*\n", texto)
     palavras: list[dict[str, Any]] = []
     anterior: list[str] = []
     locutor = 0

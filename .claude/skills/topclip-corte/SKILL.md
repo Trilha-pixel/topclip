@@ -136,7 +136,7 @@ da skill e some da vista.
 
 **Progresso no painel.** Com o caminho do projeto nos argumentos, cada `./topclip
 corte …` se anota sozinho no diário que o painel mostra. Ao invocar um subagente ou
-parar num portão, anote também: `./topclip log projetos/<nome> "o que está acontecendo"`.
+parar num portão, anote também: `./topclip log projetos/<nome> --etapa <momentos|cortes|vertical> "o que está acontecendo"`.
 
 ## Fronteira com a topclip-motion
 

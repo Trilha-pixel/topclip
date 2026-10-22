@@ -268,6 +268,21 @@ main { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 48px) 1
 .alternar .marcar { width: 28px; height: 28px; }
 .alternar .marcar svg { width: 22px; height: 22px; }
 
+/* já feito: carimbo azul (o mesmo "feito" da trilha) — sai da escolha */
+.carimbo { font: 400 15px/1 var(--mao); padding: 6px 10px 4px; background: var(--azul); color: #fff; transform: rotate(-3deg); white-space: nowrap; }
+.carimbo.andamento { background: var(--papel-claro); color: var(--azul); box-shadow: inset 0 0 0 1.5px var(--azul); }
+.corte { position: relative; }
+.corte > .carimbo { position: absolute; top: 12px; left: 12px; z-index: 2; font-size: 17px; box-shadow: 2px 2px 0 rgba(42, 41, 44, 0.25); }
+.corte > .carimbo.andamento { box-shadow: inset 0 0 0 1.5px var(--azul), 2px 2px 0 rgba(42, 41, 44, 0.25); }
+.corte.pronto { border-color: var(--azul); }
+.carimbo.tag { font-size: 13px; padding: 4px 8px 3px; transform: rotate(-2deg); }
+.carimbo.em-linha { display: inline-block; font-size: 13px; padding: 3px 7px 2px; }
+.momento.pronto, .momento.andamento { cursor: default; }
+.momento.pronto { border-color: var(--azul); }
+.momento.pronto .marcar { background: var(--azul); border-color: var(--azul); }
+.momento.pronto .marcar svg { opacity: 1; }
+.momento.andamento .marcar { border-style: dashed; border-color: var(--azul); }
+
 /* verticais e motion */
 .verticais { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 22px; }
 .vertical { display: grid; gap: 8px; }
@@ -386,6 +401,11 @@ main { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 48px) 1
 .colar summary { cursor: pointer; font-size: 13.5px; color: var(--tinta-2); }
 .colar input { width: 100%; margin-top: 10px; font: 400 15px var(--texto); padding: 11px 13px; border: 1.5px solid var(--tinta); border-radius: 2px; background: #fff; }
 .colar input:focus { outline: none; box-shadow: 3px 3px 0 var(--amarelo); }
+/* ou o link do YouTube/Instagram — o "ou" escrito à mão, como o do arrastar */
+.colar-link { display: grid; gap: 8px; margin-top: 6px; }
+.campo .colar-link label { font: 400 17px/1.2 var(--mao); text-transform: none; letter-spacing: 0; color: var(--tinta-2); transform: rotate(-1deg); transform-origin: left; }
+.colar-link small { font: 500 12.5px var(--mono); color: var(--tinta-2); }
+.modal .escolhido[data-tipo="link"] b, .modal .escolhido[data-tipo="link"] small { word-break: normal; overflow-wrap: anywhere; }
 [hidden] { display: none !important; }
 
 /* atividade ao vivo */
@@ -418,3 +438,49 @@ main { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 48px) 1
 .cartao .ativo-selo i { width: 7px; height: 7px; border-radius: 50%; background: var(--azul); animation: pulsa 1.4s ease-in-out infinite; }
 .cartao .ativo-selo.sua_vez { color: var(--tinta); border-color: var(--tinta); background: var(--amarelo); }
 .cartao .ativo-selo.sua_vez i { background: var(--tinta); animation: none; }
+
+/* ------------------------------------------------------------ apagar projeto */
+.cabeca-acoes { display: flex; align-items: center; gap: 22px; }
+.link.apagar { color: var(--tinta-2); text-decoration-color: var(--vermelho); }
+.link.apagar:hover { color: var(--vermelho); }
+.botao.perigo { background: var(--vermelho); border-color: var(--vermelho); color: #fff; box-shadow: 3px 3px 0 var(--tinta); }
+.botao.perigo:hover { box-shadow: 5px 5px 0 var(--tinta); }
+.apagar-lista { margin: 16px 0 0; padding-left: 20px; display: grid; gap: 8px; font-size: 15px; line-height: 1.45; }
+.apagar-lista .mono { word-break: break-all; }
+
+/* progresso de cada etapa: barrinha na trilha, passo a passo e log na caixa de atividade */
+.etapa .barrinha { display: block; width: 58px; height: 4px; border-radius: 999px; background: var(--papel-fundo); border: 1px solid var(--papel-borda); overflow: hidden; }
+.etapa .barrinha i { display: block; height: 100%; background: var(--azul); transition: width 0.6s ease; }
+.etapa.pendente .barrinha { opacity: 0.55; }
+.etapa.andamento .estado { color: var(--azul); }
+.ativ-cmd + .ativ-cmd { margin-top: 10px; }
+.prog-etapa { margin: 16px 0 0; padding: 14px 0 0; border-top: 1.5px dashed var(--papel-borda); }
+.prog-cabeca { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 9px; }
+.prog-nome { font: 700 15px/1 var(--display); text-transform: uppercase; letter-spacing: 0.06em; }
+.prog-pct { font: 700 24px/1 var(--display); color: var(--azul); }
+.prog-agora { margin-left: auto; font: 500 12px/1.4 var(--mono); color: var(--tinta-3); }
+.prog-barra { display: block; height: 9px; border-radius: 999px; background: var(--papel-fundo); border: 1px solid var(--papel-borda); overflow: hidden; }
+.prog-barra i { display: block; height: 100%; background: var(--azul); transition: width 0.6s ease; }
+.prog-passos { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13.5px; color: var(--tinta-3); }
+.prog-passos li.feito { color: var(--tinta-2); }
+.prog-passos li.andando { color: var(--azul); font-weight: 600; }
+.prog-passos li { display: inline-flex; align-items: center; gap: 6px; }
+.prog-passos .marca { width: 14px; height: 14px; border-radius: 50%; border: 1.5px dashed var(--tinta-3); flex: none; display: grid; place-items: center; }
+.prog-passos .marca svg { width: 10px; height: 10px; }
+.prog-passos li.feito .marca { background: var(--azul); border: 1.5px solid var(--azul); }
+.prog-passos li.andando .marca { border: 1.5px solid var(--azul); background: linear-gradient(90deg, var(--azul) 50%, transparent 50%); }
+.prog-passos small { font: 500 11.5px/1 var(--mono); }
+.prog-clipes { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 10px; }
+.prog-clipes li { display: grid; grid-template-columns: minmax(84px, 140px) 1fr 44px; gap: 4px 12px; align-items: center; font-size: 14px; }
+.prog-clipes b { font: 600 13px/1.2 var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prog-clipes .prog-pct-mini { font: 700 15px/1 var(--display); color: var(--azul); text-align: right; }
+.prog-clipes small { grid-column: 2 / -1; font: 500 12px/1.3 var(--mono); color: var(--tinta-3); }
+.ativ-log-cabeca { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; margin: 16px 0 0; padding: 14px 0 0; border-top: 1.5px dashed var(--papel-borda); font: 500 12px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--tinta-3); }
+.ativ-log-acoes { display: flex; gap: 16px; text-transform: none; letter-spacing: 0; }
+.ativ-log-cabeca + .ativ-lista { margin-top: 10px; padding-top: 0; border-top: 0; }
+.ativ-etapa { font: 500 11px/1 var(--mono); color: var(--tinta-3); text-transform: uppercase; letter-spacing: 0.06em; margin-left: 4px; }
+@media (max-width: 640px) {
+  .etapa .barrinha { width: 40px; }
+  .etapa.andamento .estado { display: block; letter-spacing: 0; }      /* o % cabe; "pronto"/"a fazer" não */
+  .prog-agora { margin-left: 0; width: 100%; }
+}

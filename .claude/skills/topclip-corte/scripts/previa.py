@@ -62,7 +62,8 @@ def _apagar_antigas(pasta: Path, clip_id: str) -> None:
 
 
 def cortar_previas(run: Path, video: str, candidatos: dict[str, Any], ids: set[str] | None = None,
-                   com_audio: bool = True, paralelo: int = 4) -> dict[str, Any]:
+                   com_audio: bool = True, paralelo: int = 4, progresso=None) -> dict[str, Any]:
+    """`progresso(feito, total, clip_id)`, se vier, é chamado a cada prévia pronta."""
     pasta = run / "preview"
     pasta.mkdir(parents=True, exist_ok=True)
     trabalhos = []
@@ -84,8 +85,13 @@ def cortar_previas(run: Path, video: str, candidatos: dict[str, Any], ids: set[s
         return {"clip_id": clip_id, "arquivo": str(saida.relative_to(run)),
                 "segundos": round(sum(f - i for i, f in segmentos), 2), "segmentos": len(segmentos)}
 
+    avisar = progresso or (lambda *_: None)
+    resultados = []
+    avisar(0, len(trabalhos), "")
     with ThreadPoolExecutor(max_workers=max(1, min(paralelo, len(trabalhos)))) as pool:
-        resultados = list(pool.map(cortar, trabalhos))
+        for r in pool.map(cortar, trabalhos):
+            resultados.append(r)
+            avisar(len(resultados), len(trabalhos), r["clip_id"])
     nao_achados = sorted(ids - {t[0] for t in trabalhos}) if ids is not None else []
     return {
         "previas": [r for r in resultados if "arquivo" in r],

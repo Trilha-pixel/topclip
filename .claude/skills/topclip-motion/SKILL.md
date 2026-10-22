@@ -250,14 +250,16 @@ o mesmo prop voltando com outro estado.
 Use o `render.py` do projeto (vem de `lib/render_template.py`). **Montagem por sobreposição, nunca por corte-e-concatenação.**
 
 ```bash
-./topclip py projetos/<nome>/motion/render.py --rascunho      # revisão: veryfast, RASCUNHO.mp4
-./topclip py projetos/<nome>/motion/render.py M2 --rascunho   # refez só a M2
-./topclip py projetos/<nome>/motion/render.py                 # o master final, UMA vez
+./topclip py projetos/<nome>/motion/<clipe>/render.py --rascunho      # revisão: veryfast, RASCUNHO.mp4
+./topclip py projetos/<nome>/motion/<clipe>/render.py M2 --rascunho   # refez só a M2
+./topclip py projetos/<nome>/motion/<clipe>/render.py                 # o master final, UMA vez
 ```
 
 O render confere a legenda e as saídas **antes** do primeiro quadro (erro em segundos,
 não depois de minutos), renderiza os quadros em vários processos e, depois de montar,
-confere sozinho duração, cadência, quadros e MD5 do áudio contra a fonte.
+confere sozinho duração, cadência, quadros e MD5 do áudio contra a fonte. Rodado pelo
+caminho do projeto, como acima, ele aparece no painel com a barra de % (quadros,
+legenda e montagem) e o motion do clipe avança sozinho na etapa Motion.
 
 **Legenda:** `janelas=captions.janelas_livres(SHOTS, DUR)` — coladas nas cenas, sem
 recuo — e `video=SRC`, que põe a legenda abaixo do queixo mais baixo das janelas

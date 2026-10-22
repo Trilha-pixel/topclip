@@ -193,8 +193,9 @@ def _frame(job):
     return name
 
 
-def render_cenas(nomes=None, jobs=None):
-    """Renderiza as cenas pedidas (todas, sem `nomes`), quadro a quadro em paralelo."""
+def render_cenas(nomes=None, jobs=None, avanco=None):
+    """Renderiza as cenas pedidas (todas, sem `nomes`), quadro a quadro em paralelo.
+    `avanco(feito, total)`, se vier, e chamado a cada quadro pronto."""
     jobs = jobs or JOBS
     tarefas = []
     for name, fn, t0, t1, total24, cutaway in SHOTS:
@@ -213,11 +214,15 @@ def render_cenas(nomes=None, jobs=None):
     if jobs <= 1:
         for k, job in enumerate(tarefas):
             _frame(job)
+            if avanco:
+                avanco(k + 1, len(tarefas))
             if k % 30 == 0:
                 print(f"  {k:4d}/{len(tarefas)}", flush=True)
     else:
         with ProcessPoolExecutor(jobs, initializer=_silencio) as ex:
             for k, _ in enumerate(ex.map(_frame, tarefas, chunksize=4)):
+                if avanco:
+                    avanco(k + 1, len(tarefas))
                 if k % 60 == 0:
                     print(f"  {k:4d}/{len(tarefas)}", flush=True)
     print(f"  cenas: {len(tarefas)} quadros em {time.time() - t:.0f}s")
@@ -233,7 +238,7 @@ def _liga(src, dst):
         shutil.copyfile(src, dst)
 
 
-def render_captions():
+def render_captions(avanco=None):
     """
     Legenda TOPCLIP PAPEL v2, no padrao medido frame a frame na referencia: blocos curtos,
     CENTRADOS, em CORTE SECO, correndo nas janelas livres de motion, abaixo do queixo.
@@ -259,6 +264,8 @@ def render_captions():
     # renderiza uma vez por passo de boil e liga os quadros repetidos ao primeiro.
     feito = {}
     for i in range(total):
+        if avanco:
+            avanco(i + 1, total)
         cur = next((k for a, b, k in janelas if a <= i < b), None)
         alvo = d / f"{i:04d}.png"
         if cur is None:
@@ -307,13 +314,28 @@ def mux_cmd(rascunho=False):
     return cmd, dst
 
 
-def mux(rascunho=False):
+def _ffmpeg(cmd, avanco=None):
+    """Roda o ffmpeg. Com `avanco(segundos, total)`, le o `-progress` dele: quantos
+    segundos do clipe ja foram codificados."""
+    if not avanco:
+        return subprocess.run(cmd, check=True)
+    proc = subprocess.Popen(cmd[:1] + ["-progress", "pipe:1", "-nostats"] + cmd[1:],
+                            stdout=subprocess.PIPE, text=True)
+    for linha in proc.stdout:
+        chave, _, valor = linha.strip().partition("=")
+        if chave == "out_time_us" and valor.isdigit():
+            avanco(int(valor) / 1e6, DUR)
+    if proc.wait():
+        raise subprocess.CalledProcessError(proc.returncode, cmd)
+
+
+def mux(rascunho=False, avanco=None):
     OUT.mkdir(exist_ok=True)
     cmd, dst = mux_cmd(rascunho)
     t = time.time()
     print(f"  montando {'RASCUNHO (veryfast)' if rascunho else 'MASTER (slow)'}...",
           flush=True)
-    subprocess.run(cmd, check=True)
+    _ffmpeg(cmd, avanco)
     print(f"  {dst.name} em {time.time() - t:.0f}s -> {dst}")
     confere(dst)
     return dst
@@ -354,6 +376,39 @@ def confere(dst):
         raise SystemExit(f"master difere da fonte em: {', '.join(ruim)}")
 
 
+class Barra:
+    """A barra do painel (Atividade, em painel/atividade.py), achada subindo de pasta
+    em pasta a partir do projeto. Cada fase do render ocupa uma faixa, pelo peso.
+    Fora de um projeto do TopClip, nao anota nada — e nunca derruba o render."""
+
+    def __init__(self, fases, rotulo):
+        total = sum(peso for _, peso in fases) or 1
+        self.faixa, acc = {}, 0
+        for nome, peso in fases:
+            self.faixa[nome] = (acc / total, peso / total)
+            acc += peso
+        self.prog = None
+        for base in Path(__file__).resolve().parents:
+            alvo = base / "painel" / "atividade.py"
+            if alvo.exists():
+                try:
+                    import importlib.util
+                    spec = importlib.util.spec_from_file_location("topclip_atividade", alvo)
+                    mod = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(mod)
+                    self.prog = mod.Progresso(Path(__file__), rotulo, etapa="motion")
+                except Exception:
+                    pass
+                break
+
+    def __call__(self, fase, fracao, msg):
+        if not self.prog:
+            return
+        ini, largura = self.faixa.get(fase, (0, 0))
+        pct = 100 * (ini + largura * max(0.0, min(1.0, fracao)))
+        self.prog.marcar(pct, f"{msg} ({pct:.0f}%)", final=pct >= 100)
+
+
 if __name__ == "__main__":
     args = sys.argv[1:]
     jobs = None
@@ -364,6 +419,14 @@ if __name__ == "__main__":
     so = [a for a in args if not a.startswith("--")]
     cenas = [s for s in so if s != "CAP"]
     rascunho = "--rascunho" in args
+    fazer_cenas = "--mux" not in args and (not so or bool(cenas))
+    fazer_cap = "--mux" not in args and (not so or "CAP" in so)
+    fazer_mux = "--frames" not in args
+    final = "rascunho" if rascunho else "master"
+    # o peso de cada fase ~ o tempo que ela leva; o slow do master e o mais caro
+    fases = ([("cenas", 60)] if fazer_cenas else []) + ([("CAP", 10)] if fazer_cap else []) \
+        + ([("mux", 10 if rascunho else 30)] if fazer_mux else [])
+    barra = Barra(fases, f"montando o {final} do motion")
     t = time.time()
     if "--mux" not in args:
         # legenda e saidas conferidas ANTES: o erro aparece em segundos, nao depois de
@@ -371,10 +434,13 @@ if __name__ == "__main__":
         if not so or "CAP" in so:
             CAP.check(SHOTS)
         confere_saidas()
-        if not so or cenas:
-            render_cenas(cenas or None, jobs)
-        if not so or "CAP" in so:
-            render_captions()
-    if "--frames" not in args:
-        mux(rascunho)
+        if fazer_cenas:
+            render_cenas(cenas or None, jobs, avanco=lambda k, n: barra(
+                "cenas", k / n, f"desenhando os quadros das cenas: {k} de {n}"))
+        if fazer_cap:
+            render_captions(avanco=lambda i, n: barra(
+                "CAP", i / n, f"desenhando a legenda: {i} de {n} quadros"))
+    if fazer_mux:
+        mux(rascunho, avanco=lambda s, d: barra(
+            "mux", s / d if d else 0, f"juntando tudo no {final}: {s:.0f}s de {d:.0f}s"))
     print(f"  total {time.time() - t:.0f}s")

@@ -73,7 +73,6 @@ def checar_binarios() -> None:
     for nome, obrigatorio, como in [
         ("ffmpeg", True, "brew install ffmpeg"),
         ("ffprobe", True, "brew install ffmpeg"),
-        ("yt-dlp", False, "brew install yt-dlp — so para puxar legenda do YouTube"),
     ]:
         caminho = shutil.which(nome)
         if caminho:
@@ -86,6 +85,16 @@ def checar_binarios() -> None:
         else:
             linha(AVISO, nome, como)
             avisos.append(f"{nome} ausente (opcional)")
+
+    # Baixar do YouTube (./topclip baixar) exige resolver o desafio em JavaScript dele:
+    # o yt-dlp usa o primeiro destes que achar. Sem nenhum, Instagram e arquivo local seguem.
+    js = next(((n, c) for n in ("deno", "node", "bun") if (c := shutil.which(n))), None)
+    if js:
+        linha(OK, f"JavaScript ({js[0]})", f"{js[1]} — baixar vídeo do YouTube por link")
+    else:
+        linha(AVISO, "JavaScript (Deno ou Node)",
+              "opcional: baixar vídeo do YouTube por link — brew install deno (ou ./topclip instalar)")
+        avisos.append("Deno/Node ausente (opcional: link do YouTube)")
 
 
 def checar_python() -> None:
@@ -101,6 +110,7 @@ def checar_python() -> None:
         ("yaml", True, "ler config e perfis"),
         ("jsonschema", True, "validar os artefatos — e o que segura a qualidade"),
         ("faster_whisper", False, "transcrever sem legenda pronta"),
+        ("yt_dlp", False, "baixar vídeo de link (YouTube, Instagram) e a legenda do YouTube"),
         ("cv2", False, "enquadramento por locutor ativo"),
         ("numpy", False, "enquadramento por locutor ativo"),
         ("PIL", False, "utilidades de imagem"),

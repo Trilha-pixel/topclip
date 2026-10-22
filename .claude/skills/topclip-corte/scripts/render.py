@@ -323,16 +323,20 @@ def render_all(
     final_clips: dict[str, Any],
     edit_plans: dict[str, Any],
     render_cfg: dict[str, Any],
+    progresso=None,
 ) -> list[dict[str, Any]]:
+    """`progresso(feito, total, clip_id)`, se vier, é chamado antes de cada clipe e no fim."""
     run = Path(run_dir)
     plans = {str(plan["clip_id"]): plan for plan in edit_plans.get("plans", [])}
+    avisar = progresso or (lambda *_: None)
+    # `user_override`: o usuário mandou seguir um WEAK/REBUILD (ver
+    # reports.consolidate_final). O status continua o que era.
+    aprovados = [clip for clip in final_clips.get("clips", [])
+                 if clip.get("status") in {"APPROVED", "LONG_CLIP"} or clip.get("user_override")]
     rendered = []
-    for clip in final_clips.get("clips", []):
-        # `user_override`: o usuário mandou seguir um WEAK/REBUILD (ver
-        # reports.consolidate_final). O status continua o que era.
-        if clip.get("status") not in {"APPROVED", "LONG_CLIP"} and not clip.get("user_override"):
-            continue
+    for clip in aprovados:
         clip_id = str(clip.get("id"))
+        avisar(len(rendered), len(aprovados), clip_id)
         plan = plans.get(clip_id)
         if not plan:
             raise HarnessError(f"Edit plan ausente para {clip_id}")
@@ -340,4 +344,5 @@ def render_all(
         slug = slugify(plan.get("output_slug") or f"{clip_id}-{clip.get('title', '')}")
         output = run / "output" / "final-clips" / context / slug
         rendered.append(render_clip(source_video, clip, plan, output, render_cfg))
+    avisar(len(rendered), len(aprovados), "pronto")
     return rendered

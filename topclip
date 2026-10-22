@@ -6,8 +6,10 @@
 #   ./topclip corte <subcomando>    motor de cortes (init, prepare, digest, autoframe, render...)
 #   ./topclip motion novo <pasta>   cria um projeto de motion a partir de um clipe vertical
 #   ./topclip motion transcrever <video> <saida.json>
+#   ./topclip baixar <link> [projetos/<nome>]   baixa o vídeo de um link (YouTube, Instagram)
 #   ./topclip painel                abre o painel no navegador (http://127.0.0.1:7777)
 #   ./topclip log <projeto> "msg"   anota no diário do projeto (aparece no painel)
+#                                   --etapa momentos|cortes|vertical|motion|entrega diz em qual
 #   ./topclip py <script.py> ...    roda qualquer script com o Python da venv
 #   ./topclip testes                roda a suíte de testes
 #
@@ -21,7 +23,7 @@ CORTE="$ROOT/.claude/skills/topclip-corte"
 MOTION="$ROOT/.claude/skills/topclip-motion"
 
 ajuda() {
-    sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,/^# Existe porque/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 precisa_venv() {
@@ -34,18 +36,21 @@ precisa_venv() {
 
 # Roda um comando anotando início e fim no diário do projeto (painel → Atividade),
 # quando algum argumento aponta para projetos/<nome>. Sem projeto, só roda.
-# $1 = rótulo ("corte", "transcrever"); $2 e $3 = python e script; o resto, os argumentos.
+# $1 = rótulo ("corte", "transcrever", "py"); $2 e $3 = python e script; o resto, os
+# argumentos. No `py` o próprio script conta (projetos/<nome>/motion/<clipe>/render.py).
+# O comando recebe o id em TOPCLIP_ATIVIDADE: o progresso que ele anotar casa com ele.
 rodar_registrando() {
     local rotulo="$1"; shift
-    local projeto
-    projeto="$("$PY" "$ROOT/painel/atividade.py" achar-projeto "${@:3}" 2>/dev/null || true)"
+    local de=3 projeto
+    [ "$rotulo" = "py" ] && de=2
+    projeto="$("$PY" "$ROOT/painel/atividade.py" achar-projeto "${@:$de}" 2>/dev/null || true)"
     if [ -z "$projeto" ]; then
         exec "$@"
     fi
     local id="$$-$(date +%s)" t0=$SECONDS codigo=0
-    "$PY" "$ROOT/painel/atividade.py" inicio "$projeto" "$id" "$$" "$rotulo" "${@:3}" || true
-    "$@" || codigo=$?
-    "$PY" "$ROOT/painel/atividade.py" fim "$projeto" "$id" "$codigo" "$((SECONDS - t0))" "$rotulo" "${@:3}" || true
+    "$PY" "$ROOT/painel/atividade.py" inicio "$projeto" "$id" "$$" "$rotulo" "${@:$de}" || true
+    TOPCLIP_ATIVIDADE="$id" "$@" || codigo=$?
+    "$PY" "$ROOT/painel/atividade.py" fim "$projeto" "$id" "$codigo" "$((SECONDS - t0))" "$rotulo" "${@:$de}" || true
     exit "$codigo"
 }
 
@@ -104,7 +109,7 @@ case "$cmd" in
     log)
         precisa_venv
         if [ $# -lt 2 ]; then
-            echo "uso: ./topclip log projetos/<nome> \"o que está acontecendo\"" >&2
+            echo "uso: ./topclip log projetos/<nome> [--etapa momentos|cortes|vertical|motion|entrega] \"o que está acontecendo\"" >&2
             exit 2
         fi
         alvo="$1"; shift
@@ -119,13 +124,18 @@ case "$cmd" in
             *) echo "uso: ./topclip motion {novo|transcrever} ..." >&2; exit 2 ;;
         esac
         ;;
+    baixar)
+        # anota o próprio início e fim no diário: o projeto pode nem existir antes
+        precisa_venv
+        exec "$PY" "$ROOT/painel/baixar.py" "$@"
+        ;;
     painel)
         precisa_venv
         exec "$PY" "$ROOT/painel/servidor.py" "$@"
         ;;
     py)
         precisa_venv
-        exec "$PY" "$@"
+        rodar_registrando py "$PY" "$@"
         ;;
     testes)
         precisa_venv
@@ -133,7 +143,7 @@ case "$cmd" in
         echo "-- motion"
         (cd "$MOTION" && "$PY" -m unittest discover -s tests -t . -q)
         echo "-- painel"
-        cd "$ROOT/painel" && exec "$PY" -m unittest test_servidor -q
+        cd "$ROOT/painel" && exec "$PY" -m unittest test_servidor test_baixar -q
         ;;
     ajuda|-h|--help)
         ajuda

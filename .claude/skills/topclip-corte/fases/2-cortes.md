@@ -45,7 +45,7 @@ Na run de teste (`aula-yt-teste`) a ordem antiga custou 41 minutos de cortes par
 dedupe, limite de rebuild e nota mínima continuam todos. O que mudou é que nenhum
 espera outro sem motivo, e nenhum roda sobre corte que o usuário já descartou.
 
-Anote cada passo no painel (`./topclip log projetos/<nome> "..."`), em português de
+Anote cada passo no painel (`./topclip log projetos/<nome> --etapa cortes "..."`), em português de
 gente: "montando os 3 cortes", "prévias prontas — pode ir assistindo enquanto as
 revisões rodam", "revisões pediram ajuste em 2; refazendo os dois de uma vez".
 

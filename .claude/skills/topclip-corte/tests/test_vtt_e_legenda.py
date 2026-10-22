@@ -74,6 +74,28 @@ class TestVttYouTube(unittest.TestCase):
                                  f"{anterior['word']!r} invade {atual['word']!r}")
             self.assertGreater(anterior["end"], anterior["start"])
 
+    def test_cue_que_comeca_com_linha_so_de_espaco(self):
+        """
+        No início do vídeo (e depois de pausa longa) o YouTube abre a cue com uma
+        linha só com espaço no lugar da linha anterior. Tratada como linha vazia,
+        ela partia a cue do texto: a frase perdia o tempo real e era espalhada
+        depois, na cue seguinte.
+        """
+        vtt = (
+            "WEBVTT\nKind: captions\nLanguage: pt\n\n"
+            "00:00:00.140 --> 00:00:02.389 align:start position:0%\n \n"
+            "três<00:00:01.140><c> conselhos</c><00:00:01.380><c> para</c>\n\n"
+            "00:00:02.389 --> 00:00:02.399 align:start position:0%\ntrês conselhos para\n \n\n"
+            "00:00:02.399 --> 00:00:05.269 align:start position:0%\ntrês conselhos para\n"
+            "quem<00:00:02.760><c> começa</c>\n"
+        )
+        palavras = [w for s in _parse_youtube_vtt(vtt, "t.vtt")["segments"] for w in s["words"]]
+        self.assertEqual([w["word"] for w in palavras], ["três", "conselhos", "para", "quem", "começa"])
+        inicio = {w["word"]: w["start"] for w in palavras}
+        self.assertAlmostEqual(inicio["três"], 0.140, places=2)
+        self.assertAlmostEqual(inicio["conselhos"], 1.140, places=2)
+        self.assertAlmostEqual(inicio["começa"], 2.760, places=2)
+
 
 class TestLegendaSemSobreposicao(unittest.TestCase):
     def _tokens(self, tempos):

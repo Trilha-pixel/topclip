@@ -85,20 +85,180 @@ def run_mais_recente(proj: Path) -> Path | None:
 
 def etapas(proj: Path, run: Path | None) -> dict:
     """Em que ponto o projeto esta, deduzido so dos arquivos que existem."""
-    tem = lambda *ps: any((run / p).exists() for p in ps) if run else False
-    verticais = list(run.glob("output/final-clips/*/*/clip-vertical.mp4")) if run else []
-    motion = [p for p in (proj / "motion").glob("*") if (p / "compose.py").exists()]
-    entregas = list((proj / "entregas").glob("*.mp4"))
-    previews = list(run.glob("preview/*.mp4")) if run else []
-    return {
-        "momentos": "feito" if tem("05-viral-moments.json") else ("andamento" if run else "pendente"),
-        "cortes": "feito" if (verticais or cortes_no_portao(run))
-                  else ("andamento" if (previews or tem("06-candidates.json")) else "pendente"),
-        "vertical": "feito" if verticais else "pendente",
-        "motion": "feito" if any(any((m / "12_master").glob("*.mp4")) for m in motion)
-                  else ("andamento" if motion else "pendente"),
-        "entrega": "feito" if entregas else "pendente",
+    return {k: v["estado"] for k, v in progresso_etapas(proj, run).items()}
+
+
+# ------------------------------------------------------------------ progresso de cada etapa
+# Cada etapa é uma lista de passos: o nome em português, o peso (~ o tempo que costuma
+# levar) e o sinal, nos arquivos, de que terminou. O passo cujo comando está rodando
+# conta pelo que o comando anunciou — a barra da transcrição, das prévias, do render.
+ORDEM = ["momentos", "cortes", "vertical", "motion", "entrega"]
+TETO_SEM_TERMINAR = 95      # todos os passos com arquivo, mas a etapa não fechou: rodada nova em curso
+
+
+def projetos_motion(proj: Path) -> list[Path]:
+    return [p for p in sorted((proj / "motion").glob("*")) if (p / "compose.py").exists()]
+
+
+def master_final(m: Path) -> Path | None:
+    """O master de um projeto de motion — nunca o RASCUNHO, que é só para revisão."""
+    finais = [p for p in sorted((m / "12_master").glob("*.mp4")) if not p.name.upper().startswith("RASCUNHO")]
+    return finais[-1] if finais else None
+
+
+def _verticais(run: Path | None) -> list[Path]:
+    return sorted(run.glob("output/final-clips/*/*/clip-vertical.mp4")) if run else []
+
+
+def progresso_etapas(proj: Path, run: Path | None, rodando=()) -> dict:
+    """Quanto de cada etapa já foi (0 a 100), o estado e os passos — deduzido dos arquivos.
+
+    `rodando`: os comandos abertos agora, cada um com `sub`, `clipe` e o `pct` que anunciou.
+    Uma etapa só chega a 100 quando fecha de verdade (o mesmo "feito" de sempre: momentos
+    no 05, cortes no portão, …); até lá para em 95, por mais que os arquivos digam que sim.
+    """
+    tem = lambda *ns: bool(run) and any((run / n).exists() for n in ns)
+    doc = lambda n: (ler_json(run / n, {}) or {}) if tem(n) else {}
+    escolhas = ler_json(proj / "escolhas.json", {}) or {}
+    em_curso = {(r.get("sub"), r.get("clipe")): (r.get("pct") or 0) / 100 for r in rodando if r.get("sub")}
+
+    def passo(nome, peso, feito, cmd=None, fracao=None, clipe=None, detalhe=None):
+        if not feito and cmd and (cmd, clipe) in em_curso:
+            fracao = max(fracao or 0, em_curso[(cmd, clipe)])
+        return {"nome": nome, "peso": peso, "feito": bool(feito), "fracao": fracao, "detalhe": detalhe}
+
+    # Momentos: a transcrição e os dois subagentes que leem o vídeo inteiro
+    mom = doc("05-viral-moments.json")
+    momentos = [
+        passo("run criada", 2, tem("00-manifest.json"), "init"),
+        passo("vídeo analisado", 3, tem("01-media.json")),
+        passo("transcrição palavra a palavra", 33, tem("02-transcript.json"), "prepare"),
+        passo("resumo para o Claude ler", 2, tem("02-digest.md"), "digest"),
+        passo("mapa dos assuntos (Context Mapper)", 25, tem("04-context-map.json")),
+        passo("momentos encontrados (Clip Hunter)", 30, tem("05-viral-moments.json")),
+        passo("nota estimada de cada momento", 5, "estimate_gate" in mom, "estimate"),
+    ]
+
+    # Cortes: Clip Builder, prévias, as revisões em paralelo e a nota de cada corte
+    cand = doc("06-candidates.json")
+    clips = cand.get("clips") or []
+    ids = [str(c.get("id", "")) for c in clips]
+    previews = sorted(run.glob("preview/*.mp4")) if run else []
+    n_prev = sum(1 for i in range(1, len(clips) + 1) if previa_do_corte(previews, ids, i))
+    cortes = [
+        passo("cortes montados (Clip Builder)", 30, tem("06-candidates.json")),
+        passo("bordas e auditoria técnica", 5, tem("08-technical-audit.json"), "audit"),
+        passo("prévias para você assistir", 10, clips and n_prev >= len(clips), "previews",
+              n_prev / len(clips) if clips else None, detalhe=f"{n_prev} de {len(clips)}" if clips else None),
+        passo("revisão de retenção (feed)", 20, tem("07-feed-review.json")),
+        passo("revisão cega", 20, tem("09-blind-review.json")),
+        passo("repetidos removidos", 5, tem("10-temporal-deduplication.json", "10-deduplication.json"), "dedupe"),
+        passo("nota de cada corte", 10, clips and all(nota_estimada(c) is not None for c in clips), "estimate"),
+    ]
+
+    # Vertical: plano, enquadramento, revisão final e o render de cada aprovado
+    verticais = _verticais(run)
+    final = doc("13-final-clips.json")
+    if final:
+        esperados = sum(1 for c in final.get("clips", [])
+                        if c.get("status") in ("APPROVED", "LONG_CLIP") or c.get("user_override"))
+    else:
+        esperados = len(escolhas.get("cortes") or [])
+    sabido = bool(esperados)                       # sem 13 nem escolha, o total é chute: não mostra
+    esperados = max(1, esperados or len(verticais))
+    n_vert = min(len(verticais), esperados)
+    estagios = doc("00-manifest.json").get("stages") or {}
+    concluido = lambda nome: (estagios.get(nome) or {}).get("status") == "complete"
+    vertical = [
+        passo("plano de edição (Edit Director)", 20, tem("11-edit-plans.json")),
+        passo("enquadramento seguindo quem fala", 15, concluido("autoframe"), "autoframe"),
+        passo("controle de qualidade", 15, tem("12-quality-review.json")),
+        passo("lista final fechada", 5, tem("13-final-clips.json"), "finalize"),
+        passo("legenda palavra a palavra", 5, concluido("subtitles"), "subtitles"),
+        passo("clipes renderizados", 40, n_vert >= esperados, "render", n_vert / esperados,
+              detalhe=f"{n_vert} de {esperados}" if sabido else None),
+    ]
+
+    # Motion: um projeto por clipe aprovado, cada um com os seus passos
+    clipes = []
+    for m in projetos_motion(proj):
+        b, master = m / "00_brief", master_final(m)
+        quadros = any((m / "08_images" / "frames").glob("*.png")) or any((m / "08_images" / "frames").glob("*.jpg"))
+        rascunho = any((m / "12_master").glob("RASCUNHO*.mp4"))
+        ps = [
+            passo("projeto de motion criado", 3, True),
+            passo("clipe vertical copiado", 2, (b / "fonte.mp4").exists()),
+            passo("transcrição do clipe", 10, (b / "transcript_palavras.json").exists(), "transcrever", clipe=m.name),
+            passo("plano de motion (frases escolhidas)", 15, (b / "PLANO_MOTION.md").exists()),
+            passo("cenas compostas", 30, quadros, "compose.py", clipe=m.name),
+            passo("rascunho para revisão", 15, rascunho or master, "render.py:rascunho", clipe=m.name),
+            passo("master final", 25, master, "render.py", clipe=m.name),
+        ]
+        clipes.append({"nome": m.name, "feito": bool(master), "passos": ps})
+
+    # Entrega: um master conferido em entregas/ por projeto de motion
+    n_ent = len(list((proj / "entregas").glob("*.mp4")))
+    alvo = len(clipes) or n_ent or 1
+    entrega = [passo("clipes entregues", 1, n_ent >= alvo, fracao=n_ent / alvo,
+                     detalhe=f"{min(n_ent, alvo)} de {alvo}" if clipes else None)]
+
+    feito = {
+        "momentos": tem("05-viral-moments.json"),
+        "cortes": bool(verticais) or cortes_no_portao(run),
+        "vertical": bool(verticais) and len(verticais) >= esperados,
+        "motion": bool(clipes) and all(c["feito"] for c in clipes),
+        "entrega": n_ent > 0 and n_ent >= len(clipes),
     }
+    # a vez do Claude depois de uma escolha sua: a etapa seguinte já começou, mesmo sem arquivo
+    andando = {
+        "momentos": bool(run),
+        "cortes": feito["momentos"] and bool(escolhas.get("momentos")),
+        "vertical": feito["cortes"] and bool(escolhas.get("cortes")),
+        "motion": bool(clipes),
+        "entrega": False,
+    }
+
+    def etapa(nome, passos, itens=None):
+        if feito[nome]:
+            pct = 100
+        elif itens:
+            pct = min(TETO_SEM_TERMINAR, round(sum(_somar(i["passos"]) if not i["feito"] else 100
+                                                  for i in itens) / len(itens)))
+        else:
+            pct = min(TETO_SEM_TERMINAR, round(_somar(passos)))
+        estado = "feito" if feito[nome] else ("andamento" if pct > 0 or andando[nome] else "pendente")
+        saida = {"pct": pct, "estado": estado, "passos": _para_tela(passos, feito[nome])}
+        if itens is not None:
+            saida["itens"] = [{"nome": i["nome"], "pct": 100 if i["feito"] or feito[nome] else round(_somar(i["passos"])),
+                               "passos": _para_tela(i["passos"], i["feito"] or feito[nome])} for i in itens]
+        return saida
+
+    return {
+        "momentos": etapa("momentos", momentos),
+        "cortes": etapa("cortes", cortes),
+        "vertical": etapa("vertical", vertical),
+        "motion": etapa("motion", [], clipes),
+        "entrega": etapa("entrega", entrega),
+    }
+
+
+def _somar(passos: list[dict]) -> float:
+    total = sum(p["peso"] for p in passos) or 1
+    return 100 * sum(p["peso"] * (1 if p["feito"] else (p["fracao"] or 0)) for p in passos) / total
+
+
+def _para_tela(passos: list[dict], tudo_feito: bool) -> list[dict]:
+    """Etapa fechada: todo passo conta como feito (run antiga sem algum arquivo novo)."""
+    saida = []
+    for p in passos:
+        feito = tudo_feito or p["feito"]
+        item = {"nome": p["nome"], "feito": feito}
+        if not feito and p["fracao"]:
+            item["pct"] = round(100 * p["fracao"])
+        if not feito and p["detalhe"]:
+            item["detalhe"] = p["detalhe"]
+        saida.append(item)
+    return saida
 
 
 # o que a fase 2 grava antes da nota dos cortes, o último passo antes do portão
@@ -131,14 +291,44 @@ def cortes_no_portao(run: Path | None) -> bool:
     return all(p.stat().st_mtime_ns <= nota for p in (run / n for n in ANTES_DA_NOTA) if p.exists())
 
 
+def tem_id(nome: str, clip_id: str) -> bool:
+    """`clip-010` aparece como palavra inteira no nome? (`clip-0101` não conta)"""
+    return bool(clip_id) and re.search(rf"(^|-){re.escape(clip_id)}(-|$)", nome) is not None
+
+
+def andamento_dos_cortes(proj: Path, run: Path | None) -> dict:
+    """Até onde cada corte já foi: "pronto" (tem entrega) ou "andamento" (vertical ou motion começados).
+
+    A pessoa escolhe 2 de 14, posta, e volta depois para fazer o resto: o painel precisa
+    saber quais já saíram. O que liga um corte ao que saiu dele é o id no nome —
+    `entregas/clip-010-….mp4`, `motion/clip-010`, `final-clips/<contexto>/clip-010-…`.
+    Entram também os entregues que não estão mais no 06 (refeito só com os novos).
+    """
+    entregas = [p.stem for p in (proj / "entregas").glob("*.mp4")]
+    producao = [p.name for p in (proj / "motion").glob("*") if p.is_dir()]
+    if run:
+        producao += [p.parent.name for p in run.glob("output/final-clips/*/*/clip-vertical.mp4")]
+    ids = [str(c.get("id", "")) for c in ((ler_json(run / "06-candidates.json", {}) or {}).get("clips", []) if run else [])]
+    ids += [m.group(1) for n in entregas for m in [re.match(r"(clip-\d+)(-|$)", n)] if m and m.group(1) not in ids]
+    estado = {}
+    for i in ids:
+        if any(tem_id(n, i) for n in entregas):
+            estado[i] = "pronto"
+        elif any(tem_id(n, i) for n in producao):
+            estado[i] = "andamento"
+        else:
+            estado[i] = None
+    return estado
+
+
 def resumo(proj: Path) -> dict:
     info = ler_json(proj / "projeto.json", {}) or {}
     run = run_mais_recente(proj)
-    et = etapas(proj, run)
-    ordem = ["momentos", "cortes", "vertical", "motion", "entrega"]
-    ativ = atividade(proj)
+    feitos = andamento_dos_cortes(proj, run)
+    ativ = atividade(proj)          # já traz o estado e o % de cada etapa, com o que está rodando
+    et = {k: v["estado"] for k, v in ativ["etapas"].items()}
     # quando é a vez da pessoa escolher, a etapa da escolha é a atual — não a seguinte
-    atual = ativ["sua_vez"]["etapa"] if ativ["sua_vez"] else next((k for k in ordem if et[k] != "feito"), "entrega")
+    atual = ativ["sua_vez"]["etapa"] if ativ["sua_vez"] else next((k for k in ORDEM if et[k] != "feito"), "entrega")
     capa = None
     for padrao in ("motion/*/08_images/frames/*_END.png", "motion/*/08_images/frames/*.png",
                    "motion/*/08_images/frames/*.jpg"):
@@ -151,10 +341,14 @@ def resumo(proj: Path) -> dict:
         "slug": proj.name,
         "nome": info.get("nome") or proj.name.replace("-", " ").title(),
         "video": info.get("video", ""),
+        "link": info.get("link", ""),
         "criado": info.get("criado", ""),
         "etapas": et,
+        "progresso": {k: v["pct"] for k, v in ativ["etapas"].items()},
         "etapa_atual": atual,
         "n_momentos": len((momentos or {}).get("moments", [])),
+        "n_cortes": len(feitos),
+        "n_prontos": sum(1 for e in feitos.values() if e == "pronto"),
         "capa": capa,
         "demo": bool(info.get("demo")),
         "atividade": ativ["estado"],
@@ -178,15 +372,24 @@ def detalhe(proj: Path) -> dict:
     # A nota é a mesma conta do gate do finalize (`./topclip corte estimate`), antecipada:
     # nos momentos, sobre o que o Clip Hunter estimou; nos cortes, Builder + revisão de feed.
     doc_momentos = (ler_json(run / "05-viral-moments.json", {}) or {}) if run else {}
+    doc_cortes = (ler_json(run / "06-candidates.json", {}) or {}) if run else {}
+    feitos = andamento_dos_cortes(proj, run)
+    # momento -> até onde o corte dele foi; o 13 guarda o momento dos clipes que já saíram
+    do_momento: dict[str, str] = {}
+    for doc in (doc_cortes, (ler_json(run / "13-final-clips.json", {}) or {}) if run else {}):
+        for c in doc.get("clips", []):
+            e, mid = feitos.get(str(c.get("id", ""))), c.get("moment_id")
+            if e and mid and do_momento.get(mid) != "pronto":
+                do_momento[mid] = e
     momentos = []
     for m in doc_momentos.get("moments", []):
         momentos.append({**m, "inicio": mmss(m.get("start")), "fim": mmss(m.get("end")),
-                         "nota": nota_estimada(m), "abaixo_do_gate": m.get("estimate_below_gate") or []})
+                         "nota": nota_estimada(m), "abaixo_do_gate": m.get("estimate_below_gate") or [],
+                         "feito": do_momento.get(m.get("id"))})
     # a pergunta da pessoa é "quais prestam": melhor nota primeiro; sem nota, na ordem do Clip Hunter
     momentos.sort(key=lambda m: -m["nota"] if m["nota"] is not None else float("inf"))
 
     cortes = []
-    doc_cortes = (ler_json(run / "06-candidates.json", {}) or {}) if run else {}
     previews = sorted(run.glob("preview/*.mp4")) if run else []
     ids = [str(c.get("id", "")) for c in doc_cortes.get("clips", [])]
     for i, c in enumerate(doc_cortes.get("clips", []), 1):
@@ -201,7 +404,7 @@ def detalhe(proj: Path) -> dict:
             "transcricao": c.get("reconstructed_transcript"), "porque": c.get("why_it_can_work"),
             "nota": nota, "nota_do_gate": nota_estimada(c) is not None,
             "abaixo_do_gate": c.get("estimate_below_gate") or [], "falhas": c.get("hard_fails") or [],
-            "preview": url_midia(prev) if prev else None,
+            "preview": url_midia(prev) if prev else None, "feito": feitos.get(str(c.get("id", ""))),
         })
 
     verticais = []
@@ -215,16 +418,20 @@ def detalhe(proj: Path) -> dict:
             continue
         quadros = sorted(list((m / "08_images" / "frames").glob("*.png")) +
                          list((m / "08_images" / "frames").glob("*.jpg")), key=ordem_do_quadro)
-        masters = sorted((m / "12_master").glob("*.mp4"))
+        master = master_final(m)
+        rascunhos = sorted((m / "12_master").glob("RASCUNHO*.mp4"))
         motion.append({"nome": m.name, "quadros": [url_midia(q) for q in quadros[:12]],
-                       "master": url_midia(masters[-1]) if masters else None})
+                       "master": url_midia(master) if master else None,
+                       "rascunho": url_midia(rascunhos[-1]) if rascunhos and not master else None})
 
     entregas = [{"nome": e.stem, "video": url_midia(e), "mb": round(e.stat().st_size / 1e6, 1)}
                 for e in sorted((proj / "entregas").glob("*.mp4"))]
 
     return {**base, "run": run.name if run else None, "momentos": momentos, "cortes": cortes,
             "gate": doc_cortes.get("estimate_gate") or doc_momentos.get("estimate_gate") or 7.5,
-            "verticais": verticais, "motion": motion, "entregas": entregas, "escolhas": escolhas}
+            "verticais": verticais, "motion": motion, "entregas": entregas, "escolhas": escolhas,
+            # baixado pelo link, o vídeo mora na pasta do projeto: apagar leva ele junto
+            "video_no_projeto": bool(base["video"]) and dentro(Path(base["video"]).expanduser(), proj)}
 
 
 def nota_estimada(item: dict):
@@ -241,9 +448,7 @@ def previa_do_corte(previews: list[Path], ids: list[str], posicao: int) -> Path 
     apontaria a prévia de outro — inclusive a de uma rodada velha. Só uma prévia sem id
     nenhum no nome (cortada à mão, `<NN>-<slug>.mp4`) casa pela posição.
     """
-    def tem(stem: str, clip_id: str) -> bool:
-        return bool(clip_id) and re.search(rf"(^|-){re.escape(clip_id)}(-|$)", stem) is not None
-
+    tem = tem_id
     achado = next((p for p in previews if tem(p.stem, ids[posicao - 1])), None)
     if achado:
         return achado
@@ -290,28 +495,53 @@ def saude(forcar=False) -> dict:
     return _saude_cache
 
 
-def criar_projeto(nome: str, video: str) -> dict:
+def criar_projeto(nome: str, video: str, link: str = "", pasta: str | None = None) -> dict:
+    """Com `link` (YouTube, Instagram) o vídeo ainda não existe: `iniciar_download` o baixa.
+    `pasta` é o nome já decidido por quem chama (`./topclip baixar <link> projetos/<nome>`)."""
+    import baixar   # aqui e não no topo: baixar importa este módulo
     nome = (nome or "").strip()
     video = (video or "").strip().strip("'\"")
+    link = (link or "").strip()
     if not nome:
         raise ValueError("Dê um nome para o projeto.")
-    s = slug(nome)
+    if link and not baixar.eh_link(link):
+        raise ValueError("Isso não parece um link. Cole o endereço completo, começando com https://")
+    s = pasta or slug(nome)
     proj = PROJETOS / s
-    if proj.exists():
+    if (proj / "projeto.json").exists() or (proj.exists() and not pasta):
         raise ValueError(f"Já existe um projeto chamado “{s}”.")
     aviso = None
-    if video:
+    if video and not link:
         pv = Path(video).expanduser()
         if not pv.exists():
             aviso = "Não achei esse arquivo de vídeo. Confira o caminho — o projeto foi criado mesmo assim."
         video = str(pv)
     for sub in ("runs", "motion", "entregas"):
         (proj / sub).mkdir(parents=True, exist_ok=True)
-    (proj / "projeto.json").write_text(json.dumps({
-        "nome": nome, "video": video, "criado": datetime.now().isoformat(timespec="seconds"),
-    }, ensure_ascii=False, indent=1), encoding="utf-8")
-    ATV.registrar(proj, "projeto criado no painel — esperando o Claude começar", tipo="projeto")
+    dados = {"nome": nome, "video": "" if link else video, "criado": datetime.now().isoformat(timespec="seconds")}
+    if link:
+        dados["link"] = link
+    (proj / "projeto.json").write_text(json.dumps(dados, ensure_ascii=False, indent=1), encoding="utf-8")
+    ATV.registrar(proj, f"projeto criado a partir de um link do {baixar.site(link)}" if link
+                  else "projeto criado no painel — esperando o Claude começar", tipo="projeto")
     return {"slug": s, "aviso": aviso}
+
+
+def iniciar_download(proj: Path) -> None:
+    """Baixa o link do projeto em segundo plano, numa sessão própria: fechar o painel não
+    interrompe. O avanço vai para o diário (Atividade); a saída crua, para baixar.log."""
+    with (proj / "baixar.log").open("ab") as log:
+        subprocess.Popen([str(RAIZ / "topclip"), "baixar", str(proj)], cwd=str(RAIZ), stdin=subprocess.DEVNULL,
+                         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+
+
+def info_do_link(link: str) -> dict:
+    """Título e duração do vídeo do link, para a pessoa confirmar antes de criar o projeto."""
+    import baixar
+    try:
+        return baixar.info(link)
+    except baixar.ErroDownload as e:
+        return {"erro": str(e)}
 
 
 def salvar_escolhas(proj: Path, dados: dict) -> dict:
@@ -326,8 +556,45 @@ def salvar_escolhas(proj: Path, dados: dict) -> dict:
     for chave, nomes in (("momentos", ("momento", "momentos")), ("cortes", ("corte", "cortes"))):
         if chave in dados and isinstance(dados[chave], list):
             n = len(dados[chave])
-            ATV.registrar(proj, f"você escolheu {n} {nomes[0] if n == 1 else nomes[1]} no painel", tipo="voce")
+            ATV.registrar(proj, f"você escolheu {n} {nomes[0] if n == 1 else nomes[1]} no painel", tipo="voce",
+                          etapa=chave)
     return atual
+
+
+def apagar_projeto(proj: Path) -> dict:
+    """Manda a pasta do projeto para a Lixeira — nunca apaga de vez: criou errado ou
+    apagou o projeto errado, é só tirar de lá. O vídeo original fora da pasta não é mexido."""
+    if atividade(proj)["estado"] == "rodando":
+        raise ValueError("O TopClip está trabalhando neste projeto agora. "
+                         "Espere terminar (ou pare o Claude) e apague depois.")
+    para_lixeira(proj)
+    if proj.exists():
+        raise ValueError(f"A pasta não saiu do lugar. Apague pelo Finder: {proj}")
+    return {"ok": True}
+
+
+def para_lixeira(p: Path) -> None:
+    """Lixeira do sistema: `trash` do macOS 15+ (com "Devolver" no Finder), o Finder nos
+    Macs mais antigos, `gio trash` ou `trash-put` no Linux."""
+    import shutil
+    if sys.platform == "darwin":
+        cmd = (["trash", str(p)] if shutil.which("trash") else
+               ["osascript", "-e", "on run argv", "-e",
+                'tell application "Finder" to delete (POSIX file (item 1 of argv) as alias)',
+                "-e", "end run", str(p)])
+    elif shutil.which("gio"):
+        cmd = ["gio", "trash", str(p)]
+    elif shutil.which("trash-put"):
+        cmd = ["trash-put", str(p)]
+    else:
+        raise ValueError(f"Não achei a Lixeira deste sistema. Apague a pasta pelo gerenciador de arquivos: {p}")
+    try:
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except Exception as e:
+        raise ValueError(f"Não consegui mandar para a Lixeira: {e}")
+    if proc.returncode != 0:
+        detalhe = (proc.stderr or proc.stdout).strip().splitlines()
+        raise ValueError("Não consegui mandar para a Lixeira" + (f": {detalhe[-1]}" if detalhe else "."))
 
 
 # ------------------------------------------------------------------ atividade
@@ -351,6 +618,8 @@ ARTEFATOS = {
     "16-output-verification.json": "clipes finais conferidos",
 }
 JANELA_ATIVO_S = 10 * 60      # notícia do Claude mais nova que isso = ainda trabalhando
+MAX_EVENTOS = 600             # o log de cada etapa sai daqui: não pode cortar as antigas cedo
+SEGUINTE = dict(zip(ORDEM, ORDEM[1:]))
 
 
 def _nascimento(p: Path) -> float:
@@ -358,9 +627,16 @@ def _nascimento(p: Path) -> float:
     return getattr(st, "st_birthtime", st.st_mtime)
 
 
-def _evento_arquivo(p: Path, msg: str, quando=None) -> dict:
+def _evento_arquivo(p: Path, msg: str, quando=None, etapa: str | None = None) -> dict:
     ts = quando if quando is not None else _nascimento(p)
-    return {"ts": ts, "t": datetime.fromtimestamp(ts).isoformat(timespec="seconds"), "tipo": "arquivo", "msg": msg}
+    return {"ts": ts, "t": datetime.fromtimestamp(ts).isoformat(timespec="seconds"), "tipo": "arquivo", "msg": msg,
+            "etapa": etapa}
+
+
+def _etapa_do_artefato(nome: str) -> str:
+    """00–05 são dos momentos, 06–10 dos cortes, 11 em diante do vertical."""
+    n = int(nome[:2])
+    return "momentos" if n <= 5 else "cortes" if n <= 10 else "vertical"
 
 
 def eventos_de_arquivos(proj: Path, run: Path | None) -> list[dict]:
@@ -376,23 +652,33 @@ def eventos_de_arquivos(proj: Path, run: Path | None) -> list[dict]:
             elif nome == "06-candidates.json":
                 n = len((ler_json(p, {}) or {}).get("clips", []))
                 rotulo = f"{n} corte{'s' if n != 1 else ''} montado{'s' if n != 1 else ''}"
-            ev.append(_evento_arquivo(p, rotulo))
+            # o manifesto é reescrito a cada etapa: a run nasceu quando a pasta nasceu
+            quando = _nascimento(run) if nome == "00-manifest.json" else None
+            ev.append(_evento_arquivo(p, rotulo, quando, etapa=_etapa_do_artefato(nome)))
         for p in run.glob("preview/*.mp4"):
-            ev.append(_evento_arquivo(p, f"prévia pronta: {p.stem}"))
+            ev.append(_evento_arquivo(p, f"prévia pronta: {p.stem}", etapa="cortes"))
         for p in run.glob("output/final-clips/*/*/clip-vertical.mp4"):
-            ev.append(_evento_arquivo(p, f"vertical pronto: {p.parent.name}"))
-    for m in (proj / "motion").glob("*"):
-        if not (m / "compose.py").exists():
-            continue
+            ev.append(_evento_arquivo(p, f"vertical pronto: {p.parent.name}", etapa="vertical"))
+    for m in projetos_motion(proj):
+        passos = [("compose.py", "projeto de motion criado"),
+                  ("00_brief/fonte.mp4", "clipe vertical copiado para o motion"),
+                  ("00_brief/transcript_palavras.json", "transcrição do clipe pronta"),
+                  ("00_brief/PLANO_MOTION.md", "plano de motion pronto (frases escolhidas e recusadas)")]
+        for rel, rotulo in passos:
+            if (m / rel).exists():
+                ev.append(_evento_arquivo(m / rel, f"{m.name}: {rotulo}", etapa="motion"))
         quadros = list((m / "08_images" / "frames").glob("*.png")) + list((m / "08_images" / "frames").glob("*.jpg"))
         if quadros:
             ultimo = max(quadros, key=lambda q: q.stat().st_mtime)
-            ev.append(_evento_arquivo(ultimo, f"motion {m.name}: {len(quadros)} quadro{'s' if len(quadros) != 1 else ''} composto{'s' if len(quadros) != 1 else ''}",
-                                      ultimo.stat().st_mtime))
-        for p in (m / "12_master").glob("*.mp4"):
-            ev.append(_evento_arquivo(p, f"master com motion pronto: {m.name}"))
+            ev.append(_evento_arquivo(ultimo, f"{m.name}: {len(quadros)} quadro{'s' if len(quadros) != 1 else ''} composto{'s' if len(quadros) != 1 else ''}",
+                                      ultimo.stat().st_mtime, etapa="motion"))
+        for p in (m / "12_master").glob("RASCUNHO*.mp4"):       # remontado no lugar: vale a última vez
+            ev.append(_evento_arquivo(p, f"{m.name}: rascunho pronto para revisão", p.stat().st_mtime, etapa="motion"))
+        master = master_final(m)
+        if master:
+            ev.append(_evento_arquivo(master, f"master com motion pronto: {m.name}", etapa="motion"))
     for p in (proj / "entregas").glob("*.mp4"):
-        ev.append(_evento_arquivo(p, f"entregue: {p.stem}"))
+        ev.append(_evento_arquivo(p, f"entregue: {p.stem}", etapa="entrega"))
     return ev
 
 
@@ -424,31 +710,40 @@ def atividade(proj: Path) -> dict:
             abertos.pop(e.get("id", ""), None)
         eventos.append(e)
 
-    rodando = None
+    vivos = []
     for e in abertos.values():
         if _pid_vivo(e.get("pid")):
-            if not rodando or e["ts"] > rodando["ts"]:
-                rodando = e
+            vivos.append(e)
         else:   # começou e o processo sumiu sem anotar o fim: travou ou foi interrompido
             eventos.append({**e, "tipo": "erro", "msg": f"{e['msg']} — interrompido", "ts": e["ts"] + 0.001})
+    vivos.sort(key=lambda e: e["ts"], reverse=True)
 
     run = run_mais_recente(proj)
     eventos += eventos_de_arquivos(proj, run)
     eventos.sort(key=lambda e: e["ts"], reverse=True)
+    _etiquetar(eventos)
 
-    # Progresso (a transcrição anota algumas vezes por minuto): só o mais recente
-    # vale. Com o comando rodando, ele vai para a manchete; sem comando, fica no
-    # topo da lista enquanto nada mais novo acontecer.
-    progresso = next((e for e in eventos if e.get("tipo") == "progresso"), None)
+    # Progresso (os comandos longos anotam a cada poucos segundos): só o mais recente de
+    # cada comando vale, casado pelo id. Sem id (diário antigo), é do comando aberto mais
+    # recente antes dele. Com o comando rodando, vai para a manchete; sem comando, o mais
+    # novo fica no topo da lista enquanto nada mais novo acontecer.
+    progressos = [e for e in eventos if e.get("tipo") == "progresso"]
     eventos = [e for e in eventos if e.get("tipo") != "progresso"]
-    if rodando:
-        if not (progresso and progresso["ts"] > rodando["ts"]):
-            progresso = None
-    elif progresso:
-        if not eventos or progresso["ts"] > eventos[0]["ts"]:
-            eventos.insert(0, progresso)
-        progresso = None
     agora = datetime.now().timestamp()
+
+    def progresso_de(r):
+        return (next((p for p in progressos if p.get("id") and p.get("id") == r.get("id")), None)
+                or next((p for p in progressos if not p.get("id") and p["ts"] > r["ts"]), None))
+
+    rodando_todos = []
+    for r in vivos:
+        p = progresso_de(r)
+        rodando_todos.append({"msg": r["msg"], "desde": r["t"], "ha_s": int(agora - r["ts"]),
+                              "progresso": p["msg"] if p else None, "pct": p.get("pct") if p else None,
+                              "etapa": r.get("etapa"), "sub": r.get("sub"), "clipe": r.get("clipe")})
+    rodando = vivos[0] if vivos else None
+    if not rodando and progressos and (not eventos or progressos[0]["ts"] > eventos[0]["ts"]):
+        eventos.insert(0, progressos[0])
     ultima = eventos[0]["ts"] if eventos else None
 
     sua_vez = None
@@ -461,7 +756,9 @@ def atividade(proj: Path) -> dict:
         elif cortes_no_portao(run) and not esc.get("cortes") and not list(run.glob("output/final-clips/*/*/clip-vertical.mp4")):
             sua_vez = {"etapa": "cortes", "msg": "Os cortes estão prontos. Assista e escolha quais viram vertical."}
 
-    reais = [e for e in eventos if e.get("tipo") != "projeto"]
+    # o download do link é preparação: vídeo baixado ainda é "esperando o Claude" (o erro conta)
+    reais = [e for e in eventos if e.get("tipo") != "projeto"
+             and not (e.get("origem") == "baixar" and e.get("tipo") != "erro")]
     if rodando:
         estado = "rodando"
     elif eventos and eventos[0].get("tipo") == "voce":
@@ -477,14 +774,39 @@ def atividade(proj: Path) -> dict:
 
     return {
         "estado": estado,
-        "rodando": {"msg": rodando["msg"], "desde": rodando["t"], "ha_s": int(agora - rodando["ts"]),
-                    "progresso": progresso["msg"] if progresso else None,
-                    "pct": progresso.get("pct") if progresso else None} if rodando else None,
+        "rodando": rodando_todos[0] if rodando_todos else None,
+        "rodando_todos": rodando_todos,
         "sua_vez": sua_vez,
         "ultima_ha_s": int(agora - ultima) if ultima else None,
-        "eventos": [{k: e.get(k) for k in ("t", "tipo", "msg")} for e in eventos[:80]],
+        "eventos": [{k: e.get(k) for k in ("t", "tipo", "msg", "etapa")} for e in eventos[:MAX_EVENTOS]],
+        "etapas": progresso_etapas(proj, run, rodando_todos),
         "assinatura": _assinatura(proj, run),
     }
+
+
+def _etiquetar(eventos: list[dict]) -> None:
+    """Dá a cada notícia (mais nova primeiro) a etapa em que aconteceu — é o que separa o
+    log por etapa no painel. Quem não diz (o Claude narrando sem --etapa, um comando que
+    serve a duas etapas) herda a da notícia anterior. Depois de uma escolha sua, a etapa
+    seguinte já começou: é o Claude trabalhando nela."""
+    atual, do_comando = "momentos", {}
+    for e in reversed(eventos):
+        etapa = e.get("etapa") if e.get("etapa") in ORDEM else None
+        if not etapa and e.get("tipo") in ("inicio", "fim", "erro") and e.get("id"):
+            # diário de antes da etapa nos comandos: o início diz o comando, o fim casa pelo id
+            if e.get("tipo") == "inicio" and e.get("comando"):
+                do_comando[e["id"]] = ATV.classificar(str(e["comando"]).split())["etapa"]
+            etapa = do_comando.get(e["id"])
+        if not etapa and e.get("tipo") == "voce":          # diário de antes da etapa nas escolhas
+            etapa = "cortes" if "corte" in str(e.get("msg", "")) else "momentos"
+        if etapa:
+            e["etapa"] = etapa
+            # a hora de um arquivo engana (o manifesto e o 06 são reescritos no lugar): ele
+            # tem etapa, mas não arrasta as notícias seguintes para ela
+            if e.get("tipo") != "arquivo":
+                atual = SEGUINTE.get(etapa, etapa) if e.get("tipo") == "voce" else etapa
+        else:
+            e["etapa"] = atual
 
 
 def _assinatura(proj: Path, run: Path | None) -> str:
@@ -501,6 +823,7 @@ def _assinatura(proj: Path, run: Path | None) -> str:
     partes += [str(p.relative_to(proj)) for p in proj.glob("motion/*/08_images/frames/*")]
     partes += [str(p.relative_to(proj)) for p in proj.glob("motion/*/12_master/*.mp4")]
     partes += [p.name for p in proj.glob("entregas/*.mp4")]
+    partes += [p.name for p in proj.glob("video.mp4")]   # o download do link terminou: sai o "baixando de…"
     import hashlib
     return hashlib.sha1("|".join(sorted(partes)).encode()).hexdigest()[:12]
 
@@ -750,7 +1073,12 @@ class Painel(BaseHTTPRequestHandler):
         try:
             corpo = self._corpo()
             if rota == "/api/projetos":
-                return self._json(criar_projeto(corpo.get("nome", ""), corpo.get("video", "")))
+                r = criar_projeto(corpo.get("nome", ""), corpo.get("video", ""), corpo.get("link", ""))
+                if corpo.get("link"):
+                    iniciar_download(PROJETOS / r["slug"])
+                return self._json(r)
+            if rota == "/api/info-link":
+                return self._json(info_do_link(corpo.get("link", "")))
             if rota == "/api/escolher-video":
                 return self._json(escolher_video())
             if rota == "/api/localizar-video":
@@ -763,6 +1091,12 @@ class Painel(BaseHTTPRequestHandler):
                 if not p:
                     return self._erro("projeto não encontrado", HTTPStatus.NOT_FOUND)
                 return self._json(salvar_escolhas(p, corpo))
+            m = re.fullmatch(r"/api/projetos/([^/]+)/apagar", rota)
+            if m:
+                p = self._projeto(m.group(1))
+                if not p:
+                    return self._erro("projeto não encontrado", HTTPStatus.NOT_FOUND)
+                return self._json(apagar_projeto(p))
             m = re.fullmatch(r"/api/projetos/([^/]+)/abrir", rota)
             if m:
                 p = self._projeto(m.group(1))

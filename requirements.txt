@@ -23,3 +23,10 @@ scenedetect>=0.6.4,<0.7,!=0.6.7.1
 
 # Composição do motion, legenda e assets
 Pillow>=10.0
+
+# Baixar o vídeo de um link (./topclip baixar): YouTube, Instagram e a legenda
+# automática do YouTube. O [default] traz o yt-dlp-ejs, que resolve o desafio em
+# JavaScript do YouTube (precisa de Deno ou Node — o instalar.sh cuida). O piso é a
+# versão que passou a exigir isso; o instalar.sh sempre atualiza, porque o YouTube
+# muda e versão velha para de baixar em semanas.
+yt-dlp[default]>=2025.11.12

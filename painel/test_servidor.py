@@ -197,6 +197,42 @@ class NotaEstimada(ComProjetosTemporarios):
         self.assertNotEqual(S._assinatura(self.proj, self.run), antes)
 
 
+class CortesJaFeitos(ComProjetosTemporarios):
+    """Fez 2 de 14, postou, volta depois para o resto: o painel mostra quais já saíram."""
+
+    def setUp(self):
+        super().setUp()
+        S.criar_projeto("Parcial", "")
+        self.proj = S.PROJETOS / "parcial"
+        self.run = self.proj / "runs" / "r1"
+        self.run.mkdir(parents=True)
+        (self.run / "00-manifest.json").write_text("{}")
+        (self.run / "05-viral-moments.json").write_text(json.dumps({"moments": [
+            {"id": f"moment-{i:03d}"} for i in (1, 5, 10, 11)]}))
+        (self.run / "06-candidates.json").write_text(json.dumps({"clips": [
+            {"id": f"clip-{i:03d}", "moment_id": f"moment-{i:03d}"} for i in (1, 5, 10, 11)]}))
+
+    def test_entrega_e_pronto_vertical_sem_entrega_e_andamento(self):
+        (self.proj / "entregas" / "clip-010-quanto-mais-barato.mp4").write_bytes(b"x")
+        vert = self.run / "output" / "final-clips" / "dinheiro" / "clip-005-mensalidade"
+        vert.mkdir(parents=True)
+        (vert / "clip-vertical.mp4").write_bytes(b"x")
+        (self.proj / "motion" / "clip-0011").mkdir(parents=True)        # outro id: não é o clip-001
+        d = S.detalhe(self.proj)
+        cortes = {c["id"]: c["feito"] for c in d["cortes"]}
+        self.assertEqual(cortes, {"clip-001": None, "clip-005": "andamento", "clip-010": "pronto", "clip-011": None})
+        momentos = {m["id"]: m["feito"] for m in d["momentos"]}
+        self.assertEqual((momentos["moment-010"], momentos["moment-005"], momentos["moment-001"]),
+                         ("pronto", "andamento", None))
+        self.assertEqual((d["n_cortes"], d["n_prontos"]), (4, 1))
+
+    def test_entregue_conta_mesmo_se_o_06_foi_refeito_sem_ele(self):
+        (self.proj / "entregas" / "clip-010-quanto-mais-barato.mp4").write_bytes(b"x")
+        (self.proj / "entregas" / "clip-099-sem-corte-no-06.mp4").write_bytes(b"x")
+        r = S.resumo(self.proj)
+        self.assertEqual((r["n_cortes"], r["n_prontos"]), (5, 2))
+
+
 class LocalizarVideo(ComProjetosTemporarios):
     """O vídeo arrastado para a página: só nome e tamanho chegam ao servidor."""
 
@@ -378,3 +414,185 @@ class Atividade(ComProjetosTemporarios):
     def test_anotar_nunca_quebra(self):
         S.ATV.registrar(self.tmp / "nao-existe", "x")          # pasta inexistente: ignora
         self.assertEqual(S.ATV.main(["fim", "lixo"]), 0)       # argumentos faltando: ignora
+
+
+class ApagarProjeto(ComProjetosTemporarios):
+    """A Lixeira de verdade fica fora dos testes: `para_lixeira` só move para uma pasta temporária."""
+    pedir = Http.pedir
+
+    def setUp(self):
+        super().setUp()
+        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), S.Painel)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
+        self.lixeira = self.tmp / "lixeira"
+        self.lixeira.mkdir()
+        self._orig_lixeira = S.para_lixeira
+        S.para_lixeira = lambda p: shutil.move(str(p), str(self.lixeira / p.name))
+        S.criar_projeto("Criado Errado", "")
+        self.proj = S.PROJETOS / "criado-errado"
+
+    def tearDown(self):
+        S.para_lixeira = self._orig_lixeira
+        self.srv.shutdown()
+        self.srv.server_close()
+        super().tearDown()
+
+    def apagar(self, slug="criado-errado", origem=None):
+        cab = {"Content-Type": "application/json", **({"Origin": origem} if origem else {})}
+        return self.pedir(f"/api/projetos/{slug}/apagar", cab, {})
+
+    def test_vai_para_a_lixeira_e_some_da_lista(self):
+        status, _, _ = self.apagar(origem=self.base)
+        self.assertEqual(status, 200)
+        self.assertFalse(self.proj.exists())
+        self.assertTrue((self.lixeira / "criado-errado" / "projeto.json").exists())   # dá para recuperar
+        self.assertEqual(json.loads(self.pedir("/api/projetos")[2])["projetos"], [])
+
+    def test_nao_apaga_com_o_topclip_rodando(self):
+        import os
+        S.ATV.main(["inicio", str(self.proj), "id1", str(os.getpid()), "corte", "prepare"])
+        status, _, corpo = self.apagar()
+        self.assertEqual(status, 400)
+        self.assertIn("trabalhando neste projeto", json.loads(corpo)["erro"])
+        self.assertTrue(self.proj.exists())
+
+    def test_outra_origem_e_projeto_inexistente_nao_apagam(self):
+        self.assertEqual(self.apagar(origem="https://site-malicioso.com")[0], 403)
+        self.assertEqual(self.apagar("nao-existe")[0], 404)
+        self.assertEqual(self.apagar("..")[0], 404)
+        self.assertTrue(self.proj.exists())
+
+    def test_lixeira_que_falha_avisa_e_nao_finge_que_apagou(self):
+        def falha(p):
+            raise ValueError("Não consegui mandar para a Lixeira: sem permissão")
+        S.para_lixeira = falha
+        status, _, corpo = self.apagar()
+        self.assertEqual(status, 400)
+        self.assertIn("sem permissão", json.loads(corpo)["erro"])
+        S.para_lixeira = lambda p: None                       # o comando "deu certo" e a pasta ficou
+        self.assertIn("não saiu do lugar", json.loads(self.apagar()[2])["erro"])
+
+    def test_avisa_quando_o_video_mora_no_projeto(self):
+        self.assertFalse(S.detalhe(self.proj)["video_no_projeto"])
+        S.criar_projeto("Baixado", str(S.PROJETOS / "baixado" / "video.mp4"))
+        self.assertTrue(S.detalhe(S.PROJETOS / "baixado")["video_no_projeto"])
+
+
+class ProgressoDasEtapas(ComProjetosTemporarios):
+    """A barra de % de cada etapa e o log separado por etapa."""
+
+    def setUp(self):
+        super().setUp()
+        self._orig_atv = S.ATV.PROJETOS
+        S.ATV.PROJETOS = S.PROJETOS
+        S.criar_projeto("Barra", "")
+        self.proj = S.PROJETOS / "barra"
+        self.run = self.proj / "runs" / "r1"
+        self.run.mkdir(parents=True)
+        (self.run / "00-manifest.json").write_text("{}")
+
+    def tearDown(self):
+        S.ATV.PROJETOS = self._orig_atv
+        super().tearDown()
+
+    def etapas(self):
+        return S.atividade(self.proj)["etapas"]
+
+    def test_momentos_somam_os_passos_e_so_fecham_no_05(self):
+        self.assertEqual(self.etapas()["momentos"]["estado"], "andamento")
+        (self.run / "01-media.json").write_text("{}")
+        (self.run / "02-transcript.json").write_text("{}")
+        (self.run / "02-digest.md").write_text("")
+        (self.run / "04-context-map.json").write_text("{}")
+        m = self.etapas()["momentos"]
+        self.assertEqual(m["pct"], 65)                      # 2 + 3 + 33 + 2 + 25
+        self.assertEqual([p["nome"] for p in m["passos"] if not p["feito"]],
+                         ["momentos encontrados (Clip Hunter)", "nota estimada de cada momento"])
+        (self.run / "05-viral-moments.json").write_text('{"moments": []}')
+        m = self.etapas()["momentos"]
+        self.assertEqual((m["pct"], m["estado"]), (100, "feito"))
+        self.assertTrue(all(p["feito"] for p in m["passos"]))   # fechada: run antiga sem a nota não fica pela metade
+
+    def test_comando_rodando_enche_o_passo_dele(self):
+        import os
+        ident = "id-prep"
+        S.ATV.main(["inicio", str(self.proj), ident, str(os.getpid()), "corte", "prepare", "--run", "projetos/barra/runs/r1"])
+        os.environ[S.ATV.ENV_ID] = ident
+        try:
+            S.ATV.Progresso(self.run, "transcrevendo", etapa="momentos")(50, 100)
+        finally:
+            del os.environ[S.ATV.ENV_ID]
+        a = S.atividade(self.proj)
+        self.assertEqual((a["rodando"]["pct"], a["rodando"]["etapa"], a["rodando"]["sub"]), (50, "momentos", "prepare"))
+        transcricao = next(p for p in a["etapas"]["momentos"]["passos"] if p["nome"].startswith("transcrição"))
+        self.assertEqual(transcricao, {"nome": "transcrição palavra a palavra", "feito": False, "pct": 50})
+        self.assertEqual(a["etapas"]["momentos"]["pct"], 18)      # 2 + metade de 33 = 18,5
+
+    def test_dois_comandos_em_paralelo_cada_um_com_a_sua_barra(self):
+        import os
+        for clipe, pct in (("clip-001", 30), ("clip-002", 80)):
+            m = self.proj / "motion" / clipe
+            (m / "12_master").mkdir(parents=True)
+            (m / "compose.py").write_text("")
+            ident = f"id-{clipe}"
+            S.ATV.main(["inicio", str(self.proj), ident, str(os.getpid()), "py", str(m / "render.py")])
+            S.ATV.registrar(self.proj, f"quadros ({pct}%)", tipo="progresso", pct=pct, id=ident, etapa="motion")
+        a = S.atividade(self.proj)
+        self.assertEqual(sorted((r["clipe"], r["pct"]) for r in a["rodando_todos"]), [("clip-001", 30), ("clip-002", 80)])
+        itens = {i["nome"]: i["pct"] for i in a["etapas"]["motion"]["itens"]}
+        self.assertEqual(itens, {"clip-001": 10, "clip-002": 23})   # 3 de criado + 25 de master × pct
+        self.assertEqual(a["etapas"]["motion"]["estado"], "andamento")
+        (self.proj / "motion" / "clip-001" / "12_master" / "RASCUNHO.mp4").write_bytes(b"x")
+        self.assertEqual(self.etapas()["motion"]["estado"], "andamento")   # rascunho não é master
+        for clipe in ("clip-001", "clip-002"):
+            (self.proj / "motion" / clipe / "12_master" / "MASTER_v01.mp4").write_bytes(b"x")
+        self.assertEqual(self.etapas()["motion"]["pct"], 100)
+
+    def test_vertical_so_fecha_com_todos_os_aprovados_renderizados(self):
+        (self.run / "05-viral-moments.json").write_text('{"moments": [{"id": "moment-001"}]}')
+        S.salvar_escolhas(self.proj, {"momentos": ["moment-001"], "cortes": ["clip-001", "clip-002"]})
+        (self.run / "13-final-clips.json").write_text(json.dumps({"clips": [
+            {"id": "clip-001", "status": "APPROVED"}, {"id": "clip-002", "status": "APPROVED"},
+            {"id": "clip-003", "status": "REJECT"}]}))
+        v = self.run / "output" / "final-clips" / "ctx" / "clip-001-x"
+        v.mkdir(parents=True)
+        (v / "clip-vertical.mp4").write_bytes(b"x")
+        vert = self.etapas()["vertical"]
+        self.assertEqual(vert["estado"], "andamento")
+        render = next(p for p in vert["passos"] if p["nome"] == "clipes renderizados")
+        self.assertEqual((render["pct"], render["detalhe"]), (50, "1 de 2"))
+        self.assertEqual(S.resumo(self.proj)["etapa_atual"], "vertical")   # não pula para o motion no 1º clipe
+
+    def test_log_separado_por_etapa(self):
+        S.ATV.registrar(self.proj, "Context Mapper lendo o vídeo")                 # sem etapa: herda
+        (self.run / "05-viral-moments.json").write_text('{"moments": [{"id": "moment-001"}]}')
+        S.salvar_escolhas(self.proj, {"momentos": ["moment-001"]})
+        S.ATV.registrar(self.proj, "Clip Builder montando os cortes")              # depois da escolha: cortes
+        S.ATV.main(["registrar", str(self.proj), "info", "--etapa", "vertical", "Edit Director planejando"])
+        S.ATV.main(["inicio", str(self.proj), "x", "999999", "corte", "estimate", "--cortes", "--run", "r"])
+        etapa = {e["msg"]: e["etapa"] for e in S.atividade(self.proj)["eventos"]}
+        self.assertEqual(etapa["Context Mapper lendo o vídeo"], "momentos")
+        self.assertEqual(etapa["você escolheu 1 momento no painel"], "momentos")
+        self.assertEqual(etapa["Clip Builder montando os cortes"], "cortes")
+        self.assertEqual(etapa["Edit Director planejando"], "vertical")
+        self.assertEqual(etapa["dando a nota estimada de cada corte — interrompido"], "cortes")
+
+    def test_classificar_o_comando(self):
+        c = S.ATV.classificar(["py", "projetos/barra/motion/clip-005/render.py", "--rascunho"])
+        self.assertEqual((c["sub"], c["etapa"], c["clipe"]), ("render.py:rascunho", "motion", "clip-005"))
+        self.assertTrue(c["msg"].startswith("clip-005: montando o rascunho"))
+        self.assertEqual(S.ATV.classificar(["corte", "validate-artifact", "--run", "r", "--file", "11-edit-plans.json"])["etapa"], "vertical")
+        self.assertEqual(S.ATV.classificar(["corte", "digest", "--run", "r", "--windows", "1-2"])["etapa"], "cortes")
+        self.assertIsNone(S.ATV.classificar(["corte", "bordas", "--run", "r"])["etapa"])
+
+    def test_progresso_pula_anuncio_em_cima_de_anuncio(self):
+        relogio = iter([0.0, 1.0, 5.0, 6.0]).__next__
+        prog = S.ATV.Progresso(self.run, "renderizando", etapa="vertical", intervalo_s=4, relogio=relogio)
+        for feito in (0, 1, 2, 3):          # t=0 passa, t=1 não, t=5 passa, t=6 é o fim: passa
+            prog(feito, 3)
+        diario = [json.loads(l) for l in (self.proj / "atividade.jsonl").read_text().splitlines()]
+        self.assertEqual([e["pct"] for e in diario if e["tipo"] == "progresso"], [0, 66, 100])
+        self.assertEqual([e["msg"] for e in S.ATV.ler(self.proj) if e["tipo"] == "progresso"],
+                         ["renderizando: 3 de 3 (100%)"])                    # o diário lido guarda só o último
+        S.ATV.Progresso(self.tmp / "fora", "x")(1, 2)                        # fora de projetos/: não anota, não quebra

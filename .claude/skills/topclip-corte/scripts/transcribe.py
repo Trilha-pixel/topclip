@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import os
 import platform
 import sys
 import time
@@ -389,7 +390,9 @@ class ProgressoTranscricao:
             pass
         if self.atividade and self.projeto:
             try:
-                self.atividade.registrar(self.projeto, msg, tipo=tipo, **extra)
+                if tipo == "progresso":         # casa com o comando que o lançador abriu
+                    extra["id"] = os.environ.get("TOPCLIP_ATIVIDADE") or None
+                self.atividade.registrar(self.projeto, msg, tipo=tipo, etapa="momentos", **extra)
             except Exception:
                 pass
 

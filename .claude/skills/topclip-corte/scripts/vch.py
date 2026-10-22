@@ -24,7 +24,7 @@ from scripts.render import render_all
 from scripts.reports import consolidate_final, write_context_index, write_run_report
 from scripts.subtitles import build_caption_files
 from scripts.tempos import recalcular_plano, verificar_plano
-from scripts.transcribe import ProgressoTranscricao, transcribe
+from scripts.transcribe import ProgressoTranscricao, _carregar_atividade, transcribe
 from scripts.utils import (
     HarnessError,
     PROJECT_ROOT,
@@ -80,6 +80,15 @@ def config(run: str | Path | None = None) -> dict[str, Any]:
     if override:
         cfg = _deep_merge(cfg, load_yaml(Path(override).expanduser().resolve()))
     return cfg
+
+
+def _progresso(run: Path, rotulo: str, etapa: str):
+    """A barra do painel (`painel/atividade.py` → Progresso): `prog(feito, total, detalhe)`.
+    Sem o painel ou fora de projetos/<nome>, não anota nada."""
+    atividade = _carregar_atividade()
+    if atividade is not None and hasattr(atividade, "Progresso"):
+        return atividade.Progresso(run, rotulo, etapa=etapa)
+    return lambda *_: None
 
 
 def _print_json(data: Any) -> None:
@@ -307,7 +316,9 @@ def cmd_visual_index(args: argparse.Namespace) -> int:
         )
         periodic, scenes = visual["periodic_frames"], visual["scene_frames"]
     else:
+        prog = _progresso(run, "olhando os frames dos trechos", "cortes")
         for idx, (start, end) in enumerate(windows):
+            prog(idx, len(windows), f"{int(start)}s–{int(end)}s")
             visual = extract_visual_index(
                 video, frames_dir, run / "03-visual-index.json",
                 interval_seconds=float(visual_cfg.get("interval_seconds", 5.0)),
@@ -318,6 +329,7 @@ def cmd_visual_index(args: argparse.Namespace) -> int:
             )
             periodic += visual["periodic_frames"]
             scenes += visual["scene_frames"]
+        prog(len(windows), len(windows))
         periodic.sort(key=lambda f: f["timestamp"])
         scenes.sort(key=lambda f: (f["timestamp"] is None, f["timestamp"]))
 
@@ -515,7 +527,8 @@ def cmd_previews(args: argparse.Namespace) -> int:
     media = load_json(run / "01-media.json", {})
     com_audio = bool(media.get("audio", True))
     ids = {i.strip() for i in args.clips.split(",") if i.strip()} if args.clips else None
-    resultado = cortar_previas(run, video, load_json(run / "06-candidates.json"), ids, com_audio)
+    resultado = cortar_previas(run, video, load_json(run / "06-candidates.json"), ids, com_audio,
+                               progresso=_progresso(run, "cortando as prévias", "cortes"))
     set_stage(run, "previews", "complete" if not resultado["erros"] else "failed",
               artifacts=[p["arquivo"] for p in resultado["previas"]])
     _print_json(resultado)
@@ -581,7 +594,8 @@ def cmd_render(args: argparse.Namespace) -> int:
         raise HarnessError("Render exige vídeo fonte")
     final = load_json(run / "13-final-clips.json")
     plans = load_json(run / "11-edit-plans.json")
-    rendered = render_all(run, video, final, plans, config(run).get("render", {}))
+    rendered = render_all(run, video, final, plans, config(run).get("render", {}),
+                          progresso=_progresso(run, "renderizando os clipes", "vertical"))
     artifact_paths = []
     for metadata in rendered:
         for value in metadata.get("output", {}).values():
@@ -717,9 +731,13 @@ def cmd_autoframe(args: argparse.Namespace) -> int:
         raise HarnessError("11-edit-plans.json ausente: rode o Edit Director antes do autoframe.")
     doc = load_json(plans_path)
     zones = json.loads(args.exclude_zones) if args.exclude_zones else None
+    prog = _progresso(run, "enquadrando em 9:16", "vertical")
+    planos = doc.get("plans", [])
+    prog(0, len(planos), "procurando os silêncios")
     silences = detect_silences(video)
     total = 0
-    for plan in doc.get("plans", []):
+    for k, plan in enumerate(planos):
+        prog(k, len(planos), str(plan.get("clip_id", "")))
         # dicts inteiros: o autoframe herda layout/framing_reason do Edit Director
         segs = plan.get("timeline", [])
         if not segs:
@@ -732,6 +750,8 @@ def cmd_autoframe(args: argparse.Namespace) -> int:
         recalcular_plano(plan, antiga, dividido=True, origem="autoframe")
         total += len(timeline)
     write_json(plans_path, doc)
+    prog(len(planos), len(planos))
+    set_stage(run, "autoframe", "complete", artifacts=["11-edit-plans.json"])
     print(f"autoframe: {len(doc.get('plans', []))} plano(s), {total} subsegmento(s)")
     return 0
 

@@ -26,6 +26,10 @@ python_ok() {
     "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3,10) else 1)' 2>/dev/null
 }
 
+tem_js() {
+    command -v deno >/dev/null 2>&1 || command -v node >/dev/null 2>&1 || command -v bun >/dev/null 2>&1
+}
+
 achar_python() {
     for c in python3.13 python3.12 python3.11 python3.10 python3; do
         local p
@@ -35,7 +39,7 @@ achar_python() {
     return 1
 }
 
-passo "Dependências do sistema (ffmpeg e Python 3.10+)"
+passo "Dependências do sistema (ffmpeg, Python 3.10+ e JavaScript para o YouTube)"
 SO="$(uname -s)"
 if [ "$SO" = "Darwin" ]; then
     if ! command -v brew >/dev/null 2>&1; then
@@ -44,6 +48,8 @@ if [ "$SO" = "Darwin" ]; then
     fi
     command -v ffmpeg >/dev/null 2>&1 || brew install ffmpeg
     achar_python >/dev/null || brew install python@3.11
+    # baixar do YouTube por link: o yt-dlp precisa de um interpretador de JavaScript
+    tem_js || brew install deno
 elif [ "$SO" = "Linux" ]; then
     if command -v apt-get >/dev/null 2>&1; then
         precisa=()
@@ -55,6 +61,8 @@ elif [ "$SO" = "Linux" ]; then
     else
         echo "Instale ffmpeg e Python 3.10+ pelo gerenciador da sua distro e rode de novo."
     fi
+    # o Node do apt costuma ser velho demais para o yt-dlp: o Deno vem do site oficial
+    tem_js || echo "aviso: para baixar vídeo do YouTube por link, instale o Deno: https://deno.com"
 else
     echo "ERRO: sistema $SO não suportado direto. No Windows, use o WSL (Ubuntu)." >&2
     exit 1
@@ -73,6 +81,9 @@ else
     grep -v -i "faster-whisper" "$ROOT/requirements.txt" > "$VENV/requirements-sem-whisper.txt"
     "$VENV/bin/python" -m pip install --quiet -r "$VENV/requirements-sem-whisper.txt"
 fi
+# O YouTube muda e yt-dlp velho para de baixar: rodar o instalador de novo atualiza.
+"$VENV/bin/python" -m pip install --quiet --upgrade "yt-dlp[default]" \
+    || echo "aviso: não consegui atualizar o yt-dlp; baixar por link pode falhar no YouTube"
 
 # Mac com Apple Silicon: transcrição na GPU (mlx-whisper), 2 a 2,5x mais rápida que
 # o faster-whisper na CPU (medido num M2), que fica instalado como reserva. --no-deps porque o
