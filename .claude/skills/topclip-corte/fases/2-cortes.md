@@ -1,8 +1,8 @@
 # Fase 2 — CORTES
 
-> **A entrega é vídeo para assistir**, não o clipe final. Corte horizontal, do
-> bruto, no in/out exato. Sem vertical, sem enquadramento, sem legenda. O
-> usuário assiste e diz quais sobrevivem.
+> **A entrega é vídeo para assistir, com a nota do gate**, não o clipe final.
+> Corte horizontal, do bruto, no in/out exato. Sem vertical, sem enquadramento,
+> sem legenda. O usuário assiste e diz quais sobrevivem.
 
 **Carregue:** `docs/06-regras-de-edicao.md` e `docs/12-erros-registrados.md`.
 Não abra `config/` nem nada de enquadramento — é fase 3.
@@ -11,19 +11,56 @@ Não abra `config/` nem nada de enquadramento — é fase 3.
 `blind-reviewer`, `clip-deduplicator`. **Não** invoque `edit-director` nem
 `quality-controller`: são da fase 3.
 
-**Entrada:** os momentos que o usuário aprovou na fase 1. Só eles. Momento que
-ele não escolheu não entra "porque estava bom" — ele já viu e decidiu.
+**Entrada:** os momentos que o usuário escolheu na fase 1. Só eles. Momento que
+ele não escolheu não entra "porque estava bom" — ele já viu e decidiu. Se ele
+escolheu mais de 5, diga uma vez que a fase demora proporcionalmente e siga: a
+escolha é dele.
 
 ---
 
-## 1. Clip Builder
+## A ordem, e por que é esta
+
+```text
+1  Clip Builder, só nos escolhidos, com autochecagem
+2  auditoria técnica + dedupe temporal ............ scripts, segundos
+3  prévias, todas em paralelo ..................... o usuário já pode assistir
+4  revisão cega ∥ revisão de feed ∥ dedupe          mesma versão, ao mesmo tempo
+5  UM rebuild, juntando as duas revisões
+6  nova rodada só nos cortes que mudaram            volta ao 2, até o limite
+7  nota de cada corte (a conta do gate) → PARE
+```
+
+Na run de teste (`aula-yt-teste`) a ordem antiga custou 41 minutos de cortes para
+2 clipes, e cada desperdício tem aqui a sua correção:
+
+| O que aconteceu | O que mudou |
+| --- | --- |
+| Clip Builder montou os 14 momentos (12 min); o usuário usou 2 | a fase 1 mostra a nota e recomenda 2–5; o Builder só monta os escolhidos |
+| revisão cega reprovou os 14; o rebuild esperou a de feed (17 min), que foi jogada fora quando ele escolheu 2 | as duas revisões rodam juntas, sobre a mesma versão, e geram **um** rebuild |
+| os 2 escolhidos foram refeitos e revisados de novo | a nova rodada é só dos cortes que mudaram |
+| as prévias só foram cortadas depois da escolha: ele marcou corte sem ver vídeo | prévias logo depois do Builder, antes das revisões |
+| a nota do gate só apareceu no `finalize`, 1h depois: os 2 escolhidos ficaram abaixo de 7,5 | `estimate` dá a nota aqui, com a mesma conta |
+
+**Nenhum portão saiu.** Autochecagem, auditoria, revisão de feed, revisão cega,
+dedupe, limite de rebuild e nota mínima continuam todos. O que mudou é que nenhum
+espera outro sem motivo, e nenhum roda sobre corte que o usuário já descartou.
+
+Anote cada passo no painel (`./topclip log projetos/<nome> "..."`), em português de
+gente: "montando os 3 cortes", "prévias prontas — pode ir assistindo enquanto as
+revisões rodam", "revisões pediram ajuste em 2; refazendo os dois de uma vez".
+
+## 1. Clip Builder — só os escolhidos
 
 Subagente `clip-builder`. Saída: `06-candidates.json`, validado em seguida.
 
 Reconstrua cada candidato com intervalos reais. Destaque inicial pode vir do
 meio ou do fim, mas remova o replay no corpo quando não houver função narrativa.
+O agente traz a **autochecagem** dos seis motivos que mais derrubaram cortes na
+revisão cega (gancho sem assunto em 3s, emenda que quebra frase, palavra solta,
+final que pede continuação, referente perdido, número tardio no `money`): é
+mais barato o Builder pegar isso do que uma volta de rebuild.
 
-**Antes de cravar in/out, puxe o timing por palavra SÓ das janelas aprovadas:**
+**Antes de cravar in/out, puxe o timing por palavra SÓ das janelas escolhidas:**
 
 ```bash
 ./topclip corte digest --run <run-dir> \
@@ -62,14 +99,16 @@ Antes de fechar in/out, olhar os frames. O bruto costuma já ter card de título
 print, transição P&B→cor, inserto, reação facial. **Nunca cortar imediatamente
 antes de um desses** — são hook de graça.
 
-**Agora sim o índice visual**, escopado às janelas dos candidatos aprovados:
+O índice visual, escopado às janelas escolhidas, roda **em segundo plano, ao mesmo
+tempo que o Builder** — na run de teste levou 14 min para 9 janelas, e ninguém
+precisa esperá-lo de braços cruzados:
 
 ```bash
 ./topclip corte visual-index --run <run-dir> \
   --windows "1523-1615,4870-4940"
 ```
 
-Decodifica segundos, não horas. Para um instante pontual, o grab avulso serve:
+Para um instante pontual, o grab avulso serve:
 
 ```bash
 ffmpeg -ss T -i BRUTO -frames:v 1 -vf scale=480:-2 f.jpg
@@ -77,76 +116,131 @@ ffmpeg -ss T -i BRUTO -frames:v 1 -vf scale=480:-2 f.jpg
 
 E pense no primeiro frame: rosto em movimento > rosto neutro > objeto > vazio.
 
-## 2. Feed Psychology Review
-
-Subagente `feed-psychologist`. Saída: `07-feed-review.json`.
-
-Avalie separadamente: captura no primeiro segundo; clareza da proposta até 3s;
-tempo até primeiro valor; dívida de contexto; gap de curiosidade; densidade de
-beats; progressão; integridade promessa–payoff; compartilhamento; fadiga.
-
-"Dopamina" não é métrica. Use os proxies definidos no projeto.
-
-## 3. Auditoria técnica
+## 2. Auditoria técnica — antes de gastar revisor
 
 ```bash
 ./topclip corte audit --run <run-dir>
+./topclip corte dedupe --run <run-dir>
 ```
 
-Calcula **sem estimativa do modelo**: duração final, sobreposição, contenção,
-repetição de highlight, intervalos inválidos, gaps, palavras por segundo,
-silêncio. Leia `08-technical-audit.json` e devolva todo hard fail ao Clip
-Builder.
+A auditoria calcula **sem estimativa do modelo**: duração final, sobreposição,
+contenção, repetição de highlight, intervalos inválidos, gaps, palavras por
+segundo, silêncio. Leva segundos. Hard fail em `08-technical-audit.json` volta
+**já** ao Clip Builder: não há por que um revisor ler um corte com intervalo
+inválido. O `dedupe` é a sobreposição temporal entre cortes
+(`10-temporal-deduplication.json`).
 
-Para status `REBUILD`: `Clip Builder → Feed Psychology → Auditoria`, até
-`max_rebuild_attempts`. Depois do limite, `REJECTED` com motivo explícito.
+## 3. Prévias — já, todas em paralelo
 
-## 4. Blind Reviewer
+```bash
+./topclip corte previews --run <run-dir>
+```
+
+Corta a prévia de cada corte de `06-candidates.json` ao mesmo tempo, seguindo a
+timeline do Builder — os mesmos segmentos, na mesma ordem, sem os
+`remove_from_body` —, em 720p. É a mesma versão que os revisores vão ler, então o
+usuário assiste ao que está sendo julgado. Saem em
+`<run-dir>/preview/<NN>-<clip-id>-<titulo>.mp4`; o `<NN>` segue a ordem de
+`06-candidates.json` e o painel casa cada prévia com o seu corte pelo id. A versão
+anterior de um corte é apagada quando a nova é cortada.
+
+Avise no painel que as prévias estão lá. Ele pode ir assistindo enquanto as
+revisões rodam — é tempo que antes ficava parado.
+
+## 4. Revisões em paralelo, na mesma versão
 
 ```bash
 ./topclip corte blind-packets --run <run-dir>
 ```
 
-Para cada sobrevivente, leia **somente** seu arquivo em `blind-packets/` e envie
-o conteúdo inline ao subagente `blind-reviewer`. Esse agente não tem ferramenta
-local de leitura, busca ou execução — a única declarada não é local e deve
-permanecer sem uso. Não envie título promocional, contexto completo, score nem
-justificativa anterior. Saída: `09-blind-review.json`.
+Depois, **numa única mensagem**, dispare juntos:
 
-Falha relevante volta para `REBUILD`.
+| Subagente | Quantos | Lê | Saída |
+| --- | --- | --- | --- |
+| `feed-psychologist` | 1, para os cortes da rodada | `06-candidates.json` + o perfil de cada corte | `07-feed-review.json` |
+| `blind-reviewer` | 1 por corte | **só** o pacote do corte em `blind-packets/`, inline | você junta em `09-blind-review.json` |
+| `clip-deduplicator` | 1, só na 1ª rodada e só com 2+ cortes | os cortes + `10-temporal-deduplication.json` | `10-deduplication.json` |
 
-## 5. Deduplicação
+Todos olham para o mesmo `06-candidates.json`, recém-auditado. Em cada revisão,
+grave `rebuild_attempt_reviewed` com o `rebuild_attempt` do corte revisado — o
+revisor cego não sabe disso (nem deve); quem anota é você, ao juntar o `09`. Não
+comece rebuild nenhum antes de todas voltarem: rebuild com meia revisão é o que
+obrigava a refazer depois.
+
+**Revisão de feed.** Avalie separadamente: captura no primeiro segundo; clareza da
+proposta até 3s; tempo até primeiro valor; dívida de contexto; gap de
+curiosidade; densidade de beats; progressão; integridade promessa–payoff;
+compartilhamento; fadiga. "Dopamina" não é métrica. Use os proxies definidos no
+projeto.
+
+**Revisão cega.** Para cada corte, leia **somente** seu arquivo em
+`blind-packets/` e envie o conteúdo inline ao subagente `blind-reviewer`. Esse
+agente não tem ferramenta local de leitura, busca ou execução — a única declarada
+não é local e deve permanecer sem uso. Não envie título promocional, contexto
+completo, score nem justificativa anterior, nem o resultado da revisão de feed.
 
 ```bash
-./topclip corte dedupe --run <run-dir>
+./topclip corte validate-artifact --run <run-dir> --file 07-feed-review.json
+./topclip corte validate-artifact --run <run-dir> --file 09-blind-review.json
 ```
 
-Depois o subagente `clip-deduplicator` compara equivalência semântica entre
-clipes com baixa sobreposição temporal. Saída: `10-deduplication.json`. Mantenha
-a versão com melhor combinação de independência, velocidade, payoff e
-editabilidade.
+## 5. Um rebuild, juntando as duas revisões
 
-## 6. Corte de preview e PARE
+Para cada corte, leia junto: hard fail da auditoria, `status` e `problems` do
+feed, `decision`, `problems` e `rebuild_instructions` da cega, e o dedupe.
 
-Corte cada sobrevivente do bruto, **horizontal, como está**. Sem reenquadrar,
-sem legenda, sem normalizar. É material de aprovação, não entregável:
+| Situação do corte | O que fazer |
+| --- | --- |
+| PASS nas duas, sem hard fail | pronto — não mexa |
+| perdedor no dedupe | sai, com o motivo (`DUPLICATE`) |
+| `REJECT` em qualquer revisão | sai, com o motivo (`REJECTED`) |
+| `REBUILD` em uma ou nas duas | entra na lista do rebuild |
+
+Monte **uma** lista por corte com o que as duas pediram, sem repetir o que as duas
+disseram com outras palavras. Invoque o `clip-builder` **uma vez**, só com os
+cortes da lista. Quando as revisões pedem coisas opostas, vale fidelidade > se
+sustentar sozinho > velocidade, e o Builder registra a escolha em `warnings`. Ele
+soma 1 ao `rebuild_attempt` de cada corte que refez.
+
+## 6. Nova rodada — só nos que mudaram
+
+Volte ao passo 2 com os cortes refeitos:
 
 ```bash
-ffmpeg -y -ss <IN> -to <OUT> -i <BRUTO> \
-  -c:v libx264 -preset veryfast -crf 23 -c:a aac \
-  <run-dir>/preview/<NN>-<slug>.mp4
+./topclip corte audit --run <run-dir>
+./topclip corte previews --run <run-dir> --clips clip-002,clip-005
+./topclip corte blind-packets --run <run-dir>
 ```
 
-`-ss` antes do `-i` é rápido mas corta no keyframe anterior; como aqui o in/out
-é o dado que está sendo aprovado, use `-ss` **depois** do `-i` (mais lento,
-exato) ou aceite a imprecisão e diga que é preview.
+e, de novo numa única mensagem, feed e cega **só desses cortes**. Ao gravar `07` e
+`09`, troque só as entradas deles — a revisão dos que já passaram continua valendo,
+porque o corte deles não mudou. O `clip-deduplicator` só roda de novo se um
+rebuild mudou a promessa ou o payoff de algum corte.
 
-Entregue os arquivos ao usuário e **pare**. Por clipe, uma linha: duração, o
-hook em citação literal, e o que a auditoria apontou (se apontou). Os previews em
-`<run-dir>/preview/` aparecem no painel (`./topclip painel`, etapa Cortes) para ele
-assistir e marcar; se escolher por lá, os ids estão em `projetos/<nome>/escolhas.json`
-→ `cortes`. O `<NN>` do nome segue a ordem de `06-candidates.json`: é por ele que o painel
-casa cada preview com o seu corte.
+Repita até passar ou até `max_rebuild_attempts` (3, em `config/default.yaml`).
+Depois do limite, `REJECTED` com motivo explícito.
+
+## 7. Nota de cada corte e PARE
+
+```bash
+./topclip corte estimate --run <run-dir> --cortes
+```
+
+A **mesma conta do `finalize`**: as notas do Builder com as da revisão de feed por
+cima. Grava `publishability_estimate` e `estimate_below_gate` em cada corte de
+`06-candidates.json`; o painel mostra a nota em cada prévia. Rode depois da última
+rodada — a nota de um corte sem revisão de feed é só a do Builder, e o comando
+avisa quais estão assim.
+
+Entregue os arquivos ao usuário e **pare**. Por corte, uma linha: a nota (e, abaixo
+de 7,5, por quê), a duração, o hook em citação literal, e o que as revisões
+apontaram (se apontaram). Corte abaixo do gate: diga com todas as letras que, se
+ele escolher, chega ao fim marcado como fraco (`WEAK`) — ou reprovado, se o motivo
+for fidelidade abaixo de 9. A escolha é dele, mas feita sabendo.
+
+Os previews em `<run-dir>/preview/` aparecem no painel (`./topclip painel`, etapa
+Cortes) para ele assistir e marcar; se escolher por lá, os ids estão em
+`projetos/<nome>/escolhas.json` → `cortes`.
 
 A fase 3 só começa depois que ele disser quais viram vertical. Renderizar
 vertical de 20 clipes para descobrir que 12 não prestam é o custo que este

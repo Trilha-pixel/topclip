@@ -92,12 +92,43 @@ def etapas(proj: Path, run: Path | None) -> dict:
     previews = list(run.glob("preview/*.mp4")) if run else []
     return {
         "momentos": "feito" if tem("05-viral-moments.json") else ("andamento" if run else "pendente"),
-        "cortes": "feito" if (previews or tem("06-candidates.json")) else "pendente",
+        "cortes": "feito" if (verticais or cortes_no_portao(run))
+                  else ("andamento" if (previews or tem("06-candidates.json")) else "pendente"),
         "vertical": "feito" if verticais else "pendente",
         "motion": "feito" if any(any((m / "12_master").glob("*.mp4")) for m in motion)
                   else ("andamento" if motion else "pendente"),
         "entrega": "feito" if entregas else "pendente",
     }
+
+
+# o que a fase 2 grava antes da nota dos cortes, o último passo antes do portão
+ANTES_DA_NOTA = ("07-feed-review.json", "08-technical-audit.json", "09-blind-review.json",
+                 "10-temporal-deduplication.json", "10-deduplication.json")
+
+
+def cortes_no_portao(run: Path | None) -> bool:
+    """A fase 2 parou no portão: é a vez da pessoa assistir e escolher os cortes.
+
+    O 06 e as prévias saem logo depois do Clip Builder, e as revisões (subagentes, que
+    não aparecem como processo) ainda levam minutos. O sinal é o último passo da fase,
+    `./topclip corte estimate --cortes`: a nota em todo corte do 06, e o 06 mais novo que
+    tudo o que a fase grava antes dela. Auditoria ou revisão mais nova que o 06 é rodada
+    nova em andamento — o rebuild regrava o 06 copiando a nota velha.
+    """
+    cand = run / "06-candidates.json" if run else None
+    if not cand or not cand.exists():
+        return False
+    doc = ler_json(cand, {}) or {}
+    if "estimate_gate" not in doc and "estimate_gate" not in (ler_json(run / "05-viral-moments.json", {}) or {}):
+        # run de antes do `estimate`: fica como era, o 06 basta. A nota nunca vai chegar, e
+        # exigir as revisões tiraria o aviso para sempre de quem não as tem — a cópia antiga
+        # do projeto de exemplo não tem 07 nem 09, e em aula-yt-teste o 09 é mais velho que o 06.
+        return True
+    cortes = doc.get("clips") or []
+    if not cortes or any(nota_estimada(c) is None for c in cortes):
+        return False
+    nota = cand.stat().st_mtime_ns
+    return all(p.stat().st_mtime_ns <= nota for p in (run / n for n in ANTES_DA_NOTA) if p.exists())
 
 
 def resumo(proj: Path) -> dict:
@@ -144,25 +175,34 @@ def detalhe(proj: Path) -> dict:
     run = run_mais_recente(proj)
     escolhas = ler_json(proj / "escolhas.json", {}) or {}
 
+    # A nota é a mesma conta do gate do finalize (`./topclip corte estimate`), antecipada:
+    # nos momentos, sobre o que o Clip Hunter estimou; nos cortes, Builder + revisão de feed.
+    doc_momentos = (ler_json(run / "05-viral-moments.json", {}) or {}) if run else {}
     momentos = []
-    if run:
-        for m in (ler_json(run / "05-viral-moments.json", {}) or {}).get("moments", []):
-            momentos.append({**m, "inicio": mmss(m.get("start")), "fim": mmss(m.get("end"))})
+    for m in doc_momentos.get("moments", []):
+        momentos.append({**m, "inicio": mmss(m.get("start")), "fim": mmss(m.get("end")),
+                         "nota": nota_estimada(m), "abaixo_do_gate": m.get("estimate_below_gate") or []})
+    # a pergunta da pessoa é "quais prestam": melhor nota primeiro; sem nota, na ordem do Clip Hunter
+    momentos.sort(key=lambda m: -m["nota"] if m["nota"] is not None else float("inf"))
 
     cortes = []
-    if run:
-        previews = {p.stem: p for p in sorted(run.glob("preview/*.mp4"))}
-        for i, c in enumerate((ler_json(run / "06-candidates.json", {}) or {}).get("clips", []), 1):
-            prev = next((p for k, p in previews.items() if c.get("id", "") in k or k.startswith(f"{i:02d}-")), None)
-            scores = c.get("scores") or {}
-            media = round(sum(scores.values()) / len(scores), 1) if scores else None
-            cortes.append({
-                "id": c.get("id"), "titulo": c.get("title"), "status": c.get("status"),
-                "perfil": c.get("profile"), "duracao": c.get("estimated_final_duration_seconds"),
-                "transcricao": c.get("reconstructed_transcript"), "porque": c.get("why_it_can_work"),
-                "nota": media, "falhas": c.get("hard_fails") or [],
-                "preview": url_midia(prev) if prev else None,
-            })
+    doc_cortes = (ler_json(run / "06-candidates.json", {}) or {}) if run else {}
+    previews = sorted(run.glob("preview/*.mp4")) if run else []
+    ids = [str(c.get("id", "")) for c in doc_cortes.get("clips", [])]
+    for i, c in enumerate(doc_cortes.get("clips", []), 1):
+        prev = previa_do_corte(previews, ids, i)
+        nota = nota_estimada(c)
+        if nota is None and c.get("scores"):            # run antiga, sem `estimate --cortes`
+            scores = c["scores"]
+            nota = round(sum(scores.values()) / len(scores), 1)
+        cortes.append({
+            "id": c.get("id"), "titulo": c.get("title"), "status": c.get("status"),
+            "perfil": c.get("profile"), "duracao": c.get("estimated_final_duration_seconds"),
+            "transcricao": c.get("reconstructed_transcript"), "porque": c.get("why_it_can_work"),
+            "nota": nota, "nota_do_gate": nota_estimada(c) is not None,
+            "abaixo_do_gate": c.get("estimate_below_gate") or [], "falhas": c.get("hard_fails") or [],
+            "preview": url_midia(prev) if prev else None,
+        })
 
     verticais = []
     if run:
@@ -183,7 +223,32 @@ def detalhe(proj: Path) -> dict:
                 for e in sorted((proj / "entregas").glob("*.mp4"))]
 
     return {**base, "run": run.name if run else None, "momentos": momentos, "cortes": cortes,
+            "gate": doc_cortes.get("estimate_gate") or doc_momentos.get("estimate_gate") or 7.5,
             "verticais": verticais, "motion": motion, "entregas": entregas, "escolhas": escolhas}
+
+
+def nota_estimada(item: dict):
+    try:
+        return round(float(item["publishability_estimate"]), 1)
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def previa_do_corte(previews: list[Path], ids: list[str], posicao: int) -> Path | None:
+    """O arquivo `<NN>-<clip-id>-<titulo>.mp4` do corte na `posicao` (1, 2, …) de 06-candidates.json.
+
+    Casa pelo id: o NN muda quando 06-candidates.json é refeito com menos cortes, e aí
+    apontaria a prévia de outro — inclusive a de uma rodada velha. Só uma prévia sem id
+    nenhum no nome (cortada à mão, `<NN>-<slug>.mp4`) casa pela posição.
+    """
+    def tem(stem: str, clip_id: str) -> bool:
+        return bool(clip_id) and re.search(rf"(^|-){re.escape(clip_id)}(-|$)", stem) is not None
+
+    achado = next((p for p in previews if tem(p.stem, ids[posicao - 1])), None)
+    if achado:
+        return achado
+    sem_id = lambda stem: not re.search(r"(^|-)clip-\d+(-|$)", stem) and not any(tem(stem, i) for i in ids)
+    return next((p for p in previews if p.stem.startswith(f"{posicao:02d}-") and sem_id(p.stem)), None)
 
 
 def biblioteca() -> dict:
@@ -393,7 +458,7 @@ def atividade(proj: Path) -> dict:
         cand = run / "06-candidates.json" if run else None
         if mom and mom.exists() and not esc.get("momentos") and not (cand and cand.exists()):
             sua_vez = {"etapa": "momentos", "msg": "Os momentos estão prontos. Escolha quais viram corte."}
-        elif cand and cand.exists() and not esc.get("cortes") and not list(run.glob("output/final-clips/*/*/clip-vertical.mp4")):
+        elif cortes_no_portao(run) and not esc.get("cortes") and not list(run.glob("output/final-clips/*/*/clip-vertical.mp4")):
             sua_vez = {"etapa": "cortes", "msg": "Os cortes estão prontos. Assista e escolha quais viram vertical."}
 
     reais = [e for e in eventos if e.get("tipo") != "projeto"]
@@ -428,6 +493,11 @@ def _assinatura(proj: Path, run: Path | None) -> str:
     partes += [str(p.relative_to(proj)) for p in sorted(proj.glob("runs/*/1[0-9]-*.json"))]
     if run:
         partes += [p.name for p in run.glob("preview/*.mp4")] + [p.parent.name for p in run.glob("output/final-clips/*/*/clip-vertical.mp4")]
+        # arquivos que são REESCRITOS no lugar: a nota estimada entra depois do momento,
+        # o rebuild refaz o corte e a prévia com o mesmo nome
+        for p in [run / "05-viral-moments.json", run / "06-candidates.json", *run.glob("preview/*.mp4")]:
+            if p.exists():
+                partes.append(f"{p.name}@{p.stat().st_mtime_ns}")
     partes += [str(p.relative_to(proj)) for p in proj.glob("motion/*/08_images/frames/*")]
     partes += [str(p.relative_to(proj)) for p in proj.glob("motion/*/12_master/*.mp4")]
     partes += [p.name for p in proj.glob("entregas/*.mp4")]

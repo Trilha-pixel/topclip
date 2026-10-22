@@ -73,26 +73,30 @@ INGESTION ── ffprobe, áudio, transcript, frames
 CONTEXT MAPPER
   │
   ▼
-CLIP HUNTER
+CLIP HUNTER ── + nota estimada (vch estimate)
   │
   ▼
-CLIP BUILDER
+[usuário escolhe 2–5 momentos]
   │
   ▼
-FEED PSYCHOLOGY REVIEW
+CLIP BUILDER ◄────────────────────────────────┐ um rebuild por rodada,
+  │                                           │ só dos cortes que mudaram
+  ▼                                           │
+TECHNICAL AUDIT + TEMPORAL DEDUPE             │
+  │                                           │
+  ▼                                           │
+PREVIEWS (paralelo)                           │
+  │                                           │
+  ▼                                           │
+FEED REVIEW ∥ BLIND REVIEW ∥ SEMANTIC DEDUPE  │
+  │                                           │
+  ├── REBUILD (as duas revisões juntas) ──────┘
   │
   ▼
-TECHNICAL AUDIT
-  │
-  ├── REBUILD ───────────────┐
-  │                          │
-  ▼                          │
-BLIND REVIEWER               │
-  │                          │
-  ├── REBUILD ───────────────┘
+NOTA DOS CORTES (vch estimate --cortes)
   │
   ▼
-TEMPORAL + SEMANTIC DEDUPE
+[usuário escolhe os cortes]
   │
   ▼
 EDIT DIRECTOR

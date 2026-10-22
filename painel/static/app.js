@@ -24,6 +24,8 @@ const ROTULOS = {
   contexto_insuficiente: "falta contexto",
 };
 const rotulo = (v) => ROTULOS[v] || String(v ?? "").replace(/_/g, " ");
+const num = (n) => String(n).replace(".", ",");   // 7.5 -> "7,5"
+const MOMENTOS_RECOMENDADOS = 5;   // escolher 14 para usar 2 custou ~1h a mais na fase de cortes
 
 // ------------------------------------------------------------------ utilidades
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -362,24 +364,34 @@ function blocoMomentos(p) {
       <p class="explica">O Claude lê a transcrição inteira e separa os trechos que prendem quem cai ali sem contexto — com gancho, desenvolvimento e fechamento. Eles aparecem aqui para você escolher.</p></div></div>
     ${proximoPasso("comece pelo Claude:", pedirAoClaude(p))}`;
   }
+  const comNota = p.momentos.some((m) => m.nota != null);
+  const melhores = melhoresMomentos(p).length;
   return `
   <div class="secao-topo">
     <div><h2 class="subtitulo">${p.momentos.length} momentos encontrados</h2>
-      <p class="explica">Marque os que você quer transformar em corte. O Claude só segue com os escolhidos.</p></div>
-    <div style="display:flex;gap:16px"><button class="link" data-todos="momentos">marcar todos</button><button class="link" data-limpar="momentos">limpar</button></div>
+      <p class="explica">Marque <b>poucos — de 2 a ${MOMENTOS_RECOMENDADOS}</b>. Cada momento marcado vira corte, revisão e prévia: marcar demais deixa a próxima etapa bem mais lenta. O Claude só segue com os escolhidos.</p>
+      ${comNota ? `<p class="explica">Em ordem de <b>nota estimada</b> — a mesma conta que decide no fim. Abaixo de ${num(p.gate)}, o corte tende a sair fraco.</p>` : ""}</div>
+    <div style="display:flex;gap:16px">${comNota
+      ? (melhores ? `<button class="link" data-melhores>marcar os ${melhores} melhores</button>` : "")
+      : `<button class="link" data-todos="momentos">marcar todos</button>`}<button class="link" data-limpar="momentos">limpar</button></div>
   </div>
   <div class="lista">
     ${p.momentos.map((m) => `
       <article class="momento ${escolhas.momentos.has(m.id) ? "escolhido" : ""}" data-item="momentos" data-id="${esc(m.id)}" tabindex="0" role="checkbox" aria-checked="${escolhas.momentos.has(m.id)}">
-        <span class="tempo">${esc(m.inicio)} → ${esc(m.fim)}</span>
+        <div class="momento-lado">
+          <span class="tempo">${esc(m.inicio)} → ${esc(m.fim)}</span>
+          ${m.nota != null ? `<span class="nota ${m.abaixo_do_gate.length ? "fraca" : ""}">${num(m.nota)}<small>/10</small><span class="nota-rotulo">nota estimada</span></span>` : ""}
+        </div>
         <div>
           <p class="citacao">${esc(m.quote)}</p>
           <div class="tags">
+            ${m.abaixo_do_gate.length ? `<span class="tag risco">pode sair fraco</span>` : ""}
             ${m.trigger ? `<span class="tag forte">${esc(rotulo(m.trigger))}</span>` : ""}
             ${m.profile && rotulo(m.profile) !== rotulo(m.trigger) ? `<span class="tag">${esc(rotulo(m.profile))}</span>` : ""}
             ${m.confidence != null ? `<span class="tag">confiança ${Math.round(m.confidence * 100)}%</span>` : ""}
             ${m.risk_of_distortion && m.risk_of_distortion !== "baixo" ? `<span class="tag risco">risco de distorção: ${esc(rotulo(m.risk_of_distortion))}</span>` : ""}
           </div>
+          ${m.abaixo_do_gate.length ? `<p class="detalhe"><b>Abaixo do mínimo:</b> ${m.abaixo_do_gate.map(esc).join(" · ")}</p>` : ""}
           ${m.context_needed ? `<p class="detalhe"><b>Contexto:</b> ${esc(m.context_needed)}</p>` : ""}
           ${m.payoff_candidate ? `<p class="detalhe"><b>Fecha com:</b> ${esc(m.payoff_candidate)}</p>` : ""}
         </div>
@@ -388,6 +400,10 @@ function blocoMomentos(p) {
   </div>
   <div data-depois-salvar hidden>${proximoPasso("agora diga ao Claude:", "escolhi no painel, pode seguir")}</div>`;
 }
+
+// Os que passariam no gate, melhor nota primeiro, no máximo o recomendado.
+const melhoresMomentos = (p) =>
+  p.momentos.filter((m) => m.nota != null && !m.abaixo_do_gate.length).slice(0, MOMENTOS_RECOMENDADOS);
 
 function blocoCortes(p) {
   if (!p.cortes.length) {
@@ -410,14 +426,16 @@ function blocoCortes(p) {
         <div class="corte-corpo">
           <div style="display:flex;justify-content:space-between;gap:12px;align-items:start">
             <h4>${esc(c.titulo || c.id)}</h4>
-            ${c.nota != null ? `<span class="nota">${c.nota}<small>/10</small></span>` : ""}
+            ${c.nota != null ? `<span class="nota ${c.abaixo_do_gate.length ? "fraca" : ""}">${num(c.nota)}<small>/10</small></span>` : ""}
           </div>
           <div class="tags">
+            ${c.abaixo_do_gate.length ? `<span class="tag risco">pode sair fraco</span>` : ""}
             ${c.duracao ? `<span class="tag forte">${Math.round(c.duracao)}s</span>` : ""}
             ${c.perfil ? `<span class="tag">${esc(rotulo(c.perfil))}</span>` : ""}
             ${c.status ? `<span class="tag">${esc(rotulo(c.status))}</span>` : ""}
             ${c.falhas.map((f) => `<span class="tag risco">${esc(rotulo(f))}</span>`).join("")}
           </div>
+          ${c.abaixo_do_gate.length ? `<p class="detalhe"><b>Abaixo do mínimo:</b> ${c.abaixo_do_gate.map(esc).join(" · ")}</p>` : ""}
           ${c.porque ? `<p class="detalhe"><b>Por que funciona:</b> ${esc(c.porque)}</p>` : ""}
           ${c.transcricao ? `<details class="detalhe"><summary>ler a fala do corte</summary><p>${esc(c.transcricao)}</p></details>` : ""}
           <div class="corte-rodape">
@@ -500,7 +518,9 @@ function ligarEscolhas(p, ativa) {
 
   const atualizar = () => {
     const n = conjunto.size;
-    barra.querySelector(".conta").innerHTML = `<b>${n}</b> ${n === 1 ? nomeItem[0] : nomeItem[1]}`;
+    const demais = tipo === "momentos" && n > MOMENTOS_RECOMENDADOS;
+    barra.querySelector(".conta").innerHTML = `<b>${n}</b> ${n === 1 ? nomeItem[0] : nomeItem[1]}`
+      + (demais ? `<span class="alerta">acima de ${MOMENTOS_RECOMENDADOS}, os cortes demoram bem mais</span>` : "");
     barra.classList.toggle("visivel", mudou || n > 0);
     app.querySelectorAll(`[data-item="${tipo}"]`).forEach((el) => {
       const sim = conjunto.has(el.dataset.id);
@@ -515,9 +535,12 @@ function ligarEscolhas(p, ativa) {
     el.addEventListener("keydown", (e) => { if (e.key === " " || e.key === "Enter") { e.preventDefault(); alternar(el.dataset.id); } });
   });
   app.querySelector(`[data-todos="${tipo}"]`)?.addEventListener("click", () => {
-    app.querySelectorAll(`[data-item="${tipo}"]`).forEach((el) => conjunto.add(el.dataset.id)); mudou = true; atualizar();
+    app.querySelectorAll(`[data-item="${tipo}"]`).forEach((el) => conjunto.add(el.dataset.id)); mudou = true; escolhaNaoSalva = true; atualizar();
   });
-  app.querySelector(`[data-limpar="${tipo}"]`)?.addEventListener("click", () => { conjunto.clear(); mudou = true; atualizar(); });
+  app.querySelector("[data-melhores]")?.addEventListener("click", () => {
+    conjunto.clear(); melhoresMomentos(p).forEach((m) => conjunto.add(m.id)); mudou = true; escolhaNaoSalva = true; atualizar();
+  });
+  app.querySelector(`[data-limpar="${tipo}"]`)?.addEventListener("click", () => { conjunto.clear(); mudou = true; escolhaNaoSalva = true; atualizar(); });
 
   barra.querySelector("button").onclick = async () => {
     try {

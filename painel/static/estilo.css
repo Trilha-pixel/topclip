@@ -244,6 +244,9 @@ main { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 48px) 1
 .tag.risco { border-color: var(--vermelho); color: var(--vermelho); }
 .detalhe { font-size: 14px; color: var(--tinta-2); margin: 10px 0 0; }
 .detalhe b { color: var(--tinta); font-weight: 600; }
+.momento-lado { display: grid; gap: 14px; justify-items: start; align-content: start; }
+.nota.fraca { color: var(--vermelho); }
+.nota-rotulo { display: block; margin-top: 5px; font: 500 10.5px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--tinta-3); }
 .marcar { width: 34px; height: 34px; border: 2px solid var(--tinta); border-radius: 3px; display: grid; place-items: center; background: var(--papel-claro); flex: none; }
 .marcar svg { width: 26px; height: 26px; opacity: 0; }
 .escolhido .marcar { background: var(--amarelo); }
@@ -285,6 +288,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 48px) 1
 .barra-acao.visivel { transform: translateX(-50%) translateY(0); }
 .barra-acao .conta { font: 700 17px/1 var(--display); text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; }
 .barra-acao .conta b { color: var(--amarelo); font-size: 22px; }
+.barra-acao .alerta { display: block; margin-top: 5px; font: 500 12px/1.25 var(--mono); text-transform: none; letter-spacing: 0; white-space: normal; color: var(--amarelo); }
 .barra-acao .botao { background: var(--amarelo); color: var(--tinta); border-color: var(--amarelo); box-shadow: none; }
 
 /* próximo passo no Claude */
@@ -352,7 +356,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 48px) 1
   .etapa .nome { font-size: 12px; }
   .etapa .estado { display: none; }
   .momento { grid-template-columns: 1fr auto; }
-  .momento .tempo { grid-column: 1 / -1; justify-self: start; }
+  .momento .momento-lado { grid-column: 1 / -1; grid-auto-flow: column; align-items: center; justify-content: start; gap: 16px; }
   .barra-acao { gap: 10px; padding-left: 14px; }
   .proximo { grid-template-columns: 1fr; }
 }
@@ -369,14 +373,15 @@ main { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 48px) 1
 }
 .soltar .mao { font-size: 17px; color: var(--tinta-2); transform: rotate(-2deg); }
 .soltar.arrastando { border-color: var(--tinta); background: rgba(219, 214, 83, 0.28); transform: rotate(-0.4deg); }
-.escolhido {
+/* o vídeo escolhido no formulário — escopado: .escolhido também marca momento e corte */
+.modal .escolhido {
   display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center;
   padding: 14px 16px; border: 1.5px solid var(--tinta); border-radius: 3px; background: #fff;
   box-shadow: 3px 3px 0 var(--amarelo);
 }
-.escolhido-icone { width: 38px; height: 38px; border-radius: 3px; display: grid; place-items: center; background: var(--tinta); color: var(--amarelo); font-size: 15px; }
-.escolhido b { display: block; font: 600 15.5px/1.3 var(--texto); word-break: break-all; }
-.escolhido small { display: block; font: 500 12px/1.35 var(--mono); color: var(--tinta-3); word-break: break-all; margin-top: 3px; }
+.modal .escolhido-icone { width: 38px; height: 38px; border-radius: 3px; display: grid; place-items: center; background: var(--tinta); color: var(--amarelo); font-size: 15px; }
+.modal .escolhido b { display: block; font: 600 15.5px/1.3 var(--texto); word-break: break-all; }
+.modal .escolhido small { display: block; font: 500 12px/1.35 var(--mono); color: var(--tinta-3); word-break: break-all; margin-top: 3px; }
 .colar { margin-top: 4px; }
 .colar summary { cursor: pointer; font-size: 13.5px; color: var(--tinta-2); }
 .colar input { width: 100%; margin-top: 10px; font: 400 15px var(--texto); padding: 11px 13px; border: 1.5px solid var(--tinta); border-radius: 2px; background: #fff; }

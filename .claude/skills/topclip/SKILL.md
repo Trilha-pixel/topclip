@@ -89,6 +89,14 @@ Ela tem quatro portões (momentos, cortes, vertical, entrega). **Respeite cada u
 pare, mostre, espere o usuário escolher. Só emende as fases quando ele pedir
 ("vai até o fim", "manda o pacote todo").
 
+O que mais pesa no tempo é **quantos momentos ele escolhe**. Cada momento mostra
+uma nota estimada, a mesma conta do gate final (mínimo 7,5), e o painel lista em
+ordem de nota: recomende escolher **de 2 a 5**. Na run de teste ele marcou 14 para
+usar 2 — a fase de cortes levou 41 min, e a nota baixa dos 2 escolhidos só apareceu
+no fim. Na fase de cortes, o Clip Builder monta só os escolhidos, as prévias
+saem logo depois para ele já assistir, e a revisão cega e a de feed rodam juntas,
+gerando um único rebuild (`topclip-corte`, `fases/2-cortes.md`).
+
 Saída por clipe: `clip-vertical.mp4` limpo (sem legenda, sem motion) e
 `captions.srt`/`.ass` com o timing por palavra.
 

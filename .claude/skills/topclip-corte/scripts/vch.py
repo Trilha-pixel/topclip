@@ -399,6 +399,73 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_estimate(args: argparse.Namespace) -> int:
+    """Nota de publicabilidade antes do `finalize`, com a mesma conta e o mesmo gate.
+
+    Sem `--cortes`: fase 1, sobre o `estimated_scores` de cada momento do Clip Hunter.
+    Com `--cortes`: fase 2, sobre as notas do Clip Builder + revisão de feed.
+    """
+    from scripts.publicabilidade import estimar_cortes, estimar_momentos
+
+    run = ensure_run_dir(args.run)
+    cfg = config(run)
+    path = run / ("06-candidates.json" if args.cortes else "05-viral-moments.json")
+    if not path.exists():
+        raise HarnessError(f"{path.name} não encontrado")
+    errors = validate_json_file(path, ARTIFACT_SCHEMAS[path.name])
+    if errors:
+        _print_json({"file": str(path), "valid": False, "errors": errors})
+        return 3
+    doc = load_json(path)
+    if args.cortes:
+        sem_feed = estimar_cortes(doc, load_json(run / "07-feed-review.json", {"reviews": []}), cfg)
+        itens, chave = doc.get("clips", []), "cortes"
+    else:
+        incompletos = estimar_momentos(doc, cfg)
+        itens, chave = doc.get("moments", []), "momentos"
+    write_json(path, doc)
+    ordem = sorted(itens, key=lambda item: item.get("publishability_estimate", -1), reverse=True)
+    resumo = {
+        "gate": doc.get("estimate_gate"),
+        chave: [{"id": item.get("id"), "nota": item.get("publishability_estimate"),
+                 "abaixo_do_gate": item.get("estimate_below_gate")} for item in ordem],
+    }
+    if args.cortes:
+        if sem_feed:
+            resumo["sem_revisao_de_feed"] = sem_feed
+        _print_json(resumo)
+        return 0
+    if incompletos:
+        resumo["sem_nota"] = incompletos
+        _print_json(resumo)
+        print("ERRO: o Clip Hunter não estimou todas as notas destes momentos (estimated_scores). "
+              "Complete e rode de novo.", file=sys.stderr)
+        return 3
+    _print_json(resumo)
+    return 0
+
+
+def cmd_previews(args: argparse.Namespace) -> int:
+    """Corta a prévia de cada corte de 06-candidates.json, todas em paralelo."""
+    from scripts.previa import cortar_previas
+
+    run = ensure_run_dir(args.run)
+    video = load_json(run / "00-manifest.json").get("inputs", {}).get("video_path")
+    if not video:
+        raise HarnessError("Prévia exige o vídeo fonte, e a run não tem.")
+    video = str(Path(video).expanduser())
+    if not shutil.which("ffmpeg"):
+        raise HarnessError("ffmpeg ausente: rode ./topclip instalar")
+    media = load_json(run / "01-media.json", {})
+    com_audio = bool(media.get("audio", True))
+    ids = {i.strip() for i in args.clips.split(",") if i.strip()} if args.clips else None
+    resultado = cortar_previas(run, video, load_json(run / "06-candidates.json"), ids, com_audio)
+    set_stage(run, "previews", "complete" if not resultado["erros"] else "failed",
+              artifacts=[p["arquivo"] for p in resultado["previas"]])
+    _print_json(resultado)
+    return 0 if not resultado["erros"] else 3
+
+
 def _plans_by_id(run: Path) -> dict[str, dict[str, Any]]:
     plans_data = load_json(run / "11-edit-plans.json")
     return {str(plan["clip_id"]): plan for plan in plans_data.get("plans", [])}
@@ -676,6 +743,17 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("blind-packets")
     p.add_argument("--run", required=True)
     p.set_defaults(func=cmd_blind_packets)
+
+    p = sub.add_parser("estimate")
+    p.add_argument("--run", required=True)
+    p.add_argument("--cortes", action="store_true",
+                   help="fase 2: nota dos cortes (Builder + revisão de feed), em vez da dos momentos")
+    p.set_defaults(func=cmd_estimate)
+
+    p = sub.add_parser("previews")
+    p.add_argument("--run", required=True)
+    p.add_argument("--clips", help='só estes cortes: "clip-002,clip-005" (padrão: todos)')
+    p.set_defaults(func=cmd_previews)
 
     p = sub.add_parser("autoframe")
     p.add_argument("--run", required=True)

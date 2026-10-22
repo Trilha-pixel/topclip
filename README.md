@@ -61,8 +61,9 @@ Ou chame direto:
 | `/topclip-motion` | só o motion e a legenda, num clipe vertical que já existe |
 
 Em cada etapa o Claude **para e mostra o resultado** antes de seguir: primeiro a lista
-de momentos, depois os cortes para você assistir, depois o vertical, depois o motion.
-Você escolhe o que sobrevive.
+de momentos, cada um com uma nota estimada, depois os cortes para você assistir,
+depois o vertical, depois o motion. Você escolhe o que sobrevive — e escolher poucos
+momentos (de 2 a 5) é o que mais deixa o resto rápido.
 
 Tudo que você produz fica em `projetos/`, que nunca vai para o git.
 
@@ -75,7 +76,7 @@ Para quem prefere clicar a digitar, o TopClip tem um painel que roda no seu comp
 ```
 
 Ele abre no navegador (`http://127.0.0.1:7777`) e mostra seus projetos, os momentos que
-o Claude encontrou, as prévias dos cortes e os clipes prontos. Você **marca o que quer**
+o Claude encontrou (em ordem de nota), as prévias dos cortes e os clipes prontos. Você **marca o que quer**
 ali mesmo e volta ao Claude dizendo *"escolhi no painel, pode seguir"*. Ainda não tem
 projeto? Clique em **Ver um exemplo**.
 
