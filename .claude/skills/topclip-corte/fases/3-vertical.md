@@ -61,6 +61,21 @@ Ordem de preferência do enquadramento:
 Reescreve `timeline` de cada plano com `crop_anchor_x` e `zoom` por subsegmento,
 e recalcula os tempos de clipe de cada subsegmento (eles herdavam o
 `clip_start`/`clip_end` do segmento inteiro).
+
+**O punch-in do Edit Director fica.** O `zoom` que ele escreveu no segmento é
+punch-in relativo ao enquadramento do rosto: **zoom final = zoom do rosto × zoom
+pedido**, com teto de 2.0 (o do schema). Num close o rosto pede 1.0, e o
+punch-in de 1.08 sai 1.08; num plano aberto em que o rosto já pede 1.3, sai 1.4.
+Com `max()` o punch-in sumiria justo no plano aberto, e com ele a troca de zoom
+que disfarça o jump cut. O crop continua centrado no locutor. Sem pedido (ou
+`zoom: 1.0`), vale só o do rosto.
+
+**A faixa na fonte não muda.** Os subsegmentos de um segmento cobrem a faixa
+dele inteira, emendados. Enquadramento que duraria menos de 0,15s não vira
+subsegmento: o tempo dele fica com o vizinho de trás (ou o da frente, no
+início). Buraco entre subsegmentos é áudio pulado no render e versão nova do
+corte — o `segments_hash` muda e a revisão do QC fica velha (docs/12, 12.8).
+
 Detecta rostos com YuNet e decide **quem está falando** por correlação entre
 movimento de boca e energia do áudio.
 

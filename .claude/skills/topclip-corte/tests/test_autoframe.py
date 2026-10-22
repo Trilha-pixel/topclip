@@ -4,6 +4,7 @@ import importlib.util, math, shutil, subprocess, sys, tempfile, unittest
 from pathlib import Path
 from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from scripts.versoes import hash_corte
 
 # cv2/numpy sao dependencias OPCIONAIS (so o autoframe usa). Sem elas a skill
 # continua funcionando com anchor manual, entao estes testes pulam em vez de falhar.
@@ -11,7 +12,7 @@ try:
     import numpy as np
     from scripts.autoframe import anchor_from_cx
     from scripts.active_speaker import _corr, Track, sample_faces
-    from scripts import framing
+    from scripts import autoframe, framing
     AUTOFRAME_OK, AUTOFRAME_ERR = True, ""
 except ImportError as exc:  # pragma: no cover
     AUTOFRAME_OK, AUTOFRAME_ERR = False, str(exc)
@@ -197,6 +198,116 @@ class TestAmostragemAdaptativa(unittest.TestCase):
         densa.assert_not_called()
         self.assertEqual(diag["caminho"], "amostrado")
         self.assertEqual(keys, [(0.0, 600 - framing.CROP_W // 2, framing.CROP_W)])
+
+
+def _planejar_segmentos(segmentos, keys_por_segmento):
+    """plan_segments com plan_range simulado: keys_por_segmento(a, b) -> [(t, x, w)]."""
+    fake = lambda src, a, b, model, silences, zones=None: (keys_por_segmento(a, b), [])
+    with mock.patch.object(autoframe, "plan_range", side_effect=fake):
+        timeline, _ = autoframe.plan_segments("sintetico.mp4", segmentos, "m.onnx", silences=[])
+    return timeline
+
+
+@requires_autoframe
+class TestZoomDoEditDirector(unittest.TestCase):
+    """O zoom do Edit Director e punch-in: o autoframe nao pode apaga-lo (docs/12, 12.8)."""
+
+    W = framing.CROP_W if AUTOFRAME_OK else 608
+
+    def _seg(self, a, b, zoom, ordem):
+        return {"source_start": a, "source_end": b, "zoom": zoom, "crop_anchor_x": 0.5,
+                "order": ordem, "layout": "cover", "framing_reason": f"seg {ordem}"}
+
+    def test_punch_in_em_close_sobrevive(self):
+        # clip-005 da run aula-yt-teste: close parado, punch-in 1.08 no seg 3 saia 1.0
+        segs = [self._seg(2093.38, 2104.8, 1.0, 2), self._seg(2117.45, 2122.96, 1.08, 3)]
+        tl = _planejar_segmentos(segs, lambda a, b: [(a, 625, self.W)])
+        self.assertEqual([s["zoom"] for s in tl], [1.0, 1.08])
+        # o crop do punch-in continua centrado no rosto (cx 929px na fonte)
+        self.assertEqual(tl[1]["crop_anchor_x"], round(anchor_from_cx(625 + self.W / 2, 1.08), 4))
+        self.assertEqual(tl[1]["framing_reason"], "seg 3")
+
+    def test_punch_in_em_plano_aberto_multiplica_o_zoom_do_rosto(self):
+        # plano aberto: o rosto ja pede ~1.3; com max() o punch-in de 1.08 sumiria
+        w = int(round(self.W / 1.3))
+        segs = [self._seg(10.0, 14.0, 1.0, 1), self._seg(14.0, 18.0, 1.08, 2)]
+        tl = _planejar_segmentos(segs, lambda a, b: [(a, 800, w)])
+        rosto = round(self.W / w, 4)
+        self.assertEqual(tl[0]["zoom"], rosto)
+        self.assertAlmostEqual(tl[1]["zoom"], rosto * 1.08, places=3)
+
+    def test_teto_do_schema(self):
+        w = int(round(self.W / framing.MAX_ZOOM))
+        tl = _planejar_segmentos([self._seg(0.0, 4.0, 1.5, 1)], lambda a, b: [(a, 700, w)])
+        self.assertEqual(tl[0]["zoom"], autoframe.ZOOM_MAX)
+
+    def test_sem_pedido_ou_pedido_invalido_fica_o_zoom_do_rosto(self):
+        segs = [[0.0, 2.0], self._seg(2.0, 4.0, "1.1x", 2), self._seg(4.0, 6.0, 0.5, 3),
+                {"source_start": 6.0, "source_end": 8.0}]
+        tl = _planejar_segmentos(segs, lambda a, b: [(a, 656, self.W)])
+        self.assertEqual([s["zoom"] for s in tl], [1.0] * 4)
+
+
+@requires_autoframe
+class TestCoberturaDaFonte(unittest.TestCase):
+    """Os subsegmentos cobrem a faixa do segmento inteira: buraco = audio pulado no render."""
+
+    W = framing.CROP_W if AUTOFRAME_OK else 608
+
+    def _faixas(self, timeline):
+        return [(s["source_start"], s["source_end"], s["crop_anchor_x"]) for s in timeline]
+
+    def assertCobre(self, timeline, a, b):
+        self.assertEqual(timeline[0]["source_start"], a)
+        self.assertEqual(timeline[-1]["source_end"], b)
+        for antes, depois in zip(timeline, timeline[1:]):
+            self.assertEqual(antes["source_end"], depois["source_start"])
+            self.assertGreaterEqual(antes["source_end"] - antes["source_start"], autoframe.MIN_SUBSEG)
+
+    def test_trecho_curto_entre_keyframes_fica_com_o_vizinho(self):
+        # o caso do descarte: 0,1s entre 12,0 e 12,1 sumia do corte
+        keys = [(10.0, 100, self.W), (12.0, 300, self.W), (12.1, 500, self.W), (14.0, 700, self.W)]
+        tl = _planejar_segmentos([{"source_start": 10.0, "source_end": 16.0}], lambda a, b: keys)
+        self.assertCobre(tl, 10.0, 16.0)
+        self.assertEqual([(s["source_start"], s["source_end"]) for s in tl],
+                         [(10.0, 12.1), (12.1, 14.0), (14.0, 16.0)])
+        anchors = [round(anchor_from_cx(x + self.W / 2, 1.0), 4) for x in (100, 500, 700)]
+        self.assertEqual([s["crop_anchor_x"] for s in tl], anchors)   # a piscada (300) nao aparece
+
+    def test_trecho_curto_no_fim_do_plano(self):
+        # janela final de 0,1s antes do corte de camera: o tempo fica com a key anterior
+        keys = [(20.0, 100, self.W), (22.95, 300, self.W), (23.05, 900, self.W)]
+        tl = _planejar_segmentos([{"source_start": 20.0, "source_end": 26.0}], lambda a, b: keys)
+        self.assertCobre(tl, 20.0, 26.0)
+        self.assertEqual([(s["source_start"], s["source_end"]) for s in tl], [(20.0, 23.05), (23.05, 26.0)])
+
+    def test_trecho_curto_no_inicio_vai_para_o_seguinte(self):
+        keys = [(0.0, 100, self.W), (0.1, 300, self.W)]
+        tl = _planejar_segmentos([[0.0, 3.0]], lambda a, b: keys)
+        self.assertEqual(self._faixas(tl), [(0.0, 3.0, round(anchor_from_cx(300 + self.W / 2, 1.0), 4))])
+
+    def test_primeira_key_depois_do_inicio(self):
+        # plano de 0,28s no inicio: o plan_range pula, e a primeira key vem em 5,28
+        tl = _planejar_segmentos([[5.0, 9.0]], lambda a, b: [(5.28, 400, self.W)])
+        self.assertCobre(tl, 5.0, 9.0)
+        self.assertEqual(len(tl), 1)
+
+    def test_segmento_inteiro_curto_nao_some(self):
+        tl = _planejar_segmentos([[1.0, 1.1]], lambda a, b: [(1.0, 100, self.W), (1.04, 300, self.W)])
+        self.assertEqual([(s["source_start"], s["source_end"]) for s in tl], [(1.0, 1.1)])
+
+    def test_versao_do_corte_nao_muda(self):
+        # buraco mudava o segments_hash e tornava velha a revisao do QC (scripts/versoes.py)
+        segs = [{"source_start": 2080.98, "source_end": 2082.93, "order": 1},
+                {"source_start": 2093.38, "source_end": 2104.8, "order": 2}]
+
+        def keys(a, b):
+            meio = round((a + b) / 2, 2)
+            return [(a, 600, self.W), (meio, 640, self.W), (meio + 0.08, 700, self.W)]
+
+        tl = _planejar_segmentos(segs, keys)
+        self.assertGreater(len(tl), len(segs))
+        self.assertEqual(hash_corte(tl), hash_corte(segs))
 
 
 @requires_autoframe

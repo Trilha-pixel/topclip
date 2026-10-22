@@ -258,3 +258,37 @@ Lições:
 Os testes `tests/test_bordas.py` (áudio sintético que reproduz "Mas|você" e o
 "fazer" esticado), `tests/test_tempos.py` e `tests/test_versoes_e_override.py`
 existem para que isso não volte.
+
+## 12.8 Autoframe apagava o punch-in e podia abrir buraco na fonte
+
+Achados rodando o `autoframe` sobre a run `aula-yt-teste` (21/10/2026), lida sem
+gravar nada nela.
+
+1. **Punch-in sobrescrito.** O Edit Director pôs `zoom: 1.08` em dois segmentos,
+   motivado por número (clip-005, seg 3) e por virada de argumento (clip-010,
+   seg 4) — a troca de zoom era o que disfarçava o jump cut. O `autoframe`
+   tratava `zoom` como campo só dele e gravava o zoom do rosto: os dois saíam
+   1.0, sem aviso. O `framing_reason` continuava dizendo "punch-in 1.08".
+2. **Buraco na cobertura.** `plan_segments` descartava o trecho entre duas
+   keyframes a menos de 0,15s uma da outra (`continue`), e nenhum vizinho
+   cobria esse pedaço. Acontece na janela final de 0,1s antes de um corte de
+   câmera, ou quando o plano do início é curto demais (< 0,3s) e a primeira
+   keyframe vem depois do início do segmento. O render concatena os
+   subsegmentos: aquele áudio sumia do clipe. E a cobertura entra no
+   `segments_hash` (12.7): o buraco virava versão nova do corte e tornava velha
+   a revisão do QC. Na run de teste, só closes (um subsegmento por segmento),
+   não houve buraco; o defeito estava latente.
+
+| Problema | Correção |
+| --- | --- |
+| punch-in do Edit Director virava 1.0 | o zoom do segmento é punch-in **relativo**: zoom final = zoom do rosto × zoom pedido, teto 2.0 (o do schema). Na mesma run: 1.08 → 1.08 nos dois. Com `max()` o punch-in sumiria num plano aberto em que o rosto já pede 1.3 |
+| trecho < 0,15s descartado | os subsegmentos cobrem a faixa do segmento inteira: o trecho curto fica com o vizinho de trás (ou o da frente, no início), e a primeira keyframe vale desde o início do segmento. Mesmo `segments_hash` antes e depois do autoframe |
+
+Lição: **etapa mecânica não reescreve decisão editorial calada.** O autoframe já
+herdava `layout` e `framing_reason` (12.4) e continuava apagando o zoom, que
+também é decisão do Edit Director. E **todo passo que subdivide segmento tem de
+devolver a mesma faixa na fonte**: piscada de enquadramento se resolve no
+enquadramento, nunca tirando áudio.
+
+Os testes `TestZoomDoEditDirector` e `TestCoberturaDaFonte`, em
+`tests/test_autoframe.py`, simulam o `plan_range` e existem para que isso não volte.

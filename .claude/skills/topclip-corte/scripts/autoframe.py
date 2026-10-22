@@ -18,14 +18,14 @@ Uso:
     python3 scripts/autoframe.py --video V.mp4 --edit-plans 11-edit-plans.json --in-place
 """
 from __future__ import annotations
-import argparse, json, re, subprocess, sys
+import argparse, json, math, re, subprocess, sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 try:  # como pacote (scripts.autoframe)
-    from scripts.framing import plan_range, SRC_W, SRC_H, CROP_W, CROP_H  # noqa: E402
+    from scripts.framing import plan_range, SRC_W, SRC_H, CROP_W, CROP_H, CENTER  # noqa: E402
 except ImportError:  # executado de dentro de scripts/
-    from framing import plan_range, SRC_W, SRC_H, CROP_W, CROP_H  # noqa: E402
+    from framing import plan_range, SRC_W, SRC_H, CROP_W, CROP_H, CENTER  # noqa: E402
 
 DEFAULT_MODEL = Path(__file__).resolve().parent.parent / "models" / "face_detection_yunet_2023mar.onnx"
 
@@ -53,24 +53,75 @@ def anchor_from_cx(cx, zoom, out_w=1080, out_h=1920, src_w=SRC_W, src_h=SRC_H):
 
 
 MECANICOS = {"source_start", "source_end", "crop_anchor_x", "zoom"}
+MIN_SUBSEG = 0.15   # s: enquadramento que dura menos que isso e piscada, nao subsegmento
+ZOOM_MAX = 2.0      # teto do edit-plans.schema.json (o render tambem corta em 2.0)
+
+
+def _zoom_pedido(valor):
+    """O zoom que o Edit Director escreveu no segmento: o punch-in dele (1.0 = nenhum)."""
+    try:
+        z = float(valor)
+    except (TypeError, ValueError):
+        return 1.0
+    return max(1.0, min(ZOOM_MAX, z)) if math.isfinite(z) else 1.0
 
 
 def _normalizar(segments):
     """Aceita [(a,b)] ou [{"source_start":..,"source_end":..,...}].
 
-    Devolve (a, b, herdaveis) onde herdaveis sao os campos EDITORIAIS do segmento
-    de origem - layout, framing_reason, transition_in, preserve_pause, order.
+    Devolve (a, b, herdaveis, punch) onde herdaveis sao os campos EDITORIAIS do
+    segmento de origem - layout, framing_reason, transition_in, preserve_pause,
+    order - e punch e o zoom que o Edit Director pediu para o segmento.
     """
     saida = []
     for item in segments:
         if isinstance(item, dict):
             a, b = float(item["source_start"]), float(item["source_end"])
             herda = {k: v for k, v in item.items() if k not in MECANICOS}
+            punch = _zoom_pedido(item.get("zoom"))
         else:
             a, b = float(item[0]), float(item[1])
-            herda = {}
-        saida.append((a, b, herda))
+            herda, punch = {}, 1.0
+        saida.append((a, b, herda, punch))
     return saida
+
+
+def _fundir_iguais(subs):
+    out = []
+    for s in subs:
+        if out and out[-1][2:] == s[2:]:
+            out[-1][1] = s[1]
+        else:
+            out.append(list(s))
+    return out
+
+
+def _cobrir(keys, a, b, minimo=MIN_SUBSEG):
+    """keys [(t, x, w)] -> [[ini, fim, x, w]] cobrindo [a, b] inteiro, sem buraco.
+
+    Cada key vale da sua vez ate a seguinte; a primeira vale desde `a` (o
+    plan_range pula plano < 0,3s, entao ela pode vir depois). Trecho mais curto
+    que `minimo` nao vira subsegmento, mas o TEMPO dele fica com o vizinho de
+    tras (ou com o da frente, se nao houver). Descartar o trecho abria buraco na
+    fonte, e o render concatenava os vizinhos pulando esse audio (docs/12).
+    """
+    keys = list(keys) or [(a, CENTER, CROP_W)]
+    inicios = [a]
+    for (t, _, _) in keys[1:]:
+        inicios.append(min(b, max(inicios[-1], float(t))))
+    fins = inicios[1:] + [b]
+    brutos = _fundir_iguais([[i, f, x, w] for i, f, (_, x, w) in zip(inicios, fins, keys)])
+    subs = []; sem_dono = None
+    for ini, fim, x, w in brutos:
+        if fim - ini < minimo:
+            if subs: subs[-1][1] = fim
+            elif sem_dono is None: sem_dono = ini
+            continue
+        subs.append([ini if sem_dono is None else sem_dono, fim, x, w]); sem_dono = None
+    if not subs:   # segmento inteiro mais curto que `minimo`: o enquadramento mais longo
+        ini, fim, x, w = max(brutos, key=lambda s: s[1] - s[0])
+        subs = [[a, b, x, w]]
+    return _fundir_iguais(subs)
 
 
 def plan_segments(video, segments, model=None, silences=None, zones=None):
@@ -80,37 +131,37 @@ def plan_segments(video, segments, model=None, silences=None, zones=None):
     A decisao editorial do Edit Director - layout split/cover, o motivo do
     enquadramento - e herdada intacta por cada subsegmento. Sobrescreve-la
     apagaria a etapa anterior.
+
+    O zoom do Edit Director e punch-in RELATIVO ao enquadramento do rosto: zoom
+    final = zoom do rosto x zoom pedido, ate ZOOM_MAX. Com max() em vez de
+    produto, o punch-in sumiria num plano aberto em que o rosto ja pede mais.
+
+    Os subsegmentos de cada segmento cobrem a faixa dele na fonte inteira: a
+    versao do corte (scripts/versoes.py) e o audio do render nao mudam.
     """
     model = str(model or DEFAULT_MODEL)
     if silences is None:
         silences = detect_silences(video)
     timeline=[]; report=[]
-    for (a,b,herda) in _normalizar(segments):
+    for (a,b,herda,punch) in _normalizar(segments):
         keys, diags = plan_range(str(video), float(a), float(b), model, silences, zones)
-        # keys = [(t, crop_x_px, crop_w_px)] -> agrupa em subsegmentos constantes
-        bounds=[]
-        for i,(t,x,w) in enumerate(keys):
-            t_end = keys[i+1][0] if i+1 < len(keys) else b
-            if t_end - t < 0.15: continue
-            bounds.append((max(a,t), min(b,t_end), x, w))
-        merged=[]
-        for (s0,e0,x,w) in bounds:
-            if merged and merged[-1][2]==x and merged[-1][3]==w and abs(merged[-1][1]-s0)<0.05:
-                merged[-1][1]=e0
-            else:
-                merged.append([s0,e0,x,w])
+        # keys = [(t, crop_x_px, crop_w_px)] -> subsegmentos constantes e contiguos
+        merged = _cobrir(keys, a, b)
         for (s0,e0,x,w) in merged:
-            zoom = round(CROP_W/float(w), 4) if w else 1.0
-            zoom = max(1.0, min(2.0, zoom))
+            zoom_rosto = CROP_W/float(w) if w else 1.0
+            zoom = round(max(1.0, min(ZOOM_MAX, zoom_rosto*punch)), 4)
             cx = x + w/2.0
             timeline.append({**herda,
                              "source_start": round(s0,3), "source_end": round(e0,3),
                              "crop_anchor_x": round(anchor_from_cx(cx, zoom),4),
                              "zoom": zoom})
-        report.append({"segmento": [round(a,3), round(b,3)],
-                       "subsegmentos": len(merged), "planos": diags,
-                       "caminhos": {c: sum(1 for d in diags if d.get("caminho")==c)
-                                    for c in ("amostrado", "denso")}})
+        rel = {"segmento": [round(a,3), round(b,3)],
+               "subsegmentos": len(merged), "planos": diags,
+               "caminhos": {c: sum(1 for d in diags if d.get("caminho")==c)
+                            for c in ("amostrado", "denso")}}
+        if punch != 1.0:
+            rel["zoom_pedido"] = punch
+        report.append(rel)
     return timeline, report
 
 
