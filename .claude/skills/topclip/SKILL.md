@@ -152,10 +152,14 @@ cp <run>/output/.../clip-vertical.mp4 projetos/<nome>/motion/<clipe>/00_brief/fo
 Depois invoque a skill `topclip-motion` sobre esse projeto. A transcrição do motion
 é **do clipe**, não do episódio: gere com `./topclip motion transcrever`.
 
-**Assets:** procure primeiro em `biblioteca/assets/`. O que não existir, o Claude
-desenha em código (seção 3 da `topclip-motion`). Todo asset novo aprovado volta para
-`biblioteca/assets/` com uma linha no `biblioteca/MANIFESTO.md` — é assim que o
-próximo vídeo começa com mais coisa pronta.
+**Estilo:** sem pedido do usuário, é o Papel. Pedido outro: `--estilo <id>` no
+`motion novo` (`./topclip estilo listar` mostra os disponíveis).
+
+**Assets:** procure primeiro em `biblioteca/assets/` e `minha-biblioteca/assets/`. O
+que não existir, o Claude desenha em código (seção 3 da `topclip-motion`). Todo asset
+novo aprovado vai para `minha-biblioteca/assets/` com uma linha no
+`minha-biblioteca/MANIFESTO.md` — é assim que o próximo vídeo começa com mais coisa
+pronta, sem mexer em arquivo do repositório.
 
 Mostre o plano de motion (frases escolhidas e recusadas) antes de compor. É o portão
 desta etapa.

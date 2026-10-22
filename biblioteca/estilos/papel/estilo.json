@@ -1,0 +1,18 @@
+{
+  "id": "papel",
+  "nome": "Papel",
+  "versao": "1.0.0",
+  "topclip": ">=1.0",
+  "origem": "oficial",
+  "autor": "Felipe Top",
+  "licenca": "MIT",
+  "descricao": "Colagem editorial: papel marfim, fita crepe, clipe e anotação à mão.",
+  "bom_para": ["storytelling", "marketing", "negócios", "educação"],
+  "energia": "editorial",
+  "variacoes": {
+    "marfim": {"nome": "Marfim", "tokens": {}}
+  },
+  "pecas": [],
+  "slots_da_marca": [],
+  "codigo": false
+}

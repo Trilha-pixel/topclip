@@ -29,8 +29,11 @@ from concurrent.futures import ProcessPoolExecutor
 from kit import *          # noqa: F401,F403  — mecanica da identidade e receitas
 import kit as K
 import motor as V
+import estilo as E
 
 V.BOIL_SCALE = 0.5         # a mesma calibracao do render.py: estado = o que vai ao ar
+# acabamento e boil do estilo do projeto, como no render.py (no Papel, os mesmos valores)
+FX_DESK, V.BOIL_SCALE = E.acabamento(K.ROOT, FX_DESK, V.BOIL_SCALE)
 
 
 # =====================================================================  M1  Mesa de pesquisa

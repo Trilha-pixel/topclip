@@ -63,15 +63,19 @@ for exe in ("ffmpeg", "ffprobe"):
 print("\nkit que viaja com a skill")
 fontes = sorted((S / "fontes").glob("*.ttf"))
 (ok if len(fontes) >= 9 else erro)(f"{len(fontes)} fontes em fontes/ (esperado 9)")
-# A biblioteca comeca vazia e cresce com o uso: cada asset desenhado num video
-# volta para ca. Vazia nao impede nada — o Claude desenha o que faltar.
+# Os oficiais vem com o repositorio; os do usuario (minha-biblioteca/) crescem com o
+# uso. Vazia nao impede nada — o Claude desenha o que faltar.
 BIBLIOTECA = S.parents[2] / "biblioteca" / "assets"
 assets = sorted(BIBLIOTECA.glob("*.png"))
 (ok if assets else aviso)(f"{len(assets)} asset(s) em biblioteca/assets/"
                           + ("" if assets else " — o Claude desenha o que faltar"))
+meus = sorted((S.parents[2] / "minha-biblioteca" / "assets").glob("*.png"))
+if meus:
+    ok(f"{len(meus)} asset(s) seus em minha-biblioteca/assets/")
 for f in ("lib/motor.py", "lib/kit.py", "lib/desenho.py", "lib/captions.py",
           "lib/cutout.py", "lib/crt.py", "lib/night_photo.py", "lib/render_template.py",
-          "lib/compose_template.py", "lib/transcrever.py", "referencias/legenda.md",
+          "lib/compose_template.py", "lib/transcrever.py", "lib/estilo.py",
+          "exemplo/desenho_usuario.py", "referencias/legenda.md",
           "referencias/armadilhas.md", "referencias/receitas.md", "IDENTIDADE.md"):
     (ok if (S / f).exists() else erro)(f)
 # O que o template e o kit pedem por nome. Faltando na biblioteca, o kit desenha na
@@ -91,6 +95,27 @@ try:
             erro(f"{nome}: nem na biblioteca nem em desenho.ASSETS")
 except Exception as e:
     erro(f"desenho.py: {type(e).__name__}: {e}")
+
+# Estilo oficial com erro e defeito do repositorio; estilo do usuario com erro so avisa
+# (ele nao entra em projeto ate ser corrigido — o `motion novo` recusa).
+print("\nestilos")
+try:
+    import estilo as E
+    raiz = S.parents[2]
+    oficiais = raiz / "biblioteca" / "estilos"
+    if not (oficiais / E.PADRAO / "estilo.json").exists():
+        erro(f"estilo padrao '{E.PADRAO}' ausente em biblioteca/estilos/")
+    for p in E.todos(raiz):
+        erros_e, _ = E.validar(p)
+        dono = "oficial" if p.parent == oficiais.resolve() or p.parent == oficiais else "seu"
+        if not erros_e:
+            ok(f"{p.name} ({dono})")
+        elif dono == "oficial":
+            erro(f"{p.name}: {erros_e[0]}" + (f" (+{len(erros_e) - 1})" if len(erros_e) > 1 else ""))
+        else:
+            aviso(f"{p.name} (seu): {erros_e[0]} — ./topclip estilo validar {p.name}")
+except Exception as e:
+    erro(f"estilo.py: {type(e).__name__}: {e}")
 
 print("\nmotor")
 try:

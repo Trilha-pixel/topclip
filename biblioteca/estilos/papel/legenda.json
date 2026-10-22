@@ -1,0 +1,14 @@
+{
+  "fonte": "fonte.impacto",
+  "fonte_enfase": "fonte.contraponto",
+  "corpo": 80,
+  "enfase": 2.1,
+  "caixa_alta": false,
+  "cor": "#FAF9F6",
+  "destaque": "cor.destaque",
+  "destaques_por_clipe": 2,
+  "contorno": 0,
+  "palavras_por_bloco": 3,
+  "animacao": "corte_seco",
+  "posicao": "rosto"
+}

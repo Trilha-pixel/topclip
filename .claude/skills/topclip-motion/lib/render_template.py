@@ -34,6 +34,7 @@ import compose as C
 import kit as K
 import motor as V
 import captions as CAP
+import estilo as E
 
 ROOT = Path(__file__).resolve().parent
 
@@ -84,6 +85,10 @@ FX_DESK = dict(grain=0.050, vignette=0.06, chroma=1.0, sat=0.92)
 # Intensidade do boil. 1.0 e a calibracao medida (tinta 6px, objeto 3px); 0.5 e o
 # que ficou depois da revisao — o objeto fotografado a 3px ja perdia circunferencia.
 V.BOIL_SCALE = 0.5
+
+# O estilo do projeto (estilo/resolvido.json, gravado pelo `motion novo`) decide o
+# acabamento e o boil. O Papel resolve para estes mesmos valores; sem estilo, ficam eles.
+FX_DESK, V.BOIL_SCALE = E.acabamento(ROOT, FX_DESK, V.BOIL_SCALE)
 
 # Compressao dos PNG intermediarios. O nivel padrao (6) leva ~200ms por quadro
 # 1080x1920; o 3 leva ~85ms com o mesmo tamanho. PNG e sem perda: a imagem e a mesma.

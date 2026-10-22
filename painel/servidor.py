@@ -33,6 +33,7 @@ RAIZ = Path(__file__).resolve().parent.parent
 ESTATICO = Path(__file__).resolve().parent / "static"
 PROJETOS = RAIZ / "projetos"
 BIBLIOTECA = RAIZ / "biblioteca"
+MINHA = RAIZ / "minha-biblioteca"      # a do usuario: assets das runs, estilos, marca
 FONTES = RAIZ / ".claude" / "skills" / "topclip-motion" / "fontes"
 DEMO = Path(__file__).resolve().parent / "demo"
 
@@ -457,17 +458,21 @@ def previa_do_corte(previews: list[Path], ids: list[str], posicao: int) -> Path 
 
 
 def biblioteca() -> dict:
-    linhas = {}
-    manifesto = BIBLIOTECA / "MANIFESTO.md"
-    if manifesto.exists():
-        for l in manifesto.read_text(encoding="utf-8").splitlines():
-            m = re.match(r"\|\s*`([^`]+)`\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|", l)
-            if m:
-                linhas[m.group(1)] = {"objeto": m.group(2).strip(), "origem": m.group(3).strip(),
-                                      "registro": m.group(4).strip()}
+    """Os assets oficiais e os que o usuario desenhou nas runs (minha-biblioteca/), cada
+    um com a linha do MANIFESTO da sua pasta."""
     itens = []
-    for p in sorted((BIBLIOTECA / "assets").glob("*.png")):
-        itens.append({"arquivo": p.name, "url": url_midia(p), **linhas.get(p.name, {})})
+    for base, dono in ((BIBLIOTECA, "oficial"), (MINHA, "seu")):
+        linhas = {}
+        manifesto = base / "MANIFESTO.md"
+        if manifesto.exists():
+            for l in manifesto.read_text(encoding="utf-8").splitlines():
+                m = re.match(r"\|\s*`([^`]+)`\s*\|\s*([^|]+)\|\s*([^|]+)\|\s*([^|]+)\|", l)
+                if m:
+                    linhas[m.group(1)] = {"objeto": m.group(2).strip(), "origem": m.group(3).strip(),
+                                          "registro": m.group(4).strip()}
+        for p in sorted((base / "assets").glob("*.png")):
+            itens.append({"arquivo": p.name, "url": url_midia(p), "dono": dono,
+                          **linhas.get(p.name, {})})
     return {"assets": itens}
 
 
@@ -1040,7 +1045,7 @@ class Painel(BaseHTTPRequestHandler):
             return self._erro("proibido", HTTPStatus.FORBIDDEN)
         if rota.startswith("/midia/"):
             p = RAIZ / rota[len("/midia/"):]
-            if dentro(p, PROJETOS, BIBLIOTECA) and p.suffix.lower() in VIDEO | IMAGEM:
+            if dentro(p, PROJETOS, BIBLIOTECA, MINHA) and p.suffix.lower() in VIDEO | IMAGEM:
                 return self._arquivo(p)
             return self._erro("proibido", HTTPStatus.FORBIDDEN)
         if rota == "/api/projetos":

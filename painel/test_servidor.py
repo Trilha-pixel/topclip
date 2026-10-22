@@ -596,3 +596,32 @@ class ProgressoDasEtapas(ComProjetosTemporarios):
         self.assertEqual([e["msg"] for e in S.ATV.ler(self.proj) if e["tipo"] == "progresso"],
                          ["renderizando: 3 de 3 (100%)"])                    # o diário lido guarda só o último
         S.ATV.Progresso(self.tmp / "fora", "x")(1, 2)                        # fora de projetos/: não anota, não quebra
+
+
+class MinhaBiblioteca(ComProjetosTemporarios):
+    """Os assets desenhados nas runs moram em minha-biblioteca/ e aparecem na aba ao lado
+    dos oficiais, com a descrição do MANIFESTO de cada pasta."""
+
+    def setUp(self):
+        super().setUp()
+        self._orig_minha = S.MINHA
+        S.MINHA = self.tmp / "minha-biblioteca"
+        (S.MINHA / "assets").mkdir(parents=True)
+        (S.MINHA / "assets" / "GARRAFA.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        (S.MINHA / "MANIFESTO.md").write_text(
+            "| `GARRAFA.png` | garrafa de vidro âmbar | `desenho.py` | objeto |\n", encoding="utf-8")
+
+    def tearDown(self):
+        S.MINHA = self._orig_minha
+        super().tearDown()
+
+    def test_lista_oficiais_e_os_seus(self):
+        assets = S.biblioteca()["assets"]
+        seus = [a for a in assets if a["dono"] == "seu"]
+        self.assertEqual([a["arquivo"] for a in seus], ["GARRAFA.png"])
+        self.assertEqual(seus[0]["objeto"], "garrafa de vidro âmbar")
+        self.assertTrue(any(a["dono"] == "oficial" for a in assets))
+
+    def test_midia_da_minha_biblioteca_e_permitida(self):
+        self.assertTrue(S.dentro(S.MINHA / "assets" / "GARRAFA.png", S.PROJETOS, S.BIBLIOTECA, S.MINHA))
+        self.assertFalse(S.dentro(S.MINHA / ".." / "README.md", S.PROJETOS, S.BIBLIOTECA, S.MINHA))

@@ -1,7 +1,20 @@
-# Biblioteca de assets
+# Biblioteca oficial
 
-Todo asset aprovado num vídeo volta para cá e fica disponível para o próximo.
-`./topclip motion novo` copia esta pasta inteira para dentro de cada projeto.
+Os estilos e os assets que vêm com o TopClip. `./topclip motion novo` copia os assets
+para dentro de cada projeto, junto com o estilo escolhido.
+
+**Os seus ficam em `minha-biblioteca/`** (fora do git): os assets desenhados nas suas
+runs, com a mesma tabela num `minha-biblioteca/MANIFESTO.md`, e os estilos que você
+criar. Atualizar o TopClip nunca mexe lá. Um asset só entra aqui quando vira oficial.
+
+## Estilos
+
+`./topclip estilo listar` mostra os oficiais e os seus; `./topclip estilo validar <id>`
+confere um pacote. Formato: `docs/proposta-estilos.md`.
+
+| Estilo | Energia | Bom para |
+| --- | --- | --- |
+| `papel` | editorial | storytelling, marketing, negócios, educação |
 
 ## Regras para entrar
 

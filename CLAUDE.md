@@ -20,6 +20,13 @@ Vídeo longo → clipes verticais 9:16 com motion e legenda. Três skills em
   por último). Corte com entrega já está pronto — siga só com os novos, na mesma run
   (skill `topclip`, "Voltando depois para fazer o resto"). A identidade visual do painel é a mesma do motion
   (TopClip Papel) — não troque fontes nem paleta.
-- Assets novos de motion: desenhe em `.claude/skills/topclip-motion/lib/desenho.py`,
-  gere em `biblioteca/assets/` e registre em `biblioteca/MANIFESTO.md`.
+- **Estilos de motion** (`./topclip estilo listar`): os oficiais em `biblioteca/estilos/`,
+  os do usuário em `minha-biblioteca/estilos/`. O projeto escolhe com
+  `./topclip motion novo <pasta> --estilo <id>` (padrão: `papel`) e congela o estilo em
+  `estilo/resolvido.json`. Formato e plano: `docs/proposta-estilos.md`.
+- **Assets desenhados numa run vão para `minha-biblioteca/`**, fora do git: função em
+  `minha-biblioteca/desenho.py` (molde em `.claude/skills/topclip-motion/exemplo/desenho_usuario.py`),
+  PNG em `minha-biblioteca/assets/`, linha em `minha-biblioteca/MANIFESTO.md`. Nunca em
+  `lib/desenho.py` nem em `biblioteca/`: são do repositório, e o próximo `git pull` do
+  usuário daria conflito. Asset só vira oficial quando quem mantém o repositório pede.
 - Depois de mexer em código: `./topclip testes` e `./topclip verificar`.

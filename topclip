@@ -5,7 +5,10 @@
 #   ./topclip verificar             confere se está tudo pronto para rodar
 #   ./topclip corte <subcomando>    motor de cortes (init, prepare, digest, autoframe, render...)
 #   ./topclip motion novo <pasta>   cria um projeto de motion a partir de um clipe vertical
+#                                   --estilo <id> [--variacao <v>] escolhe o estilo (padrão: papel)
 #   ./topclip motion transcrever <video> <saida.json>
+#   ./topclip estilo listar         os estilos oficiais e os seus (minha-biblioteca/)
+#   ./topclip estilo validar <id>   confere um pacote de estilo
 #   ./topclip baixar <link> [projetos/<nome>]   baixa o vídeo de um link (YouTube, Instagram)
 #   ./topclip painel                abre o painel no navegador (http://127.0.0.1:7777)
 #   ./topclip log <projeto> "msg"   anota no diário do projeto (aparece no painel)
@@ -55,25 +58,39 @@ rodar_registrando() {
 }
 
 motion_novo() {
-    local destino="${1:-}"
+    local destino="" estilo="papel" variacao=() sem_marca=()
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --estilo) estilo="${2:?--estilo precisa do nome do estilo}"; shift 2 ;;
+            --variacao) variacao=(--variacao "${2:?--variacao precisa do nome da variação}"); shift 2 ;;
+            --sem-marca) sem_marca=(--sem-marca); shift ;;
+            -*) echo "opção desconhecida: $1" >&2; exit 2 ;;
+            *) destino="$1"; shift ;;
+        esac
+    done
     if [ -z "$destino" ]; then
-        echo "uso: ./topclip motion novo <pasta-do-projeto>" >&2
+        echo "uso: ./topclip motion novo <pasta-do-projeto> [--estilo <id>] [--variacao <v>] [--sem-marca]" >&2
         exit 2
     fi
     if [ -e "$destino/compose.py" ]; then
         echo "ERRO: $destino já é um projeto de motion (compose.py existe). Nada foi sobrescrito." >&2
         exit 2
     fi
+    # Estilo com erro não cria projeto pela metade.
+    precisa_venv
+    "$PY" "$MOTION/lib/estilo.py" --raiz "$ROOT" validar "$estilo" --quieto \
+        ${variacao[@]+"${variacao[@]}"} || exit 2
     mkdir -p "$destino"/{00_brief,05_motion,06_transitions,07_assets/raw,07_assets/cutout,08_images/frames,09_plates,10_sequences,11_qa,12_master}
     cp "$MOTION"/lib/*.py "$destino"/
     cp "$MOTION/lib/compose_template.py" "$destino/compose.py"
     cp "$MOTION/lib/render_template.py" "$destino/render.py"
     cp -R "$MOTION/fontes" "$destino/fontes"
 
-    # A biblioteca de assets cresce com o uso: tudo que já foi desenhado volta aqui.
+    # Os assets oficiais e os que você já desenhou nas suas runs (minha-biblioteca/).
     shopt -s nullglob
     local n=0
-    for f in "$ROOT"/biblioteca/assets/*.png "$ROOT"/biblioteca/assets/*.npy; do
+    for f in "$ROOT"/biblioteca/assets/*.png "$ROOT"/biblioteca/assets/*.npy \
+             "$ROOT"/minha-biblioteca/assets/*.png "$ROOT"/minha-biblioteca/assets/*.npy; do
         cp "$f" "$destino/07_assets/cutout/"; n=$((n + 1))
     done
     if [ -f "$destino/07_assets/cutout/BG_PAPER.png" ]; then
@@ -81,7 +98,10 @@ motion_novo() {
     fi
     shopt -u nullglob
 
+    # O projeto congela o estilo que usou: estilo/ + estilo/resolvido.json.
     echo "Projeto de motion criado em $destino"
+    "$PY" "$MOTION/lib/estilo.py" --raiz "$ROOT" instalar "$estilo" "$destino" \
+        ${variacao[@]+"${variacao[@]}"} ${sem_marca[@]+"${sem_marca[@]}"}
     echo "  $n asset(s) copiado(s) da biblioteca"
     echo "  Próximo passo: coloque o clipe vertical em $destino/00_brief/fonte.mp4 e rode"
     echo "  ./topclip motion transcrever $destino/00_brief/fonte.mp4 $destino/00_brief/transcript_palavras.json"
@@ -123,6 +143,10 @@ case "$cmd" in
             transcrever) precisa_venv; rodar_registrando transcrever "$PY" "$MOTION/lib/transcrever.py" "$@" ;;
             *) echo "uso: ./topclip motion {novo|transcrever} ..." >&2; exit 2 ;;
         esac
+        ;;
+    estilo)
+        precisa_venv
+        exec "$PY" "$MOTION/lib/estilo.py" --raiz "$ROOT" "$@"
         ;;
     baixar)
         # anota o próprio início e fim no diário: o projeto pode nem existir antes

@@ -123,11 +123,14 @@ A seleção dos cortes roda inteira sobre a **transcrição** — o vídeo só �
 depois que já se sabe onde cortar. É isso que deixa possível processar um podcast de
 3 horas sem estourar o contexto do Claude.
 
-## Biblioteca de assets
+## Biblioteca
 
-Todo objeto desenhado num vídeo volta para `biblioteca/assets/` e fica pronto para o
-próximo. Quanto mais o TopClip é usado, mais coisa já vem pronta.
-Quer contribuir? Desenhe um objeto novo em `.claude/skills/topclip-motion/lib/desenho.py` e abra um PR — veja
+Todo objeto desenhado num vídeo vai para a sua `minha-biblioteca/` e fica pronto para o
+próximo. Quanto mais você usa o TopClip, mais coisa já vem pronta. Essa pasta é sua e
+fica fora do git: atualizar o TopClip nunca mexe nela.
+
+O motion vem no estilo **Papel** e está ganhando outros estilos (`./topclip estilo listar`).
+Quer contribuir com um objeto ou um estilo? Abra um PR — veja
 [biblioteca/MANIFESTO.md](biblioteca/MANIFESTO.md).
 
 Prefere objetos com cara de foto? O motion aceita imagens de qualquer gerador
@@ -167,7 +170,8 @@ topclip/
 │   │   └── topclip-motion/  motion e legenda
 │   └── agents/              os 8 subagentes do pipeline de cortes
 ├── painel/                  o painel local (Python puro + uma página web)
-├── biblioteca/              assets reaproveitados entre vídeos
+├── biblioteca/              estilos e assets oficiais
+├── minha-biblioteca/        seus assets, estilos e marca (fora do git)
 └── projetos/                seus vídeos e resultados (fora do git)
 ```
 

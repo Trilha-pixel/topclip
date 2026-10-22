@@ -14,6 +14,11 @@ projetos/
 *.mkv
 *.m4a
 *.wav
+# ...menos a demo de cada estilo oficial, que a galeria mostra
+!biblioteca/estilos/*/preview/demo.mp4
+
+# Sua biblioteca: estilos, marca e assets desenhados nas suas runs
+minha-biblioteca/
 
 # Configuração pessoal do Claude Code
 .claude/settings.local.json

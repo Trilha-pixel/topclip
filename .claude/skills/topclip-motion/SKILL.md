@@ -19,7 +19,9 @@ Esta skill é um **kit fechado**, não só um método. Ver `IDENTIDADE.md`.
 | | |
 | --- | --- |
 | `fontes/` | as 5 fontes da identidade, licenças livres, com os arquivos de licença |
-| `biblioteca/assets/` (raiz do repo) | os assets já feitos, reaproveitados entre vídeos — cresce com o uso |
+| `biblioteca/assets/` (raiz do repo) | os assets oficiais do Papel |
+| `minha-biblioteca/assets/` (raiz do repo, fora do git) | os assets desenhados nas runs do usuário — cresce com o uso |
+| `biblioteca/estilos/` | os estilos oficiais (`./topclip estilo listar`); o Papel é o padrão |
 | `lib/` | o motor, o kit com as **receitas**, o recorte, o CRT, a legenda, a transcrição, os dois templates |
 | `exemplo/` | o bloco de configuração de um clipe real, e a galeria das receitas (`exemplo/receitas/`) |
 | `verificar.py` | checagem de instalação — rode antes do primeiro projeto |
@@ -72,7 +74,7 @@ Cada etapa tem uma trava. Não avance sem ela.
 | --- | --- | --- | --- |
 | 1 | **Ancorar** | tabela palavra → frame | transcript palavra-a-palavra existe |
 | 2 | **Escolher frases** | tabela entra/não-entra com motivo | cada corte tem justificativa escrita |
-| 3 | **Assets** | PNG com alfa por objeto | biblioteca primeiro; o que faltar, desenhado em `lib/desenho.py` |
+| 3 | **Assets** | PNG com alfa por objeto | biblioteca primeiro; o que faltar, desenhado em `minha-biblioteca/desenho.py` |
 | 4 | **Recortar** | PNG com alfa | só para asset de gerador de imagem; laudo D1 aprovado |
 | 5 | **Compor** | 4 estados por cena + folha `<cena>_ESTADOS.png` | laudo D2/D3 aprovado |
 | 6 | **Blueprint + transições** | um .md por cena + mapa | entrada e saída definidas |
@@ -132,14 +134,22 @@ parado; acima de 50% o rosto some. Deixe pelo menos 1,5s de rosto entre cenas.
 
 Nesta ordem — pare no primeiro que resolver:
 
-1. **Biblioteca.** `biblioteca/assets/` (lista em `biblioteca/MANIFESTO.md`). O
-   `./topclip motion novo` já copiou tudo para `07_assets/` do projeto.
+1. **Biblioteca.** `biblioteca/assets/` (oficiais, lista em `biblioteca/MANIFESTO.md`) e
+   `minha-biblioteca/assets/` (os desenhados nas runs, lista em
+   `minha-biblioteca/MANIFESTO.md`). O `./topclip motion novo` já copiou os dois para
+   `07_assets/` do projeto.
 2. **Desenhar em código — o padrão.** Escreva `desenha_<NOME>(seed)` em
-   `lib/desenho.py`, registre em `ASSETS` e gere:
+   `minha-biblioteca/desenho.py`, registre em `ASSETS` e gere. Na primeira vez, copie o
+   molde (ele importa as ferramentas de `lib/desenho.py`):
 
    ```bash
-   ./topclip py .claude/skills/topclip-motion/lib/desenho.py biblioteca/assets --so <NOME>
+   mkdir -p minha-biblioteca && cp .claude/skills/topclip-motion/exemplo/desenho_usuario.py minha-biblioteca/desenho.py
+   ./topclip py minha-biblioteca/desenho.py minha-biblioteca/assets --so <NOME>
    ```
+
+   **Nunca em `lib/desenho.py` nem em `biblioteca/`**: são do repositório, e o próximo
+   `git pull` do usuário daria conflito. Asset só vira oficial quando quem mantém o
+   repositório pede.
 
    **Papel grande** (folha de caderno, quadriculado, kraft acima de ~450px) não se
    amplia do `A10_SCRAPS`, que borra: `kit.scrap("pautado", w, h)` desenha o retalho no
@@ -150,7 +160,8 @@ Nesta ordem — pare no primeiro que resolver:
    embutida** (sombra é camada, `kit.SH_*`), nenhum texto (texto é sempre PIL na cena).
    Desenhe em partes separáveis quando a parte for animar — ponteiro, tecla, barra.
    **Olhe o resultado** dentro de uma cena antes de aprovar: asset solto engana.
-   Aprovado no laudo D1, ele fica em `biblioteca/assets/` com uma linha no MANIFESTO.
+   Aprovado no laudo D1, ele fica em `minha-biblioteca/assets/` com uma linha no
+   `minha-biblioteca/MANIFESTO.md` (mesma tabela do `biblioteca/MANIFESTO.md`).
 3. **Gerador de imagem — opcional**, para quem quer cara de foto (Higgsfield, Gemini,
    ou o modo manual: o usuário gera no Google Flow e solta o PNG em `07_assets/raw/`).
    Aí vale o que segue, e o asset passa pelo recorte (etapa 4).
@@ -285,9 +296,16 @@ cp <clipe-vertical.mp4> projetos/<nome-do-video>/motion/00_brief/fonte.mp4
 ```
 
 O comando cria as pastas, copia o motor (`lib/*.py`), as fontes, `compose.py` e
-`render.py`, e traz tudo que já existe em `biblioteca/assets/`. Nunca sobrescreve um
-projeto que já tem `compose.py`. Rode os scripts do projeto com `./topclip py
-projetos/<nome>/motion/render.py`.
+`render.py`, e traz tudo que já existe em `biblioteca/assets/` e
+`minha-biblioteca/assets/`. Nunca sobrescreve um projeto que já tem `compose.py`. Rode
+os scripts do projeto com `./topclip py projetos/<nome>/motion/render.py`.
+
+**Estilo.** `--estilo <id>` (e `--variacao <v>`) escolhe o estilo; sem ele, sai o Papel.
+O projeto congela o estilo em `estilo/` com o `estilo/resolvido.json`: cores, fontes,
+movimento, acabamento e legenda já combinados (estilo ← variação ← marca do usuário).
+O `render.py` e o `compose.py` leem o acabamento dali. Estilo que não for o Papel: leia o
+`estilo/ESTILO.md` do projeto antes de compor — ele manda sobre a `IDENTIDADE.md`.
+`./topclip estilo listar` mostra os disponíveis.
 
 `fontes/` tem que ficar ao lado de `motor.py` — a identidade depende dela e o motor
 falha com mensagem clara se não achar.
