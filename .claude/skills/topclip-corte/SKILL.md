@@ -25,8 +25,8 @@ run só quando ele pedir explicitamente ("vai até o fim", "manda o pacote todo"
 
 | # | Entrega | O que sai | Você lê |
 | --- | --- | --- | --- |
-| **1** | **MOMENTOS** | a lista dos trechos que dariam corte, com timestamp e citação | `fases/1-momentos.md` |
-| **2** | **CORTES** | os trechos já cortados, em vídeo, para assistir | `fases/2-cortes.md` |
+| **1** | **MOMENTOS** | a lista dos trechos que dariam corte, com timestamp, citação e nota estimada | `fases/1-momentos.md` |
+| **2** | **CORTES** | os trechos já cortados, em vídeo, para assistir, com a nota do gate | `fases/2-cortes.md` |
 | **3** | **VERTICAL** | 9:16 com o locutor rastreado e reenquadrado | `fases/3-vertical.md` |
 | **4** | **ENTREGA** | pasta final verificada, pronta para a topclip-motion | `fases/4-entrega.md` |
 
@@ -64,6 +64,18 @@ TIMESTEPS  →  SELEÇÃO  →  CORTE  →  VERTICAL
 pré-requisito de tudo: sem transcript com timing **por palavra**, a fase 1 não
 começa — ver a decupagem em `fases/1-momentos.md`. Isso não é um modo entre
 outros; é a única ordem. O que varia é **até que fase** ir.
+
+## A nota do gate não espera o fim
+
+A nota de publicabilidade (mínimo 7,5) é a mesma conta do `finalize`, mas sai
+antes, com `./topclip corte estimate`: na fase 1 sobre a estimativa do Clip Hunter,
+na fase 2 sobre o Builder + revisão de feed. O usuário escolhe **sabendo** — e
+escolhe poucos (2–5), porque cada momento escolhido é trabalho na fase 2.
+
+Dentro da fase 2, nada fica na fila sem motivo: Builder só nos escolhidos →
+prévias na hora, em paralelo → revisão cega e de feed **juntas**, na mesma versão →
+**um** rebuild com as duas → nova rodada só nos que mudaram. Os portões são os
+mesmos de sempre; a ordem é que mudou (`fases/2-cortes.md`).
 
 ## Sempre carregado
 

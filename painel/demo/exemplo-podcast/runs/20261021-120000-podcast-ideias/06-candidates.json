@@ -1,23 +1,101 @@
 {
- "schema_version": "1.0",
- "clips": [
-  {"id": "clip-001", "title": "O MVP de uma madrugada", "status": "APPROVE", "profile": "story",
-   "estimated_final_duration_seconds": 52,
-   "scores": {"hook": 9, "payoff": 9, "self_contained": 9, "shareability": 8, "truthfulness": 10},
-   "hard_fails": [],
-   "reconstructed_transcript": "Eu fiz o primeiro MVP numa madrugada. Não era bonito, mas no dia seguinte já tinha gente pagando. Seis meses planejando e o que funcionou foi uma noite.",
-   "why_it_can_work": "Abre com a história no auge e entrega a virada em menos de dez segundos."},
-  {"id": "clip-002", "title": "Medo de mostrar pela metade", "status": "APPROVE", "profile": "contrarian",
-   "estimated_final_duration_seconds": 44,
-   "scores": {"hook": 8, "payoff": 8, "self_contained": 9, "shareability": 9, "truthfulness": 10},
-   "hard_fails": [],
-   "reconstructed_transcript": "O problema nunca foi falta de ideia. Era medo de mostrar a ideia pela metade. Quando a gente começou a mostrar cedo, tudo andou.",
-   "why_it_can_work": "Quebra a crença comum logo na primeira frase."},
-  {"id": "clip-003", "title": "De dez para cinquenta reais", "status": "REBUILD", "profile": "money",
-   "estimated_final_duration_seconds": 61,
-   "scores": {"hook": 9, "payoff": 7, "self_contained": 7, "shareability": 8, "truthfulness": 8},
-   "hard_fails": ["contexto_insuficiente"],
-   "reconstructed_transcript": "A gente cobrava dez reais. Quando subimos para cinquenta, as vendas dobraram.",
-   "why_it_can_work": "Número concreto e contraintuitivo no gancho."}
- ]
+  "schema_version": "1.0",
+  "clips": [
+    {
+      "id": "clip-001",
+      "title": "O MVP de uma madrugada",
+      "status": "APPROVE",
+      "profile": "story",
+      "estimated_final_duration_seconds": 52,
+      "scores": {
+        "orientation": 8,
+        "hook": 9,
+        "proposition_clarity": 8,
+        "first_value_speed": 8,
+        "context_efficiency": 8,
+        "stakes": 7,
+        "curiosity_integrity": 8,
+        "progression": 8,
+        "payoff": 9,
+        "closure": 8,
+        "self_contained": 9,
+        "shareability": 8,
+        "visual_opportunity": 6,
+        "novelty": 7,
+        "editability": 8,
+        "truthfulness": 10
+      },
+      "hard_fails": [],
+      "reconstructed_transcript": "Eu fiz o primeiro MVP numa madrugada. Não era bonito, mas no dia seguinte já tinha gente pagando. Seis meses planejando e o que funcionou foi uma noite.",
+      "why_it_can_work": "Abre com a história no auge e entrega a virada em menos de dez segundos.",
+      "publishability_estimate": 7.717,
+      "estimate_below_gate": []
+    },
+    {
+      "id": "clip-002",
+      "title": "Medo de mostrar pela metade",
+      "status": "APPROVE",
+      "profile": "contrarian",
+      "estimated_final_duration_seconds": 44,
+      "scores": {
+        "orientation": 8,
+        "hook": 8,
+        "proposition_clarity": 8,
+        "first_value_speed": 8,
+        "context_efficiency": 8,
+        "stakes": 7,
+        "curiosity_integrity": 8,
+        "progression": 8,
+        "payoff": 8,
+        "closure": 8,
+        "self_contained": 9,
+        "shareability": 9,
+        "visual_opportunity": 6,
+        "novelty": 7,
+        "editability": 8,
+        "truthfulness": 10
+      },
+      "hard_fails": [],
+      "reconstructed_transcript": "O problema nunca foi falta de ideia. Era medo de mostrar a ideia pela metade. Quando a gente começou a mostrar cedo, tudo andou.",
+      "why_it_can_work": "Quebra a crença comum logo na primeira frase.",
+      "publishability_estimate": 7.576,
+      "estimate_below_gate": []
+    },
+    {
+      "id": "clip-003",
+      "title": "De dez para cinquenta reais",
+      "status": "REBUILD",
+      "profile": "money",
+      "estimated_final_duration_seconds": 61,
+      "scores": {
+        "orientation": 8,
+        "hook": 9,
+        "proposition_clarity": 8,
+        "first_value_speed": 8,
+        "context_efficiency": 8,
+        "stakes": 7,
+        "curiosity_integrity": 8,
+        "progression": 8,
+        "payoff": 7,
+        "closure": 8,
+        "self_contained": 7,
+        "shareability": 8,
+        "visual_opportunity": 6,
+        "novelty": 7,
+        "editability": 8,
+        "truthfulness": 8
+      },
+      "hard_fails": [
+        "contexto_insuficiente"
+      ],
+      "reconstructed_transcript": "A gente cobrava dez reais. Quando subimos para cinquenta, as vendas dobraram.",
+      "why_it_can_work": "Número concreto e contraintuitivo no gancho.",
+      "publishability_estimate": 7.053,
+      "estimate_below_gate": [
+        "fidelidade 8 < 9",
+        "nota 7,05 < 7,5"
+      ]
+    }
+  ],
+  "estimate_gate": 7.5
 }

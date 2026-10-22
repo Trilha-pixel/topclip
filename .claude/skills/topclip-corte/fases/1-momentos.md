@@ -109,7 +109,8 @@ Não gere clipes nesta passagem.
 
 ## 5. Clip Hunter
 
-Subagente `clip-hunter`. Saída: `05-viral-moments.json`, validado em seguida.
+Subagente `clip-hunter`. Saída: `05-viral-moments.json`, com a nota estimada de
+cada momento (abaixo).
 
 Encontre todos os momentos defensáveis, **sem forçar quantidade**. Cada momento
 precisa de citação literal, timestamps e perfil provável.
@@ -129,27 +130,56 @@ chance de alguém cair nele **sem contexto nenhum** e continuar assistindo.
 Se as três respostas não existem no texto, o momento **não está pronto**. Ele
 volta pra leitura do transcript, não pro vídeo, e não é adiável pra fase 2.
 
+### A nota estimada
+
+O Clip Hunter também grava, por momento, `estimated_scores`: as notas que ele
+prevê para o corte montado (as regras de calibração estão no próprio agente).
+Depois dele, no lugar do `validate-artifact`:
+
+```bash
+./topclip corte estimate --run <run-dir>
+```
+
+Valida o `05-viral-moments.json` e aplica a **mesma conta do gate do `finalize`**
+(`docs/05-regras-de-selecao.md` §5.6, mínimo 7,5) sobre essas notas. Grava em cada
+momento `publishability_estimate` e `estimate_below_gate` (por que cairia; vazio =
+passaria). Sai com código 3 se algum momento ficou sem nota completa — devolva ao
+Clip Hunter os que ele listar.
+
+Na run de teste a nota só apareceu no `finalize`, uma hora depois da escolha: os
+dois cortes escolhidos saíram abaixo de 7,5 quando já não dava para trocar — e três
+que ele deixou de lado tinham nota maior. A nota é estimativa — a de verdade sai das revisões
+da fase 2 —, mas é ela que deixa o usuário escolher sabendo.
+
 ## 6. Apresente e PARE
 
 Mostre ao usuário, por momento:
 
 | | |
 | --- | --- |
+| nota estimada | `publishability_estimate`; abaixo de 7,5, diga por quê (`estimate_below_gate`) |
 | timestamp | `in`–`out` aproximados, em `mm:ss` |
 | citação | o trecho **literal**, não paráfrase |
 | hook / desenvolvimento / payoff | uma linha cada |
 | perfil | o perfil narrativo provável |
 | duração | estimada |
 
-Ordene por força, não por ordem cronológica — a pergunta dele é "quais
-prestam", não "o que acontece no episódio".
+Ordene pela nota estimada, não por ordem cronológica — a pergunta dele é "quais
+prestam", não "o que acontece no episódio". O painel mostra na mesma ordem.
+
+**Recomende escolher poucos: de 2 a 5.** Cada momento escolhido vira montagem,
+revisão cega, revisão de feed e prévia na fase 2. Na run de teste ele marcou 14
+para usar 2, e a fase de cortes levou 41 minutos. Diga isso em uma linha, aponte os
+que você escolheria (os de nota mais alta que não caem no gate) e deixe a decisão
+com ele.
 
 Diga quantos momentos você descartou e por quê, em uma linha. Momento
 descartado com motivo evita refazer a discussão depois.
 
 **Pare aqui.** Diga que ele pode escolher na conversa ou no painel
-(`./topclip painel`, etapa Momentos). Se ele responder que escolheu no painel, os
-ids estão em `projetos/<nome>/escolhas.json` → `momentos`. Não rode `visual-index`,
-não invoque `clip-builder`, não corte nada. A fase 2 só começa depois que o usuário disser quais momentos viram corte
-— e ele pode cortar metade da sua lista, que é justamente por isso que o corte
-não foi feito antes.
+(`./topclip painel`, etapa Momentos — lá tem a nota e o botão "marcar os melhores").
+Se ele responder que escolheu no painel, os ids estão em
+`projetos/<nome>/escolhas.json` → `momentos`. Não rode `visual-index`, não invoque
+`clip-builder`, não corte nada. A fase 2 só começa depois que o usuário disser
+quais momentos viram corte — e ele pode cortar metade da sua lista, que é
+justamente por isso que o corte não foi feito antes.

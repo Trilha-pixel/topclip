@@ -61,6 +61,28 @@
             "type": "number",
             "minimum": 0,
             "maximum": 1
+          },
+          "estimated_scores": {
+            "description": "Notas 0-10 que o Clip Hunter prevê para o corte montado; a conta do gate roda sobre elas (vch estimate).",
+            "type": "object",
+            "additionalProperties": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 10
+            }
+          },
+          "publishability_estimate": {
+            "description": "Gravado por vch estimate: a mesma conta do finalize sobre estimated_scores.",
+            "type": "number",
+            "minimum": 0,
+            "maximum": 10
+          },
+          "estimate_below_gate": {
+            "description": "Gravado por vch estimate: por que a nota não passaria no gate. Vazio = passaria.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "additionalProperties": true

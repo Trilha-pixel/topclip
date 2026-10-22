@@ -138,6 +138,65 @@ class Http(ComProjetosTemporarios):
         self.assertEqual(status, 403)
 
 
+class NotaEstimada(ComProjetosTemporarios):
+    """A nota do gate aparece já nos momentos — não só no fim, quando não dá mais para trocar."""
+
+    def setUp(self):
+        super().setUp()
+        S.criar_projeto("Notas", "")
+        self.proj = S.PROJETOS / "notas"
+        self.run = self.proj / "runs" / "r1"
+        (self.run / "preview").mkdir(parents=True)
+        (self.run / "00-manifest.json").write_text("{}")
+
+    def escrever(self, nome, dados):
+        (self.run / nome).write_text(json.dumps(dados), encoding="utf-8")
+
+    def test_momentos_em_ordem_de_nota(self):
+        self.escrever("05-viral-moments.json", {"estimate_gate": 7.5, "moments": [
+            {"id": "moment-001", "start": 10, "end": 70, "quote": "a"},          # sem nota: vai para o fim
+            {"id": "moment-002", "start": 80, "end": 140, "quote": "b", "publishability_estimate": 6.547,
+             "estimate_below_gate": ["se sustenta sozinho 6 < 7"]},
+            {"id": "moment-003", "start": 150, "end": 200, "quote": "c", "publishability_estimate": 7.802,
+             "estimate_below_gate": []},
+        ]})
+        d = S.detalhe(self.proj)
+        self.assertEqual([m["id"] for m in d["momentos"]], ["moment-003", "moment-002", "moment-001"])
+        self.assertEqual(d["momentos"][0]["nota"], 7.8)
+        self.assertEqual(d["momentos"][1]["abaixo_do_gate"], ["se sustenta sozinho 6 < 7"])
+        self.assertIsNone(d["momentos"][2]["nota"])
+        self.assertEqual(d["gate"], 7.5)
+
+    def test_corte_mostra_a_nota_do_gate_e_acha_a_previa_pelo_id(self):
+        # 06 refeito só com os 2 escolhidos: a posição 01 agora é o clip-005, não o clip-003 da rodada velha
+        self.escrever("06-candidates.json", {"clips": [
+            {"id": "clip-005", "title": "x", "publishability_estimate": 6.852,
+             "estimate_below_gate": ["nota 6,85 < 7,5"], "scores": {"hook": 9}},
+            {"id": "clip-010", "title": "y", "scores": {"hook": 8, "payoff": 6}},
+        ]})
+        for nome in ("01-clip-003-velho.mp4", "05-clip-005-mensalidade.mp4", "10-clip-010-barato.mp4"):
+            (self.run / "preview" / nome).write_bytes(b"x")
+        cortes = {c["id"]: c for c in S.detalhe(self.proj)["cortes"]}
+        self.assertTrue(cortes["clip-005"]["preview"].endswith("05-clip-005-mensalidade.mp4"))
+        self.assertTrue(cortes["clip-010"]["preview"].endswith("10-clip-010-barato.mp4"))
+        self.assertEqual((cortes["clip-005"]["nota"], cortes["clip-005"]["nota_do_gate"]), (6.9, True))
+        self.assertEqual((cortes["clip-010"]["nota"], cortes["clip-010"]["nota_do_gate"]), (7.0, False))  # run antiga: média
+
+    def test_previa_sem_id_no_nome_casa_pela_posicao(self):
+        previas = [Path("01-clip-003-velho.mp4"), Path("02-feita-a-mao.mp4")]
+        self.assertIsNone(S.previa_do_corte(previas, ["clip-005", "clip-010"], 1))   # 01 é de outro corte
+        self.assertEqual(S.previa_do_corte(previas, ["clip-005", "clip-010"], 2), Path("02-feita-a-mao.mp4"))
+
+    def test_painel_redesenha_quando_a_nota_entra(self):
+        import os
+        self.escrever("05-viral-moments.json", {"moments": [{"id": "moment-001"}]})
+        antes = S._assinatura(self.proj, self.run)
+        self.escrever("05-viral-moments.json", {"moments": [{"id": "moment-001", "publishability_estimate": 7.9}]})
+        st = (self.run / "05-viral-moments.json").stat()
+        os.utime(self.run / "05-viral-moments.json", ns=(st.st_atime_ns, st.st_mtime_ns + 10**9))
+        self.assertNotEqual(S._assinatura(self.proj, self.run), antes)
+
+
 class LocalizarVideo(ComProjetosTemporarios):
     """O vídeo arrastado para a página: só nome e tamanho chegam ao servidor."""
 

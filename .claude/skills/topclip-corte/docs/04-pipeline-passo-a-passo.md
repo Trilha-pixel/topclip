@@ -114,7 +114,13 @@ Cada momento contém:
 - perfil de clipe;
 - risco de distorção;
 - visual disponível;
-- confiança.
+- confiança;
+- notas estimadas do corte montado (`estimated_scores`), sobre as quais
+  `vch estimate` aplica a conta do gate e grava a nota de cada momento.
+
+> As etapas 6 a 11 são descritas aqui pelo que cada uma faz. **A ordem em que rodam**
+> — o que vai em paralelo, quando o rebuild acontece, o que roda de novo — está em
+> `fases/2-cortes.md`.
 
 ## Etapa 6 — Candidate Builder
 

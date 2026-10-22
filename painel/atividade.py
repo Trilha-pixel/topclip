@@ -39,6 +39,8 @@ COMANDOS = {
     "visual-index": "olhando os frames dos trechos escolhidos",
     "validate-artifact": "conferindo um arquivo da run",
     "validate-project": "conferindo o pacote",
+    "estimate": "dando a nota estimada de cada um",
+    "previews": "cortando as prévias para você assistir",
     "blind-packets": "preparando a revisão cega",
     "audit": "auditando os cortes",
     "dedupe": "tirando cortes repetidos",

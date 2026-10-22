@@ -34,7 +34,44 @@ Para cada momento:
 - descreva contexto mínimo;
 - identifique hook visual real, se o transcript ou índice visual (quando presente) sustentar — nunca invente um que não esteja descrito na fonte;
 - registre risco de distorção;
-- informe confiança.
+- informe confiança;
+- estime as notas do corte que ele vai virar (`estimated_scores`, abaixo).
+
+## Nota estimada — o gate 7,5 já na fase 1
+
+Para cada momento, grave `estimated_scores` com as 13 notas (0–10) que a conta do
+gate usa — as 12 com peso de `docs/05-regras-de-selecao.md` §5.6, mais `truthfulness`:
+
+`hook`, `proposition_clarity`, `first_value_speed`, `context_efficiency`,
+`curiosity_integrity`, `progression`, `payoff`, `self_contained`, `shareability`,
+`visual_opportunity`, `novelty`, `editability`, `truthfulness`.
+
+É a nota que você prevê para o corte **depois de montado** com o que a fala
+oferece — não a importância do trecho no episódio. O loop principal roda
+`./topclip corte estimate --run <run>`, que aplica a mesma conta do `finalize` e grava
+a nota em cada momento; o usuário escolhe pelo painel, em ordem de nota. Nota
+inflada aqui custa caro lá na frente: ele escolhe por ela, e a revisão cega da fase 2
+não perdoa.
+
+A conta é dura — o pior item crítico multiplica tudo:
+
+| notas | nota final |
+| --- | --- |
+| tudo 8 | 7,5 — passa raspando |
+| tudo 8, `self_contained` 6 | 6,9 — cai |
+| tudo 7 | 6,4 |
+
+`truthfulness` abaixo de 9 reprova no fim, seja qual for a nota. Na run de teste o
+Clip Builder deu 7–9 em quase tudo e a revisão cega mandou refazer os 14 cortes. 8
+não é o padrão: é "eu defenderia isto para um estranho". Desconte o que a fala não
+resolve sozinha:
+
+- não diz o assunto nos 3 primeiros segundos → `hook` e `proposition_clarity` ≤ 6;
+- "isso", "também", "ele" cujo referente fica fora do trecho → `self_contained` ≤ 6;
+- payoff sem prova, ou que só chega depois de ~45s → `payoff` ≤ 7;
+- perfil `money` sem número nos primeiros 7s → `first_value_speed` ≤ 6;
+- palavra-chave que o ASR pode ter errado, ou risco de distorção médio → `truthfulness` ≤ 8;
+- só uma pessoa falando, sem nada para mostrar → `visual_opportunity` 5.
 
 Rejeite como momento principal frases que começam por referência sem antecedente, salvo se houver reconstrução clara possível.
 
