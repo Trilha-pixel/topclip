@@ -164,6 +164,47 @@ Cada uma custou pelo menos uma rodada de retrabalho. Confira antes de renderizar
 47. **Bloco de legenda nunca atravessa um corte do clipe.** Junta o fim de uma frase com
     o comeco de outra e le como erro de decupagem.
 
+## Run aula-yt-teste (clip-005 e clip-010)
+
+Cada uma custou uma remontagem de ~2 min (ou um laudo reprovado). Todas já estão
+resolvidas no kit; ficam aqui para não voltar.
+
+48. **Recuar a janela da legenda apaga a palavra do vão.** O recuo de 0,15s das bordas
+    das cenas tirou o "Não" de "Não é difícil fazer" — a tela dizia o contrário do áudio.
+    Cole a janela na cena (`janelas_livres`); o bloco é preso à janela, não invade.
+    `captions.check()` para com erro em palavra sem legenda e sem cena.
+
+49. **"Palavra inteira dentro da janela" perde a palavra da borda.** "consegue" em
+    4,26–4,62 com a cena entrando em 4,55 não estava inteira em lugar nenhum. Reparta
+    pelo **meio** da palavra.
+
+50. **Altura de legenda medida num podcast não vale para selfie.** O rosto fica mais
+    baixo e o CY padrão cobriu a boca. Posicione pelo queixo detectado no pior frame
+    (`configurar(video=...)`).
+
+51. **Ênfase de 168px estoura em palavra longa.** "MENSALIDADE," foi de x=67 a 1014.
+    O corpo daquela palavra desce até caber (`LARGURA_MAX`); as curtas ficam em 168.
+
+52. **A fonte desenha errado sem avisar.** No Permanent Marker "ª" sai como "A" ("1ª"
+    lê "1A") e "≈" aponta para um "i". `text_layer` avisa; o "≈" sai desenhado à caneta.
+
+53. **Asset que o template pede e a biblioteca não tem.** A saída `wipe` lia
+    `A05_CARD.png`, que não existia: o render quebrava no meio da cena. Agora é
+    `A05_SHEET` (desenhado), o kit desenha qualquer asset de `desenho.ASSETS` que faltar
+    no projeto, e o render confere as saídas antes do primeiro quadro.
+
+54. **Retalho ampliado borra.** Peça do A10 de ~360px levada a 850px perde a fibra e
+    engrossa a pauta. Papel grande sai de `kit.scrap()`, no tamanho de uso; `piece()`
+    avisa quando amplia mais de 1,25×.
+
+55. **Revisar com o master final é caro.** `-preset slow` levava ~2 min por montagem e a
+    run remontou 3 vezes por clipe. Revise com `render.py --rascunho` (veryfast) e
+    monte o final uma vez.
+
+56. **Teto de duração cortando a fala.** `MAXDUR` truncava o bloco antes da última
+    palavra: o "para" aparecia adiantado e sumia quando era dito. Conferir só o TEXTO
+    ("todas as palavras estão na tela") não pega — confira o TEMPO (`fora_de_hora`).
+
 ## Empacotar identidade
 
 29. **Fonte de sistema trava a identidade numa maquina.** As do macOS nao podem ser

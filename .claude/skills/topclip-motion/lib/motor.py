@@ -10,6 +10,7 @@ Camadas de um frame, de baixo para cima:
 """
 import math
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 import numpy as np
 import cv2
@@ -351,7 +352,175 @@ def blue_line(size, path, progress=1.0, width=7, color=BLUE, seed=4, amp=3.0,
     return _auto_boil(lay, "ink")
 
 
+# ---------------------------------------------------------------- glifos
+# Glifos que a fonte TEM mas desenha errado — o FreeType nao acusa nada, o texto sai e
+# so o olho pega. Medido no Permanent Marker (fonte toda em caixa-alta): "1ª" sai como
+# "1A" e o "≈" aponta para o desenho de um "i", um traco vertical. Na run do clip-010
+# os rotulos "1ª..4ª" foram ao laudo como "1A..4A".
+_GLIFO_ENGANA = {
+    F_MARKER: {
+        "≈": "sai como um traço vertical",
+        "ª": "sai como um 'A' (\"1ª\" lê \"1A\") — escreva só o número",
+        "º": "sai como um 'O' (\"2º\" lê \"2O\") — escreva só o número",
+    },
+}
+# O que o motor sabe DESENHAR quando a fonte nao tem: o texto continua uma string so,
+# e o caractere sai como traco de caneta no lugar dele (ver hand_approx).
+_DESENHA = {"≈"}
+
+_glifo_cache = {}
+_avisados = set()
+# Os workers do render paralelo ligam isto: o aviso ja apareceu nos estados (compose.py)
+# e repetido por processo vira ruido.
+SILENCIO = False
+
+
+def _mascara(f, ch):
+    m = f.getmask(ch)
+    if m.size[0] * m.size[1] == 0:
+        return None
+    a = np.array(m, dtype=np.uint8).reshape(m.size[1], m.size[0])
+    return a if a.max() > 0 else None
+
+
+def glifo(fontpath, ch):
+    """
+    'ok', 'ausente' ou o motivo de um glifo que engana, para um caractere numa fonte.
+    Ausente = a fonte cai no .notdef (vazio no Permanent Marker, caixa nas outras) —
+    o PIL nao avisa e o caractere simplesmente some ou vira um retangulo.
+    """
+    key = (str(fontpath), ch)
+    if key not in _glifo_cache:
+        res = "ok"
+        if not ch.isspace():
+            res = _GLIFO_ENGANA.get(str(fontpath), {}).get(ch, "ok")
+            if res == "ok":
+                f = font(fontpath, 64)
+                m, nd = _mascara(f, ch), _mascara(f, "\U0010FFFD")
+                if m is None or (nd is not None and m.shape == nd.shape
+                                 and (m == nd).all()):
+                    res = "ausente"
+        _glifo_cache[key] = res
+    return _glifo_cache[key]
+
+
+def glifos_problema(text, fontpath):
+    """[(caractere, motivo)] de tudo que a fonte nao escreve direito neste texto."""
+    out = []
+    for ch in dict.fromkeys(text):
+        g = glifo(fontpath, ch)
+        if g != "ok":
+            out.append((ch, g))
+    return out
+
+
+def _avisa_glifos(text, fontpath):
+    """Avisa UMA vez por (fonte, caractere), no stderr — o render chama text_layer a
+    cada frame, e o aviso tem que aparecer na hora dos estados, nao virar ruido."""
+    if SILENCIO:
+        return
+    for ch, motivo in glifos_problema(text, fontpath):
+        k = (str(fontpath), ch)
+        if k in _avisados:
+            continue
+        _avisados.add(k)
+        nome = Path(str(fontpath)).stem.split("[")[0]
+        if ch in _DESENHA:
+            print(f"  aviso glifo: {ch!r} nao existe em {nome} ({motivo}) — sai "
+                  f"desenhado a mao (motor.hand_approx)", file=sys.stderr)
+        else:
+            print(f"  AVISO glifo: {ch!r} em {nome}: {motivo} — no texto {text!r}",
+                  file=sys.stderr)
+
+
+def _desenhado(fontpath, ch):
+    return ch in _DESENHA and glifo(fontpath, ch) != "ok"
+
+
+def _avanco(f, fontpath, ch, tracking):
+    """Avanco do caractere. O "≈" desenhado ocupa um "=" da mesma fonte e um quinto."""
+    if _desenhado(fontpath, ch):
+        return f.getlength("=") * 1.2 + tracking
+    return f.getlength(ch) + tracking
+
+
+def _approx_paths(x, y, w, gap, amp):
+    """As duas ondas do "≈", centradas verticalmente em y, de x ate x+w."""
+    out = []
+    for dy in (-gap / 2, gap / 2):
+        out.append([(x + w * i / 24, y + dy - amp * math.sin(i / 24 * 2 * math.pi))
+                    for i in range(25)])
+    return out
+
+
+def _draw_approx(draw, x, y, w, fontsize, width, color, seed, progress=1.0):
+    # medidas do "=" do proprio marcador (barra ~0,12 do corpo, centros a ~0,20): o
+    # "≈" fica um pouco mais aberto que o "=", senao as ondas se encostam
+    gap, amp = fontsize * 0.26, fontsize * 0.075
+    for k, pts in enumerate(_approx_paths(x, y, w, gap, amp)):
+        pk = max(0.0, min(1.0, progress * 2 - k))
+        if pk <= 0:
+            break
+        path = jitter(smooth_path(pts), 0.6, seed + k)
+        stroke(draw, cut(path, pk), width, color + (255,), pressure=0.18, seed=seed + k)
+
+
+def hand_approx(size, x, y, w=None, progress=1.0, fontsize=98, width=None, color=INK,
+                seed=17):
+    """
+    O "≈" desenhado a caneta: duas ondas, a de cima primeiro. Nenhuma das fontes de
+    marcador tem o glifo (o Permanent Marker desenha um traco vertical no lugar).
+    (x, y) = inicio da onda, na ALTURA DO MEIO do sinal; `w` = largura do sinal.
+    `text_layer` ja usa isto sozinho quando o texto tem "≈" — esta funcao e para
+    desenhar o sinal solto, entre dois blocos de texto.
+    """
+    lay = Image.new("RGBA", size, (0, 0, 0, 0))
+    w = w or fontsize * 0.68
+    width = width or max(3, int(round(fontsize * 0.10 + 3)))
+    if progress > 0:
+        _draw_approx(ImageDraw.Draw(lay), x, y, w, fontsize, width, color, seed, progress)
+    return _auto_boil(lay, "ink", seed=seed)
+
+
+def hand_stroke(size, pts, progress=1.0, width=8, color=INK, seed=0, amp=2.5,
+                boil=True):
+    """Traco de caneta solto (tracinho de contagem, barbante, risco curto): spline pelos
+    pontos + jitter correlacionado + pressao. `boil=False` para juntar varios tracos
+    numa camada e dar UM campo de boil ao conjunto."""
+    lay = Image.new("RGBA", size, (0, 0, 0, 0))
+    if progress > 0 and len(pts) >= 2:
+        path = jitter(smooth_path(pts), amp, seed)
+        stroke(ImageDraw.Draw(lay), cut(path, progress), width, color + (255,),
+               pressure=0.18, seed=seed)
+    return _auto_boil(lay, "ink") if boil else lay
+
+
 # ---------------------------------------------------------------- texto
+def _bloco(text, fontpath, fontsize, xy, anchor, tracking, line_gap):
+    """Geometria do bloco de texto: larguras por linha, altura de linha e o canto
+    superior esquerdo (ax, ay) — a mesma conta para desenhar e para medir."""
+    f = font(fontpath, fontsize)
+    lines = text.split("\n")
+    widths, heights = [], []
+    for l in lines:
+        widths.append(sum(_avanco(f, fontpath, ch, tracking) for ch in l))
+        bb = f.getbbox(l or "X")
+        heights.append(bb[3] - bb[1])
+    lh = (max(heights) if heights else fontsize) * line_gap
+    block_h = lh * len(lines)
+    block_w = max(widths) if widths else 0
+    ax, ay = xy
+    if anchor[0] == "m":
+        ax -= block_w / 2
+    elif anchor[0] == "r":
+        ax -= block_w
+    if anchor[1] == "m":
+        ay -= block_h / 2
+    elif anchor[1] == "b":
+        ay -= block_h
+    return f, lines, widths, lh, block_w, ax, ay
+
+
 def text_layer(size, text, fontpath, fontsize, xy, color=INK, anchor="lt",
               stroke_w=0, tracking=0, hand=False, seed=5, progress=1.0,
               line_gap=1.0, mode="block", rise=14, optical=False, boil_seed=None):
@@ -366,51 +535,29 @@ def text_layer(size, text, fontpath, fontsize, xy, color=INK, anchor="lt",
       wipe  — mascara da esquerda para a direita, borda suave. Sensacao de impressao.
       write — mascara da esquerda para a direita com borda dura (ponta de caneta).
               Unico modo valido para marcador: a mao escreve, nao datilografa.
+
+    Caractere que a fonte nao tem ou desenha errado gera um aviso no stderr (uma vez).
+    O "≈" sai desenhado a caneta no lugar do glifo (ver `hand_approx`).
     """
+    _avisa_glifos(text, fontpath)
     if optical:
         # Centro pelo DESENHO da letra, nao pela caixa da fonte. A caixa inclui
         # ascendente e descendente, entao "MVP" centrado nela escorrega para baixo e
         # sai da faixa da fita. Mede no estado cheio e aplica o mesmo desvio sempre,
         # para o texto nao andar durante a animacao.
-        full = text_layer(size, text, fontpath, fontsize, xy, color, anchor, stroke_w,
-                          tracking, hand, seed, 1.0, line_gap, mode, rise, optical=False,
-                          boil_seed=boil_seed)
-        bb = full.getbbox()
-        if bb:
-            cx, cy = (bb[0] + bb[2]) / 2.0, (bb[1] + bb[3]) / 2.0
-            xy = (xy[0] + (xy[0] - cx), xy[1] + (xy[1] - cy))
+        xy = _optical_xy(size, text, fontpath, fontsize, xy, color, anchor, stroke_w,
+                         tracking, hand, seed, line_gap, mode, rise, boil_seed)
         return text_layer(size, text, fontpath, fontsize, xy, color, anchor, stroke_w,
                           tracking, hand, seed, progress, line_gap, mode, rise,
                           optical=False, boil_seed=boil_seed)
 
     lay = Image.new("RGBA", size, (0, 0, 0, 0))
-    f = font(fontpath, fontsize)
     progress = max(0.0, min(1.0, progress))
     if progress <= 0:
         return lay
-    lines = text.split("\n")
     rng = np.random.default_rng(seed)
-
-    # medir bloco
-    widths, heights = [], []
-    for l in lines:
-        w = sum(f.getlength(ch) + tracking for ch in l)
-        widths.append(w)
-        bb = f.getbbox(l or "X")
-        heights.append(bb[3] - bb[1])
-    lh = (max(heights) if heights else fontsize) * line_gap
-    block_h = lh * len(lines)
-    block_w = max(widths) if widths else 0
-
-    ax, ay = xy
-    if anchor[0] == "m":
-        ax -= block_w / 2
-    elif anchor[0] == "r":
-        ax -= block_w
-    if anchor[1] == "m":
-        ay -= block_h / 2
-    elif anchor[1] == "b":
-        ay -= block_h
+    f, lines, widths, lh, block_w, ax, ay = _bloco(text, fontpath, fontsize, xy, anchor,
+                                                   tracking, line_gap)
 
     if mode == "block":
         ay += (1.0 - progress) * rise      # sobe os ultimos pixels ao aparecer
@@ -420,11 +567,12 @@ def text_layer(size, text, fontpath, fontsize, xy, color=INK, anchor="lt",
         if anchor[0] == "m":
             x = ax + (block_w - widths[li]) / 2
         y = ay + li * lh
-        for ch in line:
-            adv = f.getlength(ch) + tracking
+        for ci, ch in enumerate(line):
+            adv = _avanco(f, fontpath, ch, tracking)
             if ch == " ":
                 x += adv
                 continue
+            desenha = _desenhado(fontpath, ch)
             if hand:
                 # Guia de estilo: "escrito de uma vez, com PEQUENAS variacoes".
                 # Os valores antigos (baseline 3.5%, rotacao 3.2 graus) faziam o MVP
@@ -435,13 +583,21 @@ def text_layer(size, text, fontpath, fontsize, xy, color=INK, anchor="lt",
                 pad = int(fontsize * 0.9)
                 g = Image.new("RGBA", (int(adv) + pad * 2, int(fontsize * 2.2) + pad * 2),
                               (0, 0, 0, 0))
-                ImageDraw.Draw(g).text((pad, pad), ch, font=f, fill=color + (255,),
-                                       stroke_width=stroke_w, stroke_fill=color + (255,))
+                if desenha:
+                    _glifo_desenhado(ImageDraw.Draw(g), f, pad, pad, fontsize, stroke_w,
+                                     color, seed + li * 97 + ci)
+                else:
+                    ImageDraw.Draw(g).text((pad, pad), ch, font=f, fill=color + (255,),
+                                           stroke_width=stroke_w,
+                                           stroke_fill=color + (255,))
                 if abs(sc - 1) > 1e-3:
                     g = g.resize((max(1, int(g.width * sc)), max(1, int(g.height * sc))),
                                  Image.LANCZOS)
                 g = g.rotate(rot, resample=Image.BICUBIC, expand=True)
                 lay.alpha_composite(g, (int(x - pad), int(y + dy - pad)))
+            elif desenha:
+                _glifo_desenhado(ImageDraw.Draw(lay), f, x, y, fontsize, stroke_w, color,
+                                 seed + li * 97 + ci)
             else:
                 ImageDraw.Draw(lay).text((x, y), ch, font=f, fill=color + (255,),
                                          stroke_width=stroke_w, stroke_fill=color + (255,))
@@ -465,9 +621,97 @@ def text_layer(size, text, fontpath, fontsize, xy, color=INK, anchor="lt",
     return _auto_boil(lay, kind, seed=boil_seed)
 
 
+def _glifo_desenhado(draw, f, x, y, fontsize, stroke_w, color, seed):
+    """O "≈" no lugar do glifo: na caixa e na altura do "=" da mesma fonte."""
+    l, t, r, b = f.getbbox("=")
+    w = (r - l) * 1.15
+    width = max(3, int(round(fontsize * 0.10 + stroke_w * 1.5)))
+    _draw_approx(draw, x + (f.getlength("=") * 1.2 - w) / 2, y + (t + b) / 2, w,
+                 fontsize, width, color, seed)
+
+
+def _optical_xy(size, text, fontpath, fontsize, xy, color, anchor, stroke_w, tracking,
+                hand, seed, line_gap, mode, rise, boil_seed):
+    full = text_layer(size, text, fontpath, fontsize, xy, color, anchor, stroke_w,
+                      tracking, hand, seed, 1.0, line_gap, mode, rise, optical=False,
+                      boil_seed=boil_seed)
+    bb = full.getbbox()
+    if not bb:
+        return xy
+    cx, cy = (bb[0] + bb[2]) / 2.0, (bb[1] + bb[3]) / 2.0
+    return (xy[0] + (xy[0] - cx), xy[1] + (xy[1] - cy))
+
+
 def text_width(text, fontpath, fontsize, tracking=0):
     f = font(fontpath, fontsize)
-    return max(sum(f.getlength(c) + tracking for c in l) for l in text.split("\n"))
+    return max(sum(_avanco(f, fontpath, c, tracking) for c in l)
+               for l in text.split("\n"))
+
+
+@contextmanager
+def sem_boil():
+    """Desliga o boil dentro do bloco (para MEDIR tinta: o boil desloca a borda e a
+    medida mudaria a cada frame). Restaura o frame corrente na saida."""
+    saved = _BOIL["frame"]
+    _BOIL["frame"] = None
+    try:
+        yield
+    finally:
+        _BOIL["frame"] = saved
+
+
+_ink_cache = {}
+
+
+def ink_bbox(text, fontpath, fontsize, xy, size=(W, H), **kw):
+    """
+    Caixa da TINTA (x0, y0, x1, y1) de um texto, sem boil, nas coordenadas do quadro.
+    Nao a caixa da fonte: um risco ou sublinhado tem que cruzar o meio da palavra
+    DESENHADA — no clip-010 o risco medido pela fonte passava acima das palavras.
+    `kw` sao os mesmos de text_layer (anchor, hand, seed, stroke_w, tracking...).
+    """
+    kw = {k: v for k, v in kw.items() if k not in ("progress", "mode", "boil_seed")}
+    key = (text, str(fontpath), fontsize, tuple(xy), tuple(size), tuple(sorted(kw.items())))
+    if key not in _ink_cache:
+        with sem_boil():
+            _ink_cache[key] = text_layer(size, text, fontpath, fontsize, xy, **kw).getbbox()
+    return _ink_cache[key]
+
+
+def ink_span(text, part, fontpath, fontsize, xy, size=(W, H), **kw):
+    """
+    Caixa da tinta de UM PEDACO (`part`, ultima ocorrencia) dentro de um texto de uma
+    linha, desenhado exatamente como o texto inteiro. Serve para sublinhar so o "mes"
+    de "= R$ 3.000/mes" ou circular um numero no meio da frase.
+    """
+    if "\n" in text:
+        raise ValueError("ink_span mede texto de UMA linha")
+    i = text.rindex(part)
+    kw = {k: v for k, v in kw.items() if k not in ("progress", "mode", "boil_seed")}
+    anchor = kw.pop("anchor", "lt")
+    if kw.pop("optical", False):
+        with sem_boil():
+            xy = _optical_xy(size, text, fontpath, fontsize, xy, kw.get("color", INK),
+                             anchor, kw.get("stroke_w", 0), kw.get("tracking", 0),
+                             kw.get("hand", False), kw.get("seed", 5),
+                             kw.get("line_gap", 1.0), "block", 14, None)
+    # canto do bloco INTEIRO: prefixo e pedaco desenhados a partir dele, com "lt"
+    _, _, _, _, _, ax, ay = _bloco(text, fontpath, fontsize, xy, anchor,
+                                   kw.get("tracking", 0), kw.get("line_gap", 1.0))
+    key = ("span", text, part, str(fontpath), fontsize, round(ax, 2), round(ay, 2),
+           tuple(size), tuple(sorted(kw.items())))
+    if key not in _ink_cache:
+        with sem_boil():
+            a = np.asarray(text_layer(size, text[:i + len(part)], fontpath, fontsize,
+                                      (ax, ay), anchor="lt", **kw).getchannel("A"))
+            b = (np.asarray(text_layer(size, text[:i], fontpath, fontsize, (ax, ay),
+                                       anchor="lt", **kw).getchannel("A"))
+                 if i else np.zeros_like(a))
+        diff = (a.astype(np.int16) - b) > 64
+        ys, xs = np.nonzero(diff)
+        _ink_cache[key] = ((int(xs.min()), int(ys.min()), int(xs.max()) + 1,
+                            int(ys.max()) + 1) if len(xs) else None)
+    return _ink_cache[key]
 
 
 # ---------------------------------------------------------------- objetos

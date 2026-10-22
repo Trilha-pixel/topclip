@@ -289,6 +289,92 @@ def desenha_A10_SCRAPS(seed=10):
     ])
 
 
+# ------------------------------------------------------------------ retalho no tamanho de uso
+# Cores dos papeis, as mesmas do A10_SCRAPS.
+KRAFT, CADERNO, QUADRICULADO, CARTAO = ((190, 164, 126), (238, 234, 223),
+                                        (226, 226, 220), (206, 200, 184))
+FOLHA = (232, 229, 220)         # algodao frio da folha do wipe (C10_SHEET, aprovado)
+CARTAO_FOTO = (244, 240, 232)   # margem branca da copia impressa (PAPER_LIGHT)
+
+# Escala de caderno REAL no quadro 1080x1920, nao proporcional ao retalho: a pauta cabe
+# uma linha de marcador de ~72px (como o caderno cabe a letra de quem escreve) e a grade
+# e a de 5mm vista de perto. Medidas da run do clip-010, aprovadas no laudo.
+PAUTA = 92
+GRADE = 44
+MARGEM = 92                     # da borda do papel ate a linha vermelha
+PAD = 16                        # respiro transparente em volta do papel
+
+
+def retalho(w, h, seed, cor, pauta=0, grade=0, margem=False, torto=0.035):
+    """
+    Retalho de papel rasgado JA no tamanho em que vai aparecer.
+
+    O A10_SCRAPS tem ~360px por peca: ampliado para ~800px borra a fibra e a borda
+    rasgada, que sao a materia do estilo, e engrossa a pauta junto. Aqui a fibra, a
+    borda e o traco da pauta (1,5px) nascem na escala final.
+
+    `pauta`/`grade` em px de quadro (use PAUTA/GRADE); `margem` poe a linha vermelha.
+    `torto` e o desvio dos cantos em fracao do lado — 0,035 deixa o retalho quase
+    retangular, que e o que cabe escrita; o A10 usa 0,07.
+    Geometria (para alinhar escrita na pauta): `geometria_retalho()`.
+    """
+    g = geometria_retalho(w, h, pauta, grade, margem)
+    w, h = w * SS, h * SS
+    pad = PAD * SS
+    W, H = w + 2 * pad, h + 2 * pad
+    r = np.random.default_rng(seed)
+    j = lambda: r.uniform(-torto, torto) * min(w, h)
+    cantos = [(pad + j(), pad + j()), (pad + w + j(), pad + j()),
+              (pad + w + j(), pad + h + j()), (pad + j(), pad + h + j())]
+    pts = contorno(cantos, seed, amp=7.5 * SS, fino=2.2 * SS, passo=3 * SS, corr=7)
+    m = mascara(H, W, pts)
+    rgb = textura(cor, H, W, seed, mancha=0.04, fibra=0.06)
+    for y in g["linhas"]:
+        cv2.line(rgb, (0, y * SS), (W, y * SS), (148, 172, 196), SS + 1, cv2.LINE_AA)
+    if g["margem"] is not None:
+        x = g["margem"] * SS
+        cv2.line(rgb, (x, 0), (x, H), (196, 126, 126), SS + 1, cv2.LINE_AA)
+    if grade:
+        for v in range(pad, max(W, H), grade * SS):
+            cv2.line(rgb, (v, 0), (v, H), (176, 186, 194), SS, cv2.LINE_AA)
+            cv2.line(rgb, (0, v), (W, v), (176, 186, 194), SS, cv2.LINE_AA)
+    rgb = borda_clara(rgb, m, 2, 0.22)
+    return para_rgba(rgb, m)
+
+
+def geometria_retalho(w, h, pauta=0, grade=0, margem=False):
+    """Onde ficam a pauta e a margem, em px do bitmap de `retalho(w, h, ...)` SEM
+    rotacao. A primeira pauta fica a 1,6 pauta do topo, como no caderno."""
+    linhas = []
+    if pauta:
+        y = PAD + int(pauta * 1.6)
+        while y < h + 2 * PAD:
+            linhas.append(y)
+            y += pauta
+    return dict(linhas=linhas, margem=(PAD + MARGEM) if (pauta and margem) else None,
+                grade=grade, pad=PAD)
+
+
+# ------------------------------------------------------------------ A05 folha e cartao
+def desenha_A05_SHEET(seed=131):
+    """
+    A folha que atravessa a lente na saida `wipe` (render_template). Alta, ja no
+    tamanho de uso (~0,62W x H): a saida estica pouco. Algodao frio, diferente do
+    marfim do fundo, senao a passagem nao le.
+    """
+    return retalho(700, 1960, seed, FOLHA)
+
+
+def desenha_A05_CARD(seed=105):
+    """
+    Cartao de copia impressa, em pe: `kit.photo_card()` deita o cartao (rotate 90) e
+    monta a foto ocupando 86,5% da largura, com margem inferior maior. Proporcao 4:5
+    para uma foto 3:2 ficar com margem branca grossa — e a margem que separa foto
+    escura de video escuro.
+    """
+    return retalho(760, 980, seed, CARTAO_FOTO, torto=0.02)
+
+
 # ------------------------------------------------------------------ A02_CLOCK
 def desenha_A02_CLOCK(seed=2):
     """
@@ -356,6 +442,8 @@ ASSETS = {
     "A02_CLOCK": desenha_A02_CLOCK,
     "A03_TAPE": desenha_A03_TAPE,
     "A04_CLIPS": desenha_A04_CLIPS,
+    "A05_CARD": desenha_A05_CARD,
+    "A05_SHEET": desenha_A05_SHEET,
     "A10_SCRAPS": desenha_A10_SCRAPS,
 }
 

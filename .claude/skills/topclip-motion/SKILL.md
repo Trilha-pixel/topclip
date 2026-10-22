@@ -20,10 +20,10 @@ Esta skill é um **kit fechado**, não só um método. Ver `IDENTIDADE.md`.
 | --- | --- |
 | `fontes/` | as 5 fontes da identidade, licenças livres, com os arquivos de licença |
 | `biblioteca/assets/` (raiz do repo) | os assets já feitos, reaproveitados entre vídeos — cresce com o uso |
-| `lib/` | o motor, o recorte, o CRT, a legenda, a transcrição, os dois templates |
-| `exemplo/` | o bloco de configuração de um clipe real, com o motivo de cada escolha |
+| `lib/` | o motor, o kit com as **receitas**, o recorte, o CRT, a legenda, a transcrição, os dois templates |
+| `exemplo/` | o bloco de configuração de um clipe real, e a galeria das receitas (`exemplo/receitas/`) |
 | `verificar.py` | checagem de instalação — rode antes do primeiro projeto |
-| `referencias/` | identidade, registros, transições, legenda, armadilhas, rubricas, prompts |
+| `referencias/` | identidade, registros, **receitas**, transições, legenda, armadilhas, rubricas, prompts |
 
 Quem instalar reproduz **este** visual, não um parecido.
 
@@ -74,13 +74,15 @@ Cada etapa tem uma trava. Não avance sem ela.
 | 2 | **Escolher frases** | tabela entra/não-entra com motivo | cada corte tem justificativa escrita |
 | 3 | **Assets** | PNG com alfa por objeto | biblioteca primeiro; o que faltar, desenhado em `lib/desenho.py` |
 | 4 | **Recortar** | PNG com alfa | só para asset de gerador de imagem; laudo D1 aprovado |
-| 5 | **Compor** | 4 estados por cena | laudo D2/D3 aprovado |
+| 5 | **Compor** | 4 estados por cena + folha `<cena>_ESTADOS.png` | laudo D2/D3 aprovado |
 | 6 | **Blueprint + transições** | um .md por cena + mapa | entrada e saída definidas |
-| 7 | **Legenda** | sequência RGBA de duração total | nenhuma palavra dita fica de fora |
-| 8 | **Render + mux** | master | duração, cadência e MD5 do áudio batem com a fonte |
+| 7 | **Legenda** | sequência RGBA de duração total | `captions.check()` passa: nenhuma palavra dita fica de fora |
+| 8 | **Render + mux** | `RASCUNHO.mp4` na revisão, master uma vez no fim | duração, cadência, quadros e MD5 do áudio batem (conferido sozinho) |
 
 Leia `referencias/rubricas-diretor.md` antes da etapa 4 e aplique em 4, 5 e 7.
-Escolha o registro de cada cena em `referencias/registros.md` **antes** de compor.
+Escolha o registro de cada cena em `referencias/registros.md` **antes** de compor, e
+procure a receita dele em `referencias/receitas.md` — o `compose.py` já vem com uma
+cena-exemplo pronta por receita.
 Legenda queimada: `referencias/legenda.md`. Saídas e transições: `referencias/transicoes.md`.
 Boil (o objeto redesenhado a cada passo): `referencias/boil.md`.
 
@@ -138,6 +140,10 @@ Nesta ordem — pare no primeiro que resolver:
    ```bash
    ./topclip py .claude/skills/topclip-motion/lib/desenho.py biblioteca/assets --so <NOME>
    ```
+
+   **Papel grande** (folha de caderno, quadriculado, kraft acima de ~450px) não se
+   amplia do `A10_SCRAPS`, que borra: `kit.scrap("pautado", w, h)` desenha o retalho no
+   tamanho de uso, com pauta e grade em escala de caderno real.
 
    O PNG já sai com alfa — pula a etapa 4. Regras: textura de papel ou material
    (`textura()`), borda nunca vetorial perfeita (`contorno()`), **nenhuma sombra
@@ -209,7 +215,18 @@ sem regerar imagem.
 são coerentes por construção — nenhum pode contradizer outro sem que o código esteja
 errado.
 
-Confira que `END` cai **depois** do último evento, senão o estado mostra texto pela metade.
+Confira que `END` cai **depois** do último evento, senão o estado mostra texto pela metade
+(`./topclip py compose.py --check`).
+
+`./topclip py compose.py` renderiza os estados de todas as cenas **em paralelo** e monta
+`08_images/frames/<cena>_ESTADOS.png`, os quatro lado a lado a 360px: revise essa folha.
+Overlay é julgado sobre o vídeo: com `<CENA>_T0` no compose, o plate de cada estado sai
+sozinho do `fonte.mp4`.
+
+**Comece pelas receitas** (`referencias/receitas.md`): fita-etiqueta, barras em
+hachura, item riscado pela tinta, etiqueta de preço com barbante, tira de papel no topo
+do vídeo, conta montada à mão. Cada uma é função do kit com cena-exemplo no
+`compose.py`. Texto com caractere que a fonte não tem gera aviso; o "≈" sai desenhado.
 
 Detalhes de paleta, tipografia, safe zones e sombras: `referencias/identidade.md`.
 Erros que já custaram retrabalho: `referencias/armadilhas.md` — **leia antes de compor**.
@@ -232,6 +249,20 @@ o mesmo prop voltando com outro estado.
 
 Use o `render.py` do projeto (vem de `lib/render_template.py`). **Montagem por sobreposição, nunca por corte-e-concatenação.**
 
+```bash
+./topclip py projetos/<nome>/motion/render.py --rascunho      # revisão: veryfast, RASCUNHO.mp4
+./topclip py projetos/<nome>/motion/render.py M2 --rascunho   # refez só a M2
+./topclip py projetos/<nome>/motion/render.py                 # o master final, UMA vez
+```
+
+O render confere a legenda e as saídas **antes** do primeiro quadro (erro em segundos,
+não depois de minutos), renderiza os quadros em vários processos e, depois de montar,
+confere sozinho duração, cadência, quadros e MD5 do áudio contra a fonte.
+
+**Legenda:** `janelas=captions.janelas_livres(SHOTS, DUR)` — coladas nas cenas, sem
+recuo — e `video=SRC`, que põe a legenda abaixo do queixo mais baixo das janelas
+(`referencias/legenda.md`).
+
 - cutaway = frames opacos; overlay = RGBA, e o plate nunca é reprocessado
 - a timeline pode ser 24fps mesmo com o clipe em 29,97: avalie cada frame de saída no
   tempo real (`frame24 = t × 24`, com fração). Converter cadência depois gera judder.
@@ -239,7 +270,8 @@ Use o `render.py` do projeto (vem de `lib/render_template.py`). **Montagem por s
   incompressível e leva o bitrate a 120 Mbps.
 
 **Verificação obrigatória do master**, contra a fonte: duração, cadência, contagem de
-frames e **MD5 do áudio** (`ffmpeg -i x.mp4 -map 0:a -f md5 -`).
+frames e **MD5 do áudio** (`ffmpeg -i x.mp4 -map 0:a -f md5 -`). O `render.py` faz isso
+sozinho no fim de cada montagem e para com erro se qualquer um diferir.
 
 ---
 

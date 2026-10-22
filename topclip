@@ -130,6 +130,8 @@ case "$cmd" in
     testes)
         precisa_venv
         (cd "$CORTE" && "$PY" -m unittest discover -s tests -t . -q)
+        echo "-- motion"
+        (cd "$MOTION" && "$PY" -m unittest discover -s tests -t . -q)
         echo "-- painel"
         cd "$ROOT/painel" && exec "$PY" -m unittest test_servidor -q
         ;;

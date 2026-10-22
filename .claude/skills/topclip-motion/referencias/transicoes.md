@@ -30,4 +30,7 @@ Os cutaways renderizam em **RGBA**: a área que a mesa liberou fica transparente
 quadro segue opaco e quem esconde o corte é a aceleração.
 
 A folha do `wipe` usa um papel **diferente** do fundo da mesa (cartão de algodão frio
-contra marfim), senão a passagem não lê.
+contra marfim), senão a passagem não lê. É o `A05_SHEET` da biblioteca, desenhado em
+`desenho.py` já no tamanho de uso (~0,62W × H, a saída estica pouco). Se faltar no
+projeto, o kit desenha na hora; e o `render.py` confere as saídas antes do primeiro
+quadro — tipo inválido para logo, e duas cenas seguidas com a mesma saída geram aviso.
