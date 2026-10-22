@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/img/banner.png" alt="TopClip — do podcast ao Short, dentro do Claude Code" width="100%">
+</p>
+
 # TopClip ✂️
 
 **Do podcast de 2 horas ao Short pronto — dentro do Claude Code.**
@@ -24,6 +28,7 @@ editorial com legenda queimada. Tudo rodando no seu computador, comandado pelo C
 | 🎨 **Coloca motion** | Cenas no estilo **TopClip Papel** — papel marfim, fita crepe, anotação à mão — ancoradas na palavra exata da fala. |
 | 💬 **Legenda queimada** | Palavra a palavra, sincronizada, com destaque só onde importa. |
 | 🧠 **100% Claude** | Os assets do motion são desenhados em código pelo próprio Claude. Sem gerador de imagem pago, sem API extra. |
+| 🖥️ **Painel no navegador** | Escolha momentos e cortes clicando, assista as prévias e acompanhe cada projeto — sem precisar entender de código. |
 
 ## Instalação
 
@@ -60,6 +65,29 @@ de momentos, depois os cortes para você assistir, depois o vertical, depois o m
 Você escolhe o que sobrevive.
 
 Tudo que você produz fica em `projetos/`, que nunca vai para o git.
+
+## O painel
+
+Para quem prefere clicar a digitar, o TopClip tem um painel que roda no seu computador:
+
+```bash
+./topclip painel
+```
+
+Ele abre no navegador (`http://127.0.0.1:7777`) e mostra seus projetos, os momentos que
+o Claude encontrou, as prévias dos cortes e os clipes prontos. Você **marca o que quer**
+ali mesmo e volta ao Claude dizendo *"escolhi no painel, pode seguir"*. Ainda não tem
+projeto? Clique em **Ver um exemplo**.
+
+Para começar um projeto, clique em **Novo projeto** e escolha o vídeo pelo Finder — ou
+simplesmente arraste o arquivo para o painel. Nada é copiado nem enviado: o painel só
+anota onde o vídeo está.
+
+<p align="center">
+  <img src="docs/img/painel-momentos.jpg" alt="Painel do TopClip: escolhendo os momentos de um podcast" width="100%">
+</p>
+
+O painel só existe no seu computador: escuta apenas em `127.0.0.1` e não aparece na rede.
 
 ## Como funciona
 
@@ -106,6 +134,7 @@ TopClip recorta e compõe.
 ## Comandos úteis
 
 ```bash
+./topclip painel         # abre o painel no navegador
 ./topclip verificar      # confere se está tudo pronto
 ./topclip testes         # roda a suíte de testes
 ./topclip ajuda          # lista todos os comandos
@@ -123,6 +152,7 @@ topclip/
 │   │   ├── topclip-corte/   cortes e vertical
 │   │   └── topclip-motion/  motion e legenda
 │   └── agents/              os 8 subagentes do pipeline de cortes
+├── painel/                  o painel local (Python puro + uma página web)
 ├── biblioteca/              assets reaproveitados entre vídeos
 └── projetos/                seus vídeos e resultados (fora do git)
 ```

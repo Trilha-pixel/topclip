@@ -142,7 +142,11 @@ ffmpeg -y -ss <IN> -to <OUT> -i <BRUTO> \
 exato) ou aceite a imprecisão e diga que é preview.
 
 Entregue os arquivos ao usuário e **pare**. Por clipe, uma linha: duração, o
-hook em citação literal, e o que a auditoria apontou (se apontou).
+hook em citação literal, e o que a auditoria apontou (se apontou). Os previews em
+`<run-dir>/preview/` aparecem no painel (`./topclip painel`, etapa Cortes) para ele
+assistir e marcar; se escolher por lá, os ids estão em `projetos/<nome>/escolhas.json`
+→ `cortes`. O `<NN>` do nome segue a ordem de `06-candidates.json`: é por ele que o painel
+casa cada preview com o seu corte.
 
 A fase 3 só começa depois que ele disser quais viram vertical. Renderizar
 vertical de 20 clipes para descobrir que 12 não prestam é o custo que este

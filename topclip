@@ -6,6 +6,7 @@
 #   ./topclip corte <subcomando>    motor de cortes (init, prepare, digest, autoframe, render...)
 #   ./topclip motion novo <pasta>   cria um projeto de motion a partir de um clipe vertical
 #   ./topclip motion transcrever <video> <saida.json>
+#   ./topclip painel                abre o painel no navegador (http://127.0.0.1:7777)
 #   ./topclip py <script.py> ...    roda qualquer script com o Python da venv
 #   ./topclip testes                roda a suíte de testes
 #
@@ -19,7 +20,7 @@ CORTE="$ROOT/.claude/skills/topclip-corte"
 MOTION="$ROOT/.claude/skills/topclip-motion"
 
 ajuda() {
-    sed -n '2,12p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 precisa_venv() {
@@ -91,13 +92,19 @@ case "$cmd" in
             *) echo "uso: ./topclip motion {novo|transcrever} ..." >&2; exit 2 ;;
         esac
         ;;
+    painel)
+        precisa_venv
+        exec "$PY" "$ROOT/painel/servidor.py" "$@"
+        ;;
     py)
         precisa_venv
         exec "$PY" "$@"
         ;;
     testes)
         precisa_venv
-        cd "$CORTE" && exec "$PY" -m unittest discover -s tests -t . -q
+        (cd "$CORTE" && "$PY" -m unittest discover -s tests -t . -q)
+        echo "-- painel"
+        cd "$ROOT/painel" && exec "$PY" -m unittest test_servidor -q
         ;;
     ajuda|-h|--help)
         ajuda

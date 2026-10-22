@@ -17,7 +17,7 @@ Arquitetura (a ordem importa):
 O enquadramento so "salta" onde ja existe corte de camera, que e onde salto e natural.
 """
 from __future__ import annotations
-import subprocess, re, math
+import subprocess, re, math, json
 import numpy as np
 
 try:  # como pacote (scripts.framing)
@@ -40,6 +40,8 @@ MAX_ZOOM    = 1.45    # teto de punch-in em plano aberto (fonte 1080p: acima dis
 TARGET_FACE_H = 0.16  # altura de rosto desejada como fracao da altura de saida
 CLOSEUP_W   = 0.085   # largura do rosto (fracao do frame) que caracteriza close
                       # medido: close ~0.12 | plano aberto ~0.03-0.05
+
+CUT_W, CUT_H = 256, 144  # frame que o AdaptiveDetector ve (o SceneManager tambem reduz a 256px)
 
 # amostra esparsa, antes da analise densa
 PROBE_EDGE  = 0.25    # s: amostra de borda fica dentro do plano, longe do frame do corte
@@ -67,25 +69,58 @@ def _detect_cuts(src, a, b, thresh=0.35):
     return merged, detector
 
 
-def _cuts_pyscenedetect(src, a, b):
-    """AdaptiveDetector compara cada frame com a media movel dos vizinhos, entao
-    pan e zoom de camera (mudanca gradual) nao viram corte - o limite fixo do
-    ffmpeg nao separa uma coisa da outra. None quando o pacote falta ou o video
-    nao abre: quem chama cai para o ffmpeg."""
+def _video_fps(src):
+    """(taxa como fracao do ffprobe, taxa em float) do primeiro stream de video."""
+    r=subprocess.run(["ffprobe","-v","error","-select_streams","v:0",
+                      "-show_entries","stream=avg_frame_rate,r_frame_rate","-of","json",src],
+                     capture_output=True,text=True)
     try:
-        from scenedetect import open_video, SceneManager
+        st=json.loads(r.stdout or "{}").get("streams",[{}])[0]
+    except (ValueError, IndexError):
+        return None
+    for k in ("avg_frame_rate","r_frame_rate"):
+        n,_,d=(st.get(k) or "0/0").partition("/")
+        try:
+            if float(n) > 0 and float(d or 1) > 0: return st[k], float(n)/float(d or 1)
+        except ValueError:
+            continue
+    return None
+
+
+def _cuts_pyscenedetect(src, a, b):
+    """AdaptiveDetector do PySceneDetect: compara cada frame com a media movel dos
+    vizinhos, entao pan e zoom de camera (mudanca gradual) nao viram corte - o
+    limite fixo do ffmpeg nao separa uma coisa da outra.
+
+    Quem decodifica e o ffmpeg, ja em CUT_W x CUT_H, nao o VideoCapture do
+    open_video(): este converte cada frame 1080p numa thread so e levava o dobro
+    do tempo de parede. A resolucao e a mesma que o SceneManager usaria (ele
+    tambem reduz para 256px). fps=<taxa nativa> deixa a saida em taxa constante,
+    entao t = a + n/fps vale ate em video VFR.
+    None quando o pacote falta ou a leitura falha: quem chama cai para o ffmpeg."""
+    try:
         from scenedetect.detectors import AdaptiveDetector
     except Exception:
         return None
+    taxa=_video_fps(src)
+    if taxa is None: return None
+    frac,fps=taxa
+    p=subprocess.Popen(["ffmpeg","-nostdin","-v","error","-ss",f"{a:.3f}","-i",src,"-t",f"{b-a:.3f}",
+                        "-vf",f"fps={frac},scale={CUT_W}:{CUT_H}","-f","rawvideo","-pix_fmt","bgr24","-"],
+                       stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    det=AdaptiveDetector(); fsize=CUT_W*CUT_H*3; out=[]; n=0
     try:
-        video=open_video(src)
-        if a > 0: video.seek(a)
-        sm=SceneManager()
-        sm.add_detector(AdaptiveDetector())
-        sm.detect_scenes(video, end_time=b)
-        return [inicio.get_seconds() for (inicio,_) in sm.get_scene_list()[1:]]
+        while True:
+            buf=p.stdout.read(fsize)
+            if len(buf) < fsize: break
+            frame=np.frombuffer(buf,np.uint8).reshape(CUT_H,CUT_W,3)
+            out+=[a+i/fps for i in det.process_frame(n, frame)]
+            n+=1
     except Exception:
-        return None
+        p.kill(); n=0
+    finally:
+        p.stdout.close(); p.wait()
+    return out if n else None
 
 
 def _cuts_ffmpeg(src, a, b, thresh=0.35):
@@ -116,41 +151,44 @@ def probe_times(a, b):
 
 
 def _probe_verdict(samples, ex):
-    """Le a amostra esparsa. Devolve (fixo, motivo): `fixo` quando o plano tem um
-    rosto so, parado e do mesmo tamanho em TODAS as amostras; senao None e o
-    motivo de cair na analise densa, que vai para o diagnostico.
+    """Le a amostra esparsa, uma a uma. Devolve (fixo, motivo, lidas): `fixo`
+    quando o plano tem um rosto so, parado e do mesmo tamanho em TODAS as
+    amostras; senao None e o motivo de cair na analise densa (vai para o
+    diagnostico). Para na primeira amostra que ja decide pela densa - numa mesa,
+    o primeiro frame basta, e os outros nem sao decodificados.
 
     Na duvida, densa: nenhum rosto, rosto sumindo ou frame ilegivel tambem caem
     nela, porque errar o crop custa mais que 5 fps de deteccao."""
-    if not samples: return None, "sem amostra"
-    if any(fs is None for _,fs in samples): return None, "frame da amostra nao decodificou"
-    faces=[[f for f in fs if not ex(f[0],f[1])] for _,fs in samples]
-    n=[len(fs) for fs in faces]
-    if max(n)==0: return None, "nenhum rosto na amostra"
-    if max(n)>1:  return None, f"{max(n)} rostos na amostra"
-    if min(n)==0: return None, f"rosto ausente em {n.count(0)} de {len(n)} amostras"
-    xs=[fs[0][0]*SRC_W/960.0 for fs in faces]
-    ws=[fs[0][2] for fs in faces]
-    anda=max(xs)-min(xs)
-    if anda >= DEADZONE:
-        return None, f"rosto andou {anda:.0f}px (deadzone {DEADZONE}px)"
-    zoom=(max(ws)-min(ws))/max(1e-6,float(np.median(ws)))
-    if zoom > PROBE_ZOOM_TOL:
-        return None, f"rosto mudou {zoom:.0%} de largura (zoom de camera)"
-    return {"cx":float(np.median(xs)),"w":float(np.median(ws)),"variacao_px":round(anda,1)}, None
+    xs=[]; ws=[]; lidas=0
+    for t,fs in samples:
+        lidas+=1
+        if fs is None: return None, f"frame em {t:.2f}s nao decodificou", lidas
+        fs=[f for f in fs if not ex(f[0],f[1])]
+        if not fs:     return None, f"nenhum rosto em {t:.2f}s", lidas
+        if len(fs)>1:  return None, f"{len(fs)} rostos em {t:.2f}s", lidas
+        xs.append(fs[0][0]*SRC_W/960.0); ws.append(fs[0][2])
+        anda=max(xs)-min(xs)
+        if anda >= DEADZONE:
+            return None, f"rosto andou {anda:.0f}px ate {t:.2f}s (deadzone {DEADZONE}px)", lidas
+        zoom=(max(ws)-min(ws))/max(1e-6,float(np.median(ws)))
+        if zoom > PROBE_ZOOM_TOL:
+            return None, f"rosto mudou {zoom:.0%} de largura ate {t:.2f}s (zoom de camera)", lidas
+    if not xs: return None, "sem amostra", lidas
+    return {"cx":float(np.median(xs)),"w":float(np.median(ws)),
+            "variacao_px":round(max(xs)-min(xs),1)}, None, lidas
 
 
 def _plan_single_shot(src, a, b, model, silences, zones):
     """Amostra esparsa primeiro; a analise densa so roda quando a amostra nao basta."""
     times=probe_times(a,b)
-    fixo,motivo=_probe_verdict(sample_faces(src,times,model), _excluder(zones))
+    fixo,motivo,lidas=_probe_verdict(sample_faces(src,times,model), _excluder(zones))
     if fixo:
         x=int(np.clip(round(fixo["cx"]-CROP_W/2),0,SRC_W-CROP_W))
         return [(a,x,CROP_W)], {"tipo":"close" if fixo["w"]/960.0 >= CLOSEUP_W else "unico",
                                 "tracks":1,"zoom":1.0,"caminho":"amostrado",
-                                "amostras":len(times),"variacao_px":fixo["variacao_px"]}
+                                "amostras":lidas,"variacao_px":fixo["variacao_px"]}
     keys,diag=_plan_dense(src,a,b,model,silences,zones)
-    diag.update({"caminho":"denso","amostras":len(times),"motivo":motivo})
+    diag.update({"caminho":"denso","amostras":lidas,"motivo":motivo})
     return keys,diag
 
 

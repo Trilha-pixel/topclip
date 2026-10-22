@@ -52,9 +52,58 @@ movimento de boca e energia do áudio.
 > correlação audiovisual, não a área. Movimento de boca sozinho já errou de
 > forma confirmável: num monólogo, o ouvinte passivo pontuou mais que o locutor.
 
-Requer `opencv-contrib-python` e `numpy` (opcionais — ver `INSTALAR.md`). Sem
-eles, caia para anchor por segmento e **declare** no plano que o enquadramento é
-manual. Não declare `autoframe` num plano que foi ancorado à mão.
+### Como ele decide, plano a plano
+
+1. **Cortes de câmera** com PySceneDetect (`AdaptiveDetector`, sobre frames que
+   o ffmpeg decodifica). Ele compara cada frame com a média dos vizinhos, então
+   pan e zoom de câmera não viram corte. Sem o pacote `scenedetect`, cai no
+   limite fixo do ffmpeg (`scene > 0.35`).
+2. **Amostra esparsa.** YuNet em só 3 frames do plano: início, meio e fim. Plano
+   com mais de 20s ganha 1 frame a cada ~5s, porque 3 fixos não veem a pessoa
+   sair do lugar no meio, nem a câmera zoomando dentro do corte (docs/12). A
+   amostra para no primeiro frame que já manda para a densa.
+3. **Um rosto só, parado e do mesmo tamanho em todas as amostras** → crop
+   estático na mediana. "Parado" é variar menos que o `DEADZONE` (55px na
+   fonte); "mesmo tamanho" é a largura do rosto variar até 25%. A análise
+   densa nem roda.
+4. **Qualquer outra coisa → análise densa** (5 fps + correlação boca × áudio,
+   com histerese): vários rostos, rosto que anda, zoom, rosto ausente em alguma
+   amostra, nenhum rosto, frame que não decodificou. Na dúvida, é densa: errar
+   o crop custa mais que alguns segundos de processamento.
+
+| Plano | Caminho | Por quê |
+| --- | --- | --- |
+| close parado, uma pessoa | `amostrado` | a amostra já basta para o crop |
+| mesa com 2+ pessoas | `denso` | precisa da correlação para achar quem fala |
+| uma pessoa que anda / câmera que zooma | `denso` | o crop estático cortaria gente |
+| B-roll, tela, sem rosto | `denso` | confere em 5 fps antes de centralizar |
+
+Rosto em zona de `--exclude-zones` (TV do cenário) não conta nem na amostra.
+
+**Diagnóstico.** Cada plano sai no relatório com `caminho` (`amostrado` ou
+`denso`), `amostras`, `motivo` (por que a amostra não bastou, ex.: `"3 rostos na
+amostra"`, `"rosto andou 320px (deadzone 55px)"`) e `detector_cortes`
+(`pyscenedetect` ou `ffmpeg`), e cada segmento ganha a contagem `caminhos`. O
+relatório sai com `./topclip py .claude/skills/topclip-corte/scripts/autoframe.py
+--video <v> --segments <segs.json> --out <rel.json>`; o `./topclip corte autoframe
+--run` só grava a timeline.
+
+**Custo.** A amostra para no primeiro frame que já decide pela densa: numa mesa,
+1 frame por plano. No caso simulado de `docs/12` (60s em 1080p, 4 planos), o
+tempo total de cortes + enquadramento caiu ~20–40% num podcast típico (três
+closes e uma mesa) e ~35–60% numa entrevista só de closes. Num programa que é
+mesa o tempo todo, todo plano cai na densa e a amostra vira custo a mais,
+~10–15%.
+
+**O limite da amostra.** O que acontece entre duas amostras e desfaz antes da
+seguinte não aparece: alguém que entra e sai do quadro em menos de ~5s num
+close parado. Num close isso não muda o crop certo. Se mudar, use
+`--exclude-zones` ou ancore o segmento à mão.
+
+Requer `opencv-contrib-python` e `numpy` (opcionais — ver `INSTALAR.md`); o
+`scenedetect` também é opcional. Sem `cv2`, caia para anchor por segmento e
+**declare** no plano que o enquadramento é manual. Não declare `autoframe` num
+plano que foi ancorado à mão.
 
 Valide antes de renderizar:
 

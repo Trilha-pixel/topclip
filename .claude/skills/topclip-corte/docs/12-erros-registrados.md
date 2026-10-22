@@ -71,6 +71,77 @@ somando as coordenadas de volta e removendo duplicata por proximidade de centro.
 2–5 fps já captura movimento de câmera e de pessoa num corte de 30–90s. Processar
 todo frame é caro e não muda a decisão de crop.
 
+### Close parado não precisa de 5 fps
+
+Sugestão de comentarista, adotada com uma ressalva. Antes, todo plano passava
+pela análise densa (5 fps de YuNet + boca × áudio), inclusive o close parado,
+em que o resultado já era um crop estático na mediana. Agora `_plan_single_shot`
+detecta primeiro em 3 frames (início, meio, fim) e só paga a densa quando a
+amostra não basta (ver `fases/3-vertical.md`). Não economiza token, porque a
+detecção já rodava em Python local. Economiza processamento.
+
+A ressalva é a de "A câmera do bruto zooma dentro do próprio corte": 3 frames
+fixos num plano de 39s não veem a câmera zoomando nem a pessoa saindo do lugar
+no meio. Por isso o plano com mais de 20s amostra 1 frame a cada ~5s, e uma
+largura de rosto que varia mais de 25% entre amostras manda para a densa. Em
+plano aberto com várias pessoas a amostra não decide nada, e ele vai direto
+para a densa.
+
+A amostra para no primeiro frame que já decide pela densa. Numa mesa, o primeiro
+frame mostra dois rostos e os outros nem são decodificados. Sem isso, o pior
+caso abaixo ficava 39–49% mais lento, em vez de 15%.
+
+Caso simulado: vídeo sintético 1080p30 H.264 a 6 Mb/s, 60s em 4 planos, GOP de
+2s. Decodificação, YuNet e envelope de áudio são reais; só a resposta do
+detector é simulada. Cada célula é o tempo de parede antes → depois, com as
+duas variantes intercaladas:
+
+| Cenário | Só enquadramento | Cortes + enquadramento | Caminhos |
+| --- | --- | --- | --- |
+| podcast típico: 3 closes + 1 mesa | 5,8s → 3,6s (−39%) | 7,8s → 5,8s (−26%) | amostrado ×3, denso ×1 |
+| entrevista só de closes | 5,6s → 2,4s (−57%) | 7,6s → 4,6s (−39%) | amostrado ×4 |
+| mesa o tempo todo (pior caso) | 6,0s → 6,9s (+15%) | 8,0s → 9,1s (+14%) | denso ×4, 1 amostra cada |
+
+Com GOP de ~8s, o total fica em −26%, −34% e +15%. A medição rodou numa
+máquina carregada (load 4–10, OBS aberto), e uma segunda rodada deu −20% no
+enquadramento do caso típico. Trate como faixa, não como ponto: **~20–40% a
+menos no podcast típico, ~35–60% em entrevista só de closes, ~10–15% a mais
+quando é mesa o tempo todo.** O tipo decidido (`close`/`aberto`) foi o mesmo
+antes e depois em todos os planos.
+
+O que custa: cada frame amostrado em 1080p leva ~150ms (GOP 2s) a ~220ms
+(GOP 8s). Quase tudo é decodificação desde o keyframe anterior; o spawn do
+ffmpeg é ~30ms. `-threads 1` e `-hwaccel videotoolbox` são **mais lentos** para
+um frame só. Amostrar no próprio keyframe cortaria esse custo; ainda não foi
+feito.
+
+### PySceneDetect: decodificar pelo ffmpeg, não pelo OpenCV
+
+O caminho do manual (`open_video` + `SceneManager`) usa o `VideoCapture` do
+OpenCV, que converte cada frame 1080p numa thread só: 4,5s por minuto de vídeo
+contra 2,0s do filtro `scene` do ffmpeg. `_cuts_pyscenedetect` deixa o ffmpeg
+decodificar (multithread, já em 256×144, que é a mesma resolução que o
+`SceneManager` usaria) e passa os frames ao `AdaptiveDetector.process_frame`:
+2,2s por minuto, com os mesmos cortes. No vídeo sintético ele achou um corte
+(35s) que o limite fixo de 0,35 do ffmpeg perdeu. Sem esse corte, a mesa e o
+close seguinte virariam um plano só de 40s.
+
+Armadilha, caso alguém volte ao `SceneManager`: `detect_scenes(video, end_time=6)`
+para no **frame 6**, não em 6s. `int` é número de frame para o PySceneDetect.
+Pego no teste com vídeo sintético: `(0, 6)` não achava cortes; `(1.0, 6.0)`
+achava. O teste `TestVideoSintetico.test_pyscenedetect_acha_os_cortes` passa
+inteiros de propósito.
+
+### Por que não YOLO (nota, sem dependência)
+
+Detector de rosto/pessoa da família YOLO via Ultralytics é mais robusto a perfil
+e oclusão que o YuNet, e seria a comparação natural. Fica de fora: o Ultralytics
+é **AGPL-3.0**, e o TopClip é MIT. Puxar AGPL como dependência do pipeline
+obrigaria o projeto inteiro a seguir a AGPL para quem o distribui ou serve. Se
+for comparar, faça fora do repositório e traga só o número. Um detector com
+pesos de licença permissiva também serve. O `mediapipe` já foi descartado por
+outro motivo (12.3).
+
 ### Tracks fragmentados competem consigo mesmos
 
 O tracker por vizinho mais próximo cria um track novo toda vez que perde e
@@ -83,6 +154,8 @@ contra si mesma e o score se dilui.
 | Erro | Sintoma | Correção |
 | --- | --- | --- |
 | `pip install opencv-contrib-python` sem versão | trava no 5.0.0, sem `readNetFromCaffe` e sem haarcascades | pinar `==4.10.0.84` |
+| `pip install scenedetect` sem teto | o 0.7 exige `opencv-python` e puxa o 5.0.0 junto do contrib, os dois brigando pelo mesmo `cv2` | `scenedetect>=0.6.4,<0.7,!=0.6.7.1`, sem extra `[opencv]` (o contrib já serve) |
+| `scenedetect==0.6.7.1` | rebaixa `click` para 8.2.1 e o `huggingface-hub` do faster-whisper (exige `>=8.4.2`) quebra no `pip check` | excluir o 0.6.7.1; o 0.6.7 não tem esse teto |
 | Insistir em `mediapipe` | `Check failed: service_ Service is unavailable` no `DrishtiMetalHelper`, mesmo com `delegate=CPU` | usar o detector do OpenCV |
 | Testar substring `"ass"` nos filtros do ffmpeg | casa com `lowpass`, `highpass`, `bass`, `allpass`, `bandpass` — falso positivo | casar por palavra inteira (já corrigido em `preflight.py`) |
 | `-c copy` para cortar | corta no keyframe errado, in/out não bate com o transcript | sempre recodificar |

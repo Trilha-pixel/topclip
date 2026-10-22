@@ -147,7 +147,9 @@ prestam", não "o que acontece no episódio".
 Diga quantos momentos você descartou e por quê, em uma linha. Momento
 descartado com motivo evita refazer a discussão depois.
 
-**Pare aqui.** Não rode `visual-index`, não invoque `clip-builder`, não corte
-nada. A fase 2 só começa depois que o usuário disser quais momentos viram corte
+**Pare aqui.** Diga que ele pode escolher na conversa ou no painel
+(`./topclip painel`, etapa Momentos). Se ele responder que escolheu no painel, os
+ids estão em `projetos/<nome>/escolhas.json` → `momentos`. Não rode `visual-index`,
+não invoque `clip-builder`, não corte nada. A fase 2 só começa depois que o usuário disser quais momentos viram corte
 — e ele pode cortar metade da sua lista, que é justamente por isso que o corte
 não foi feito antes.

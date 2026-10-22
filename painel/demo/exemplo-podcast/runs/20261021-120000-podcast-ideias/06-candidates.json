@@ -1,0 +1,23 @@
+{
+ "schema_version": "1.0",
+ "clips": [
+  {"id": "clip-001", "title": "O MVP de uma madrugada", "status": "APPROVE", "profile": "story",
+   "estimated_final_duration_seconds": 52,
+   "scores": {"hook": 9, "payoff": 9, "self_contained": 9, "shareability": 8, "truthfulness": 10},
+   "hard_fails": [],
+   "reconstructed_transcript": "Eu fiz o primeiro MVP numa madrugada. Não era bonito, mas no dia seguinte já tinha gente pagando. Seis meses planejando e o que funcionou foi uma noite.",
+   "why_it_can_work": "Abre com a história no auge e entrega a virada em menos de dez segundos."},
+  {"id": "clip-002", "title": "Medo de mostrar pela metade", "status": "APPROVE", "profile": "contrarian",
+   "estimated_final_duration_seconds": 44,
+   "scores": {"hook": 8, "payoff": 8, "self_contained": 9, "shareability": 9, "truthfulness": 10},
+   "hard_fails": [],
+   "reconstructed_transcript": "O problema nunca foi falta de ideia. Era medo de mostrar a ideia pela metade. Quando a gente começou a mostrar cedo, tudo andou.",
+   "why_it_can_work": "Quebra a crença comum logo na primeira frase."},
+  {"id": "clip-003", "title": "De dez para cinquenta reais", "status": "REBUILD", "profile": "money",
+   "estimated_final_duration_seconds": 61,
+   "scores": {"hook": 9, "payoff": 7, "self_contained": 7, "shareability": 8, "truthfulness": 8},
+   "hard_fails": ["contexto_insuficiente"],
+   "reconstructed_transcript": "A gente cobrava dez reais. Quando subimos para cinquenta, as vendas dobraram.",
+   "why_it_can_work": "Número concreto e contraintuitivo no gancho."}
+ ]
+}

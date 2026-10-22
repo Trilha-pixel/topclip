@@ -39,10 +39,33 @@ A pasta `projetos/` fica fora do git — nada do usuário sobe para o repositór
 
 ```text
 projetos/<nome>/
+  projeto.json     nome e caminho do vídeo (o painel cria)
+  escolhas.json    o que o usuário marcou no painel (momentos, cortes)
   runs/            as runs da topclip-corte (--workspace aponta aqui)
   motion/<clipe>/  um projeto da topclip-motion por clipe aprovado
   entregas/        os masters finais, um .mp4 por clipe
 ```
+
+**Chamado com uma pasta** (`/topclip projetos/<nome>`): o projeto já existe, criado
+pelo painel. Leia `projeto.json` — o vídeo está em `video`. Chamado com um vídeo:
+crie a pasta e o `projeto.json` (`{"nome", "video", "criado"}`) você mesmo, para o
+projeto aparecer no painel.
+
+## O painel
+
+`./topclip painel` abre uma interface local (http://127.0.0.1:7777) onde o usuário
+vê os momentos, assiste os cortes e **marca o que quer** — sem digitar horário no
+chat. Em cada portão, diga as duas opções: escolher aqui na conversa ou no painel.
+
+Quando ele disser que escolheu no painel, leia `projetos/<nome>/escolhas.json`:
+
+```json
+{"momentos": ["moment-001", "moment-004"], "cortes": ["clip-002"], "atualizado": "..."}
+```
+
+Os ids são os de `05-viral-moments.json` e `06-candidates.json`. Confirme em uma
+linha o que vai seguir ("seguindo com 2 momentos: …") e continue só com eles. Lista
+vazia ou arquivo ausente: pergunte, não presuma.
 
 ## 2. Cortes — skill `topclip-corte`
 

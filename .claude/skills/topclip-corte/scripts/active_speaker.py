@@ -81,18 +81,20 @@ def grab_frame(src, t, det_w=DET_W, det_h=DET_H):
 
 
 def sample_faces(src, times, model_path, det_w=DET_W, det_h=DET_H):
-    """Deteccao esparsa: [(t, [(cx,cy,w,h), ...])] so nos instantes pedidos.
+    """Deteccao esparsa: gera (t, [(cx,cy,w,h), ...]) so nos instantes pedidos.
 
-    Frame que nao decodifica volta como (t, None): amostra inconclusiva, e quem
+    Preguicoso de proposito: cada frame custa um GOP de decodificacao (~150-220ms
+    em 1080p), e quem ja decidiu no primeiro (ex.: viu dois rostos) para de pedir.
+
+    Frame que nao decodifica sai como (t, None): amostra inconclusiva, e quem
     chama deve tratar como motivo para a analise densa, nao como "sem rosto"."""
-    det = None; out = []
+    det = None
     for t in times:
         frame = grab_frame(src, t, det_w, det_h)
         if frame is None:
-            out.append((t, None)); continue
+            yield t, None; continue
         if det is None: det = _detector(model_path, det_w, det_h)
-        out.append((t, _faces(det, frame)))
-    return out
+        yield t, _faces(det, frame)
 
 
 def analyze_shot(src, t0, t1, model_path, silences=None, det_w=DET_W, det_h=DET_H):

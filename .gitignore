@@ -17,3 +17,9 @@ projetos/
 
 # Configuração pessoal do Claude Code
 .claude/settings.local.json
+
+# Configuração local do Claude Desktop
+.claude/launch.json
+
+# Pastas temporárias dos testes do painel
+.teste-painel-*/
