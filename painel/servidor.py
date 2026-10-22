@@ -92,12 +92,43 @@ def etapas(proj: Path, run: Path | None) -> dict:
     previews = list(run.glob("preview/*.mp4")) if run else []
     return {
         "momentos": "feito" if tem("05-viral-moments.json") else ("andamento" if run else "pendente"),
-        "cortes": "feito" if (previews or tem("06-candidates.json")) else "pendente",
+        "cortes": "feito" if (verticais or cortes_no_portao(run))
+                  else ("andamento" if (previews or tem("06-candidates.json")) else "pendente"),
         "vertical": "feito" if verticais else "pendente",
         "motion": "feito" if any(any((m / "12_master").glob("*.mp4")) for m in motion)
                   else ("andamento" if motion else "pendente"),
         "entrega": "feito" if entregas else "pendente",
     }
+
+
+# o que a fase 2 grava antes da nota dos cortes, o último passo antes do portão
+ANTES_DA_NOTA = ("07-feed-review.json", "08-technical-audit.json", "09-blind-review.json",
+                 "10-temporal-deduplication.json", "10-deduplication.json")
+
+
+def cortes_no_portao(run: Path | None) -> bool:
+    """A fase 2 parou no portão: é a vez da pessoa assistir e escolher os cortes.
+
+    O 06 e as prévias saem logo depois do Clip Builder, e as revisões (subagentes, que
+    não aparecem como processo) ainda levam minutos. O sinal é o último passo da fase,
+    `./topclip corte estimate --cortes`: a nota em todo corte do 06, e o 06 mais novo que
+    tudo o que a fase grava antes dela. Auditoria ou revisão mais nova que o 06 é rodada
+    nova em andamento — o rebuild regrava o 06 copiando a nota velha.
+    """
+    cand = run / "06-candidates.json" if run else None
+    if not cand or not cand.exists():
+        return False
+    doc = ler_json(cand, {}) or {}
+    if "estimate_gate" not in doc and "estimate_gate" not in (ler_json(run / "05-viral-moments.json", {}) or {}):
+        # run de antes do `estimate`: fica como era, o 06 basta. A nota nunca vai chegar, e
+        # exigir as revisões tiraria o aviso para sempre de quem não as tem — a cópia antiga
+        # do projeto de exemplo não tem 07 nem 09, e em aula-yt-teste o 09 é mais velho que o 06.
+        return True
+    cortes = doc.get("clips") or []
+    if not cortes or any(nota_estimada(c) is None for c in cortes):
+        return False
+    nota = cand.stat().st_mtime_ns
+    return all(p.stat().st_mtime_ns <= nota for p in (run / n for n in ANTES_DA_NOTA) if p.exists())
 
 
 def resumo(proj: Path) -> dict:
@@ -414,7 +445,7 @@ def atividade(proj: Path) -> dict:
         cand = run / "06-candidates.json" if run else None
         if mom and mom.exists() and not esc.get("momentos") and not (cand and cand.exists()):
             sua_vez = {"etapa": "momentos", "msg": "Os momentos estão prontos. Escolha quais viram corte."}
-        elif cand and cand.exists() and not esc.get("cortes") and not list(run.glob("output/final-clips/*/*/clip-vertical.mp4")):
+        elif cortes_no_portao(run) and not esc.get("cortes") and not list(run.glob("output/final-clips/*/*/clip-vertical.mp4")):
             sua_vez = {"etapa": "cortes", "msg": "Os cortes estão prontos. Assista e escolha quais viram vertical."}
 
     reais = [e for e in eventos if e.get("tipo") != "projeto"]
