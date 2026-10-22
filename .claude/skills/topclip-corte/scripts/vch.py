@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import shutil
@@ -22,6 +23,7 @@ from scripts.preflight import print_preflight, run_preflight
 from scripts.render import render_all
 from scripts.reports import consolidate_final, write_context_index, write_run_report
 from scripts.subtitles import build_caption_files
+from scripts.tempos import recalcular_plano, verificar_plano
 from scripts.transcribe import transcribe_faster_whisper
 from scripts.utils import (
     HarnessError,
@@ -37,6 +39,7 @@ from scripts.utils import (
     write_json,
 )
 from scripts.validation import ARTIFACT_SCHEMAS, validate_json_file, validate_project, validate_run_artifacts
+from scripts.versoes import hash_para, mensagem_desatualizadas, relevantes, sincronizar, tentar_sincronizar
 from scripts.visual_index import build_contact_sheets, extract_visual_index
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".mts", ".m2ts"}
@@ -367,6 +370,7 @@ def cmd_audit(args: argparse.Namespace) -> int:
         detect_silence=bool(silence_cfg.get("detect", True)) and bool(video),
     )
     set_stage(run, "technical_audit", "complete", artifacts=["08-technical-audit.json"])
+    tentar_sincronizar(run)
     _print_json(load_json(output))
     return 0
 
@@ -379,8 +383,35 @@ def cmd_dedupe(args: argparse.Namespace) -> int:
     output = run / "10-temporal-deduplication.json"
     result = temporal_dedupe_from_audit(load_json(audit_path), output)
     set_stage(run, "temporal_dedupe", "complete", artifacts=["10-temporal-deduplication.json"])
+    tentar_sincronizar(run)
     _print_json(result)
     return 0
+
+
+def _ids(raw: str | None) -> list[str]:
+    return [item.strip() for item in (raw or "").split(",") if item.strip()]
+
+
+def _registrar_overrides(run: Path, seguir: list[str], nao_seguir: list[str], motivo: str | None) -> dict[str, Any]:
+    """`--seguir`: o usuário manda um WEAK/REBUILD para render. Fica no manifesto,
+    amarrado à versão do corte, para o próximo `finalize` não esquecer."""
+    manifest = load_json(run / "00-manifest.json")
+    overrides = dict(manifest.get("user_overrides") or {})
+    conhecidos = {str(c.get("id")) for c in load_json(run / "06-candidates.json", {"clips": []}).get("clips", [])}
+    for clip_id in seguir:
+        if conhecidos and clip_id not in conhecidos:
+            raise HarnessError(f"--seguir: {clip_id} não está no 06-candidates.json")
+        overrides[clip_id] = {
+            "by": "usuario",
+            "motivo": motivo or "o usuário escolheu seguir mesmo abaixo do gate",
+            "em": now_iso(),
+            "segments_hash": hash_para(run, clip_id),
+        }
+    for clip_id in nao_seguir:
+        overrides.pop(clip_id, None)
+    if seguir or nao_seguir:
+        update_manifest(run, user_overrides=overrides)
+    return overrides
 
 
 def cmd_finalize(args: argparse.Namespace) -> int:
@@ -388,14 +419,39 @@ def cmd_finalize(args: argparse.Namespace) -> int:
     dedupe_path = run / "10-deduplication.json"
     if not dedupe_path.exists():
         write_json(dedupe_path, {"schema_version": "1.0", "decisions": []})
-    final, rejected = consolidate_final(run, config(run))
+    # Revisão feita sobre versão velha do corte daria status errado (REBUILD
+    # indevido, docs/12). Melhor parar aqui, dizendo o que refazer.
+    sync = sincronizar(run)
+    alvo = relevantes(run)
+    velhas = [item for item in sync["desatualizadas"] if alvo is None or item["clip_id"] in alvo]
+    if velhas:
+        raise HarnessError(mensagem_desatualizadas(velhas))
+    overrides = _registrar_overrides(run, _ids(args.seguir), _ids(args.nao_seguir), args.motivo)
+    hashes = {**sync["hashes"].get("06", {}), **sync["hashes"].get("11", {})}
+    final, rejected = consolidate_final(run, config(run), overrides=overrides, current_hashes=hashes)
     report = write_run_report(run, final, rejected)
     index = write_context_index(run, final)
     set_stage(run, "finalize", "complete", artifacts=[
         "13-final-clips.json", "14-rejected-clips.json", "15-run-report.md", "output/context-index.md"
     ])
     update_manifest(run, status="finalized")
-    _print_json({"approved": len(final.get("clips", [])), "rejected_or_other": len(rejected.get("clips", [])), "report": str(report), "index": str(index)})
+    seguidos = [str(c.get("id")) for c in final.get("clips", []) if c.get("user_override")]
+    ignorados = [
+        {"clip_id": str(c.get("id")), "status": c.get("status"),
+         "motivo": next(r for r in c.get("final_decision_reasons", []) if str(r).startswith("user_override_ignorado"))}
+        for c in rejected.get("clips", [])
+        if any(str(r).startswith("user_override_ignorado") for r in c.get("final_decision_reasons", []))
+    ]
+    resultado = {
+        "approved": len(final.get("clips", [])) - len(seguidos),
+        "user_override": seguidos,
+        "rejected_or_other": len(rejected.get("clips", [])),
+        "report": str(report),
+        "index": str(index),
+    }
+    if ignorados:
+        resultado["user_override_ignorado"] = ignorados
+    _print_json(resultado)
     return 0
 
 
@@ -518,6 +574,15 @@ def cmd_validate_artifact(args: argparse.Namespace) -> int:
     if not path.exists():
         raise HarnessError(f"Artefato não encontrado: {path}")
     errors = validate_json_file(path, schema)
+    if filename == "11-edit-plans.json" and not errors:
+        tempos_velhos = [p for plan in load_json(path).get("plans", []) for p in verificar_plano(plan)]
+        if tempos_velhos:
+            errors += [f"tempo_de_clipe_desatualizado: {p}" for p in tempos_velhos]
+            errors.append("Não recalcule à mão: `./topclip corte bordas --run <run>` recalcula legenda, cards, "
+                          "âncoras e punch-ins pela posição na fonte.")
+    if filename in {"06-candidates.json", "07-feed-review.json", "09-blind-review.json",
+                    "11-edit-plans.json", "12-quality-review.json"}:
+        tentar_sincronizar(run)
     result = {"file": str(path), "schema": schema, "valid": not errors, "errors": errors}
     _print_json(result)
     return 0 if not errors else 3
@@ -525,6 +590,7 @@ def cmd_validate_artifact(args: argparse.Namespace) -> int:
 
 def cmd_blind_packets(args: argparse.Namespace) -> int:
     run = ensure_run_dir(args.run)
+    sync = tentar_sincronizar(run) or {"desatualizadas": []}
     candidates = load_json(run / "06-candidates.json")
     feed_by_id = {str(item.get("clip_id")): item for item in load_json(run / "07-feed-review.json", {"reviews": []}).get("reviews", [])}
     audit_by_id = {str(item.get("clip_id")): item for item in load_json(run / "08-technical-audit.json", {"clips": []}).get("clips", [])}
@@ -557,7 +623,11 @@ def cmd_blind_packets(args: argparse.Namespace) -> int:
         write_json(path, packet)
         packets.append(str(path.relative_to(run)))
     set_stage(run, "blind_packets", "complete", artifacts=packets)
-    _print_json({"count": len(packets), "packets": packets})
+    resultado: dict[str, Any] = {"count": len(packets), "packets": packets}
+    velhas = [d for d in sync["desatualizadas"] if d["arquivo"] == "07-feed-review.json"]
+    if velhas:
+        resultado["aviso"] = mensagem_desatualizadas(velhas)
+    _print_json(resultado)
     return 0
 
 def cmd_autoframe(args: argparse.Namespace) -> int:
@@ -587,12 +657,69 @@ def cmd_autoframe(args: argparse.Namespace) -> int:
         segs = plan.get("timeline", [])
         if not segs:
             continue
+        antiga = copy.deepcopy(segs)
         timeline, _ = plan_segments(video, segs, str(model), silences, zones)
         plan["timeline"] = timeline
+        # Os subsegmentos herdam clip_start/clip_end do segmento de origem;
+        # sem recalcular, a legenda/cards do plano ficavam apontando errado.
+        recalcular_plano(plan, antiga, dividido=True, origem="autoframe")
         total += len(timeline)
     write_json(plans_path, doc)
     print(f"autoframe: {len(doc.get('plans', []))} plano(s), {total} subsegmento(s)")
     return 0
+
+
+def cmd_bordas(args: argparse.Namespace) -> int:
+    """Leva as bordas de segmento para o vale de energia e recalcula os tempos de clipe."""
+    from scripts.bordas import ajustar_bordas_run
+
+    run = ensure_run_dir(args.run)
+    tentar_sincronizar(run)  # registra a versão de antes, para a data da mudança sair certa
+    relatorio = ajustar_bordas_run(run, args.arquivo, config(run).get("bordas"))
+    sync = tentar_sincronizar(run)
+    alvo = "06" if relatorio["arquivo"].startswith("06") else "11"
+    set_stage(run, f"bordas-{alvo}", "complete", artifacts=[relatorio["arquivo"], f"iterations/bordas-{alvo}.json"])
+    resumo = {
+        "arquivo": relatorio["arquivo"],
+        "gravou": relatorio["gravou"],
+        "clipes": [{k: v for k, v in clip.items() if k != "decisoes"} for clip in relatorio["clipes"]],
+        "detalhe": f"iterations/bordas-{alvo}.json",
+    }
+    if sync and sync["desatualizadas"]:
+        resumo["revisoes_desatualizadas"] = len(sync["desatualizadas"])
+    _print_json(resumo)
+    return 0
+
+
+def cmd_revisoes(args: argparse.Namespace) -> int:
+    """Portão antes da revisão cega e do Quality Controller: nada revisado sobre versão velha."""
+    run = ensure_run_dir(args.run)
+    sync = sincronizar(run)
+    alvo = relevantes(run)
+    velhas = [item for item in sync["desatualizadas"] if alvo is None or item["clip_id"] in alvo]
+    planos: list[str] = []
+    if (run / "11-edit-plans.json").exists():
+        for plan in load_json(run / "11-edit-plans.json").get("plans", []):
+            if alvo is None or str(plan.get("clip_id")) in alvo:
+                planos += verificar_plano(plan)
+    proximo = []
+    if velhas:
+        refazer: dict[str, list[str]] = {}
+        for item in velhas:
+            refazer.setdefault(item["refazer_com"], []).append(item["clip_id"])
+        proximo += [f"refazer com `{agente}`: {', '.join(sorted(set(ids)))}" for agente, ids in refazer.items()]
+    if planos:
+        proximo.append("rodar `./topclip corte bordas --run <run>` (recalcula os tempos de clipe sozinho)")
+    resultado = {
+        "limpo": not velhas and not planos,
+        "clipes_conferidos": sorted(alvo) if alvo is not None else "todos do 06",
+        "desatualizadas": velhas,
+        "planos_com_tempo_velho": planos,
+        "carimbadas_agora": len(sync["carimbadas"]),
+        "proximo": proximo or ["pode seguir"],
+    }
+    _print_json(resultado)
+    return 0 if resultado["limpo"] else 3
 
 
 def cmd_validate_project(_: argparse.Namespace) -> int:
@@ -646,12 +773,26 @@ def build_parser() -> argparse.ArgumentParser:
 
     for name, func in [
         ("audit", cmd_audit), ("dedupe", cmd_dedupe),
-        ("finalize", cmd_finalize), ("subtitles", cmd_subtitles), ("render", cmd_render),
+        ("subtitles", cmd_subtitles), ("render", cmd_render),
         ("verify-output", cmd_verify_output), ("validate-run", cmd_validate_run),
+        ("revisoes", cmd_revisoes),
     ]:
         p = sub.add_parser(name)
         p.add_argument("--run", required=True)
         p.set_defaults(func=func)
+
+    p = sub.add_parser("finalize")
+    p.add_argument("--run", required=True)
+    p.add_argument("--seguir", help="clip_ids (vírgula) que o usuário manda para render mesmo WEAK/REBUILD")
+    p.add_argument("--motivo", help="o que o usuário disse ao mandar seguir")
+    p.add_argument("--nao-seguir", help="clip_ids (vírgula) para desfazer um --seguir anterior")
+    p.set_defaults(func=cmd_finalize)
+
+    p = sub.add_parser("bordas")
+    p.add_argument("--run", required=True)
+    p.add_argument("--arquivo", choices=["auto", "06", "11"], default="auto",
+                   help="auto = 11 se existir (depois do Edit Director), senão 06 (depois do Clip Builder)")
+    p.set_defaults(func=cmd_bordas)
 
     p = sub.add_parser("prepare")
     p.add_argument("--run", required=True)

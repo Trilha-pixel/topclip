@@ -30,6 +30,21 @@ nenhuma metade fica preta e nada distorce. Os 1312px restantes recebem o crop
 fechado. Fonte já vertical **não aceita** `split`: o render recusa, e recusar é
 melhor que entregar torto.
 
+Logo depois do Edit Director, as bordas dele — inclusive as dos cortes de
+respiro, que são novas — vão para o vale de energia:
+
+```bash
+./topclip corte bordas --run <run-dir>
+```
+
+É o mesmo comando da fase 2; com `11-edit-plans.json` presente ele trabalha no
+plano e não toca no 06 (então as revisões 07/09 continuam valendo). Ao mover uma
+borda, **recalcula sozinho todos os tempos de clipe do plano** pela posição na
+fonte: `clip_start`/`clip_end` da timeline, `captions.chunks`, `cards`,
+`motion_anchors`, `punch_ins`, `breath_cut_before` e `breath_decupage`. Coisa
+grudada num corte (punch-in que entra no corte) acompanha o corte; coisa no meio
+de um segmento acompanha a fala.
+
 Ordem de preferência do enquadramento:
 
 1. locutor ativo rastreado (`autoframe`);
@@ -43,7 +58,9 @@ Ordem de preferência do enquadramento:
 ./topclip corte autoframe --run <run-dir>
 ```
 
-Reescreve `timeline` de cada plano com `crop_anchor_x` e `zoom` por subsegmento.
+Reescreve `timeline` de cada plano com `crop_anchor_x` e `zoom` por subsegmento,
+e recalcula os tempos de clipe de cada subsegmento (eles herdavam o
+`clip_start`/`clip_end` do segmento inteiro).
 Detecta rostos com YuNet e decide **quem está falando** por correlação entre
 movimento de boca e energia do áudio.
 
@@ -139,7 +156,25 @@ in/out — devolva ao Clip Builder em vez de costurar aqui.
 > correto contra o clipe renderizado e a `topclip-motion` continua ancorando motion
 > no frame exato da palavra. Verificado no motor — não é suposição.
 
+> **O plano também.** Mudou uma borda no 11 — por pedido do usuário, à mão —
+> **não recalcule nada à mão**: rode `./topclip corte bordas --run <run-dir>`. Cada
+> segmento guarda em `synced_source` a fonte com que os tempos de clipe dele foram
+> calculados, e é por ele que o script sabe o que mudou. O
+> `validate-artifact` do 11 acusa `tempo_de_clipe_desatualizado` se alguém
+> esquecer. Na run de `docs/12` (12.7), recalcular à mão custou duas rodadas de QC.
+
 ## 4. Quality Controller pré-render
+
+**Antes** de chamar o QC, o portão das revisões:
+
+```bash
+./topclip corte revisoes --run <run-dir>
+```
+
+Confere os clipes do 11: nenhuma revisão (07, 09) feita sobre versão anterior do
+corte e nenhum plano com tempo de clipe velho. Se não sair `limpo: true`, refaça
+o que ele lista **agora** — revisão de feed velha descoberta só no `finalize`
+foi o que fez a run de `docs/12` rodar o QC duas vezes.
 
 Subagente `quality-controller` → `12-quality-review.json`. O revisor deve tentar
 **derrubar** a seleção, não confirmar o trabalho anterior. Valide, depois:
@@ -149,7 +184,27 @@ Subagente `quality-controller` → `12-quality-review.json`. O revisor deve tent
 ```
 
 Gera `13-final-clips.json`, `14-rejected-clips.json`, `15-run-report.md` e
-`output/context-index.md`.
+`output/context-index.md`. Se alguma revisão dos clipes do 11 for de versão
+velha do corte, o `finalize` **para** e diz o que refazer, em vez de consolidar
+status errado.
+
+### Quando o usuário manda seguir mesmo assim
+
+Clipe abaixo do gate (`WEAK`) ou que a revisão mandou refazer (`REBUILD`) só vai
+para render se o **usuário** disser que quer seguir. Aí:
+
+```bash
+./topclip corte finalize --run <run-dir> --seguir clip-005,clip-010 \
+  --motivo "usuário quer publicar mesmo com nota 6,9"
+```
+
+O clipe entra no `13-final-clips.json` com `user_override` (quem, quando, o que
+ele disse) e o render aceita. O status **não muda**: continua `WEAK` no
+relatório, numa seção própria. A decisão fica no manifesto e vale para os
+próximos `finalize` — enquanto o corte for o mesmo; mudou o corte, pergunte de
+novo. `REJECTED` (hard fail) e `DUPLICATE` não se forçam. Para desfazer:
+`--nao-seguir clip-005`. Nunca chame `render_clip` direto para contornar o
+gate.
 
 ## 5. Render
 
@@ -158,6 +213,7 @@ Gera `13-final-clips.json`, `14-rejected-clips.json`, `15-run-report.md` e
 ./topclip corte render --run <run-dir>
 ```
 
+O `render` faz os `APPROVED`, os `LONG_CLIP` e os que têm `user_override`.
 `subtitles` roda **mesmo sem queimar legenda**: os `.srt`/`.ass` são a decupagem
 por clipe, com timing por palavra, e é o que a `topclip-motion` usa depois para
 ancorar cada evento de motion no frame exato da palavra dita. Não pule.

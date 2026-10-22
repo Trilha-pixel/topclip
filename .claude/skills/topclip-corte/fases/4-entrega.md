@@ -71,6 +71,8 @@ Só declare sucesso quando:
 - durações renderizadas dentro da tolerância;
 - Quality Gate pós-render válido;
 - o relatório separar aprovado, rebuild, duplicate, long clip e rejeitado;
+- clipe que seguiu por decisão do usuário (`user_override`) aparecer como tal,
+  com o status que tinha — não como aprovado;
 - cada clipe aprovado tiver promessa clara e payoff verificável.
 
 ## 6. Auto-rejeição — reportar sempre

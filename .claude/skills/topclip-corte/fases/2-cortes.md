@@ -56,6 +56,30 @@ mais fazem o corte parecer natural em vez de amputado.
 
 Se o hook é >50% do clipe, **não use hook — faça linear.**
 
+### Bordas no vale de energia — script, não ouvido
+
+O timing por palavra do Whisper erra 0,1–0,5s em palavras coladas: a borda que
+cai na "fronteira" que ele deu pega a cauda da palavra anterior ou corta a
+última sílaba. Logo depois do Clip Builder, sempre:
+
+```bash
+./topclip corte bordas --run <run-dir>
+```
+
+Para cada borda de segmento que é corte de verdade, mede a energia (RMS a 10ms)
+e leva a borda ao vale: borda já em silêncio claro (< -50 dB) fica; senão vai
+ao silêncio mais próximo em ±0,15s; sem silêncio, ao ponto mais baixo se passar
+de -40 dB. Nunca atravessa palavra — a borda só cai no vão entre duas palavras,
+e nenhuma palavra entra ou sai do corte por causa dela. Eventos, beats e duração
+estimada do candidato são recalculados juntos.
+
+Sem vale abaixo de -40 dB, a borda não se mexe e o clipe ganha `borda_fraca` em
+`warnings`: é fala colada de verdade. Escolha outra borda numa pausa real e rode
+de novo, ou deixe, se não houver pausa ali (o aviso viaja com o clipe até o QC).
+**Não meça RMS à mão** — foi o que custou 13,5 min da fase 3 na run de `docs/12`
+(12.7). O detalhe de cada borda fica em `iterations/bordas-06.json` e em
+`edge_audio` no próprio segmento; rodar de novo não mexe no que já foi medido.
+
 ### Recursos visuais do próprio bruto
 
 Antes de fechar in/out, olhar os frames. O bruto costuma já ter card de título,
@@ -98,8 +122,23 @@ repetição de highlight, intervalos inválidos, gaps, palavras por segundo,
 silêncio. Leia `08-technical-audit.json` e devolva todo hard fail ao Clip
 Builder.
 
-Para status `REBUILD`: `Clip Builder → Feed Psychology → Auditoria`, até
-`max_rebuild_attempts`. Depois do limite, `REJECTED` com motivo explícito.
+Para status `REBUILD`: `Clip Builder → bordas → Feed Psychology → Auditoria`,
+até `max_rebuild_attempts`. Depois do limite, `REJECTED` com motivo explícito.
+
+### Revisão vale para uma versão do corte
+
+Cada entrada de `07`, `09` e `12` é carimbada pelo script com `segments_hash`, a
+versão do corte que o revisor viu. Mudou o corte depois (rebuild, borda movida à
+mão), a revisão daquele clipe fica velha — e só a dele. O ajuste do `bordas`
+**não** conta como versão nova: não tira nem põe palavra.
+
+```bash
+./topclip corte revisoes --run <run-dir>
+```
+
+Sai `limpo: true` ou a lista do que refazer, com o subagente de cada item. Rode
+antes da revisão cega e antes do corte de preview. Não carimbe nada à mão: ao
+reenviar um clipe ao revisor, a entrada nova vai sem `segments_hash`.
 
 ## 4. Blind Reviewer
 
@@ -107,7 +146,8 @@ Para status `REBUILD`: `Clip Builder → Feed Psychology → Auditoria`, até
 ./topclip corte blind-packets --run <run-dir>
 ```
 
-Para cada sobrevivente, leia **somente** seu arquivo em `blind-packets/` e envie
+Se a saída trouxer `aviso` (revisão de feed velha), refaça a revisão de feed
+desses clipes antes. Para cada sobrevivente, leia **somente** seu arquivo em `blind-packets/` e envie
 o conteúdo inline ao subagente `blind-reviewer`. Esse agente não tem ferramenta
 local de leitura, busca ou execução — a única declarada não é local e deve
 permanecer sem uso. Não envie título promocional, contexto completo, score nem

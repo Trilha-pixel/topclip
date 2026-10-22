@@ -146,6 +146,14 @@
             "items": {
               "type": "string"
             }
+          },
+          "segments_hash": {
+            "type": "string",
+            "description": "Versão do corte que esta revisão viu (hash da cobertura na fonte). Gravado pelo script (scripts/versoes.py), não pelo revisor; 'versao-anterior' = feita antes da última mudança do corte."
+          },
+          "stamped_content": {
+            "type": "string",
+            "description": "Impressão do conteúdo da entrada no momento do carimbo. Se a entrada for reescrita, o script carimba de novo."
           }
         },
         "additionalProperties": true

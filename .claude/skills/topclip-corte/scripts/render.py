@@ -299,6 +299,7 @@ def render_clip(
         "profile": clip.get("profile"),
         "tags": clip.get("tags", []),
         "status": clip.get("status"),
+        "user_override": clip.get("user_override"),
         "scores": clip.get("scores", {}),
         "events": clip.get("events", {}),
         "segments": clip.get("segments", []),
@@ -327,7 +328,9 @@ def render_all(
     plans = {str(plan["clip_id"]): plan for plan in edit_plans.get("plans", [])}
     rendered = []
     for clip in final_clips.get("clips", []):
-        if clip.get("status") not in {"APPROVED", "LONG_CLIP"}:
+        # `user_override`: o usuário mandou seguir um WEAK/REBUILD (ver
+        # reports.consolidate_final). O status continua o que era.
+        if clip.get("status") not in {"APPROVED", "LONG_CLIP"} and not clip.get("user_override"):
             continue
         clip_id = str(clip.get("id"))
         plan = plans.get(clip_id)

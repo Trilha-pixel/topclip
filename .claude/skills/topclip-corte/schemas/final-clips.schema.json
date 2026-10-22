@@ -306,6 +306,39 @@
           "rebuild_attempt": {
             "type": "integer",
             "minimum": 0
+          },
+          "segments_hash": {
+            "type": "string",
+            "description": "Versão do corte consolidada (hash da timeline do 11, ou dos segmentos do 06)."
+          },
+          "user_override": {
+            "type": "object",
+            "description": "O usuário mandou seguir um clipe WEAK/REBUILD. O render aceita; o status continua o que era.",
+            "required": [
+              "motivo",
+              "em"
+            ],
+            "properties": {
+              "by": {
+                "type": "string"
+              },
+              "motivo": {
+                "type": "string"
+              },
+              "em": {
+                "type": "string"
+              },
+              "segments_hash": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "status_kept": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": true
           }
         },
         "additionalProperties": true
