@@ -126,7 +126,9 @@ TopClip recorta e compõe.
 
 - **O Claude Code exige um plano pago** (Pro ou Max) ou chave de API. O TopClip em si
   é gratuito; o pipeline usa bastante contexto, então vídeos muito longos consomem mais.
-- **A primeira transcrição baixa ~1,5 GB** de modelo (faster-whisper). Depois fica em cache.
+- **A primeira transcrição baixa os modelos**: ~0,5 GB para os cortes e ~1,6 GB para o
+  motion. Depois ficam em cache. Em Mac com chip M1 ou mais novo, a transcrição dos
+  cortes roda na placa de vídeo, 2 a 2,5x mais rápida, e o painel mostra o avanço.
 - **Ninguém garante viral.** O TopClip estima o que tem potencial; o resultado real só
   a plataforma diz.
 - **Corte só o que você tem direito de usar.** Conteúdo de terceiros exige autorização.

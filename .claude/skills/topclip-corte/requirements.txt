@@ -4,6 +4,8 @@ jsonschema>=4.0
 
 # Opcional: transcricao automatica quando nao ha legenda pronta
 faster-whisper>=1.0
+# Mac com Apple Silicon: mlx-whisper (GPU) e instalado pelo instalar.sh da raiz,
+# com --no-deps para nao puxar o torch. Ver transcription.backend no config.
 
 # Opcional: enquadramento por locutor ativo (autoframe).
 # O pin nao e capricho - 5.0.0 removeu cv2.dnn.readNetFromCaffe e quebra o detector.

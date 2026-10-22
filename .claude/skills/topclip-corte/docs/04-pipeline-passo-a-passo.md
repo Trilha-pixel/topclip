@@ -65,7 +65,7 @@ Ordem de preferência:
 
 1. transcript fornecido com palavra e timestamp;
 2. transcript fornecido por segmento;
-3. faster-whisper local;
+3. Whisper local — mlx-whisper (GPU, Apple Silicon) ou faster-whisper (CPU/CUDA);
 4. outro backend configurado;
 5. falha explícita.
 

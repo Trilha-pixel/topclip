@@ -397,6 +397,9 @@ main { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 48px) 1
 @keyframes pulsa { 0%, 100% { box-shadow: 0 0 0 0 rgba(46, 130, 247, 0.55); } 50% { box-shadow: 0 0 0 7px rgba(46, 130, 247, 0); } }
 .ativ-agora { font-size: 15px; color: var(--tinta); flex: 1; min-width: 220px; }
 .ativ-agora small { display: block; color: var(--tinta-3); font: 500 12px/1.4 var(--mono); margin-top: 3px; }
+.ativ-agora small.ativ-progresso { color: var(--azul); }
+.ativ-barra { display: block; width: min(320px, 100%); height: 5px; margin: 6px 0 5px; border-radius: 999px; background: var(--papel-fundo); border: 1px solid var(--papel-borda); overflow: hidden; }
+.ativ-barra i { display: block; height: 100%; background: var(--azul); transition: width 0.6s ease; }
 .ativ-lista { list-style: none; margin: 16px 0 0; padding: 14px 0 0; border-top: 1.5px dashed var(--papel-borda); display: grid; gap: 7px; max-height: 360px; overflow: auto; }
 .ativ-lista li { display: grid; grid-template-columns: 74px 20px 1fr; gap: 8px; align-items: baseline; font-size: 14px; color: var(--tinta-2); }
 .ativ-lista li:first-child { color: var(--tinta); font-weight: 600; }

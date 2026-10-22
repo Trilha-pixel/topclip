@@ -225,6 +225,28 @@ class Atividade(ComProjetosTemporarios):
         S.salvar_escolhas(self.proj, {"momentos": ["moment-001"]})
         self.assertEqual(S.atividade(self.proj)["estado"], "avisar_claude")
 
+    def test_progresso_vai_para_a_manchete_do_comando_rodando(self):
+        import os
+        S.ATV.main(["inicio", str(self.proj), "id5", str(os.getpid()), "corte", "prepare", "--run", "projetos/diario/runs/r"])
+        for pct in (10, 20, 30):
+            S.ATV.registrar(self.proj, f"transcrevendo ({pct}%)", tipo="progresso", pct=pct)
+        a = S.atividade(self.proj)
+        self.assertEqual(a["estado"], "rodando")
+        self.assertEqual((a["rodando"]["progresso"], a["rodando"]["pct"]), ("transcrevendo (30%)", 30))
+        self.assertFalse([e for e in a["eventos"] if e["tipo"] == "progresso"])   # não entope a lista
+
+    def test_progresso_sem_comando_fica_so_o_mais_recente(self):
+        for pct in (10, 20, 30):
+            S.ATV.registrar(self.proj, f"transcrevendo ({pct}%)", tipo="progresso", pct=pct)
+        a = S.atividade(self.proj)
+        self.assertEqual(a["estado"], "ativo")
+        self.assertEqual([e["msg"] for e in a["eventos"] if e["tipo"] == "progresso"], ["transcrevendo (30%)"])
+        self.assertEqual(a["eventos"][0]["msg"], "transcrevendo (30%)")
+        S.ATV.registrar(self.proj, "transcrição pronta", tipo="info")   # depois dela, o progresso sai
+        a = S.atividade(self.proj)
+        self.assertEqual(a["eventos"][0]["msg"], "transcrição pronta")
+        self.assertFalse([e for e in a["eventos"] if e["tipo"] == "progresso"])
+
     def test_anotar_nunca_quebra(self):
         S.ATV.registrar(self.tmp / "nao-existe", "x")          # pasta inexistente: ignora
         self.assertEqual(S.ATV.main(["fim", "lixo"]), 0)       # argumentos faltando: ignora

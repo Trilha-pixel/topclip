@@ -3,7 +3,7 @@
 # No Windows, use o WSL (Ubuntu) e rode este mesmo script lá dentro.
 #
 #   ./topclip instalar            instala tudo
-#   ./topclip instalar --sem-whisper   pula o faster-whisper (~1,5 GB de modelo na 1ª transcrição)
+#   ./topclip instalar --sem-whisper   pula a transcrição (faster-whisper e mlx-whisper)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -72,6 +72,21 @@ if [ "$COM_WHISPER" = 1 ]; then
 else
     grep -v -i "faster-whisper" "$ROOT/requirements.txt" > "$VENV/requirements-sem-whisper.txt"
     "$VENV/bin/python" -m pip install --quiet -r "$VENV/requirements-sem-whisper.txt"
+fi
+
+# Mac com Apple Silicon: transcrição na GPU (mlx-whisper), 2 a 2,5x mais rápida que
+# o faster-whisper na CPU (medido num M2), que fica instalado como reserva. --no-deps porque o
+# mlx-whisper lista o torch (~400 MB) só para um módulo de teste que nunca é
+# carregado; as dependências que ele usa de fato vão na linha de cima. Falhar aqui
+# (macOS antigo, sem rede) não para a instalação: a transcrição cai na CPU.
+if [ "$COM_WHISPER" = 1 ] && "$VENV/bin/python" -c 'import platform, sys; sys.exit(0 if sys.platform == "darwin" and platform.machine() == "arm64" else 1)'; then
+    passo "Transcrição na GPU do Mac (mlx-whisper)"
+    if "$VENV/bin/python" -m pip install --quiet "mlx>=0.11" numba scipy tiktoken more-itertools tqdm huggingface_hub \
+        && "$VENV/bin/python" -m pip install --quiet --no-deps "mlx-whisper>=0.4.3,<0.5"; then
+        echo "mlx-whisper instalado: a transcrição usa a GPU do Mac"
+    else
+        echo "aviso: mlx-whisper não instalou; a transcrição vai usar a CPU (faster-whisper), mais devagar"
+    fi
 fi
 
 passo "Modelo de detecção de rosto (YuNet, OpenCV Zoo, licença MIT)"

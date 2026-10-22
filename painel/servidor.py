@@ -370,6 +370,19 @@ def atividade(proj: Path) -> dict:
     run = run_mais_recente(proj)
     eventos += eventos_de_arquivos(proj, run)
     eventos.sort(key=lambda e: e["ts"], reverse=True)
+
+    # Progresso (a transcrição anota algumas vezes por minuto): só o mais recente
+    # vale. Com o comando rodando, ele vai para a manchete; sem comando, fica no
+    # topo da lista enquanto nada mais novo acontecer.
+    progresso = next((e for e in eventos if e.get("tipo") == "progresso"), None)
+    eventos = [e for e in eventos if e.get("tipo") != "progresso"]
+    if rodando:
+        if not (progresso and progresso["ts"] > rodando["ts"]):
+            progresso = None
+    elif progresso:
+        if not eventos or progresso["ts"] > eventos[0]["ts"]:
+            eventos.insert(0, progresso)
+        progresso = None
     agora = datetime.now().timestamp()
     ultima = eventos[0]["ts"] if eventos else None
 
@@ -392,14 +405,16 @@ def atividade(proj: Path) -> dict:
         estado = "sua_vez"
     elif not reais:
         estado = "esperando_claude"
-    elif ultima and agora - ultima < JANELA_ATIVO_S and eventos[0].get("tipo") in ("info", "inicio"):
+    elif ultima and agora - ultima < JANELA_ATIVO_S and eventos[0].get("tipo") in ("info", "inicio", "progresso"):
         estado = "ativo"
     else:
         estado = "parado"
 
     return {
         "estado": estado,
-        "rodando": {"msg": rodando["msg"], "desde": rodando["t"], "ha_s": int(agora - rodando["ts"])} if rodando else None,
+        "rodando": {"msg": rodando["msg"], "desde": rodando["t"], "ha_s": int(agora - rodando["ts"]),
+                    "progresso": progresso["msg"] if progresso else None,
+                    "pct": progresso.get("pct") if progresso else None} if rodando else None,
         "sua_vez": sua_vez,
         "ultima_ha_s": int(agora - ultima) if ultima else None,
         "eventos": [{k: e.get(k) for k in ("t", "tipo", "msg")} for e in eventos[:80]],

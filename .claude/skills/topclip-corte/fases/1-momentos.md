@@ -53,8 +53,10 @@ palavra, e não diz onde a palavra começa. Três fontes, nesta ordem:
    `prepare` aceita o `.vtt` direto: o parser extrai o timestamp real de cada
    palavra, remove a duplicação da cue rolante e usa o `>>` como fronteira de
    troca de locutor.
-2. **faster-whisper** com `word_timestamps=True` — o que `prepare` roda sozinho
-   quando não há transcript.
+2. **Whisper local** com `word_timestamps=True` — o que `prepare` roda sozinho
+   quando não há transcript: mlx-whisper na GPU em Mac com Apple Silicon,
+   faster-whisper na CPU nos outros (`transcription.backend`, ver
+   `docs/13-transcricao.md`). O avanço aparece no painel enquanto roda.
 3. Sem nenhum dos dois: **pare aqui** e entregue o diagnóstico de dependência.
    Não invente transcript.
 
