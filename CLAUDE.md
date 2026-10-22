@@ -23,7 +23,9 @@ Vídeo longo → clipes verticais 9:16 com motion e legenda. Três skills em
 - **Estilos de motion** (`./topclip estilo listar`): os oficiais em `biblioteca/estilos/`,
   os do usuário em `minha-biblioteca/estilos/`. O projeto escolhe com
   `./topclip motion novo <pasta> --estilo <id>` (padrão: `papel`) e congela o estilo em
-  `estilo/resolvido.json`. Formato e plano: `docs/proposta-estilos.md`.
+  `estilo/resolvido.json`. Formato e plano: `docs/proposta-estilos.md`. As peças que os
+  estilos compartilham ficam em `biblioteca/pecas/` (nunca cor ou fonte fixa: tudo vem
+  do estilo). Mexeu num estilo ou numa peça: `./topclip estilo previa <id>` regera a galeria.
 - **Assets desenhados numa run vão para `minha-biblioteca/`**, fora do git: função em
   `minha-biblioteca/desenho.py` (molde em `.claude/skills/topclip-motion/exemplo/desenho_usuario.py`),
   PNG em `minha-biblioteca/assets/`, linha em `minha-biblioteca/MANIFESTO.md`. Nunca em

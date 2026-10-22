@@ -35,6 +35,8 @@ import kit as K
 import motor as V
 import captions as CAP
 import estilo as E
+import pecas as P
+from pecas import legenda as PL
 
 ROOT = Path(__file__).resolve().parent
 
@@ -89,6 +91,13 @@ V.BOIL_SCALE = 0.5
 # O estilo do projeto (estilo/resolvido.json, gravado pelo `motion novo`) decide o
 # acabamento e o boil. O Papel resolve para estes mesmos valores; sem estilo, ficam eles.
 FX_DESK, V.BOIL_SCALE = E.acabamento(ROOT, FX_DESK, V.BOIL_SCALE)
+
+# A legenda do estilo. None = a do Papel (captions.draw, com o boil "print"). Os outros
+# estilos reaproveitam os blocos e o tempo do captions e so trocam o desenho.
+ESTILO = P.carregar(ROOT, opcional=True)
+LEG = PL.para(ESTILO)
+if LEG:
+    LEG.configura(CAP)
 
 # Compressao dos PNG intermediarios. O nivel padrao (6) leva ~200ms por quadro
 # 1080x1920; o 3 leva ~85ms com o mesmo tamanho. PNG e sem perda: a imagem e a mesma.
@@ -266,22 +275,30 @@ def render_captions(avanco=None):
                for k, x in enumerate(ph)]
 
     # cada bloco e IDENTICO em todos os seus frames a menos do boil, que anda a 9fps:
-    # renderiza uma vez por passo de boil e liga os quadros repetidos ao primeiro.
+    # renderiza uma vez por passo de boil e liga os quadros repetidos ao primeiro. Na
+    # legenda de outro estilo, a menos da entrada: so os primeiros quadros mudam.
     feito = {}
+    entrada = LEG.quadros_entrada(FPS) if LEG else 0
     for i in range(total):
         if avanco:
             avanco(i + 1, total)
-        cur = next((k for a, b, k in janelas if a <= i < b), None)
+        hit = next(((k, a) for a, b, k in janelas if a <= i < b), None)
         alvo = d / f"{i:04d}.png"
-        if cur is None:
+        if hit is None:
             _liga(vazio, alvo)
             continue
-        passo = int(i * 24.0 / FPS * 9 / 24)
-        key = (cur, passo)
+        cur, ini = hit
+        if LEG is None:
+            key = (cur, int(i * 24.0 / FPS * 9 / 24))
+        else:
+            key = (cur, min(i - ini, entrada))
         if key in feito:
             _liga(feito[key], alvo)
-        else:
+        elif LEG is None:
             CAP.draw(ph[cur], frame=i * 24.0 / FPS).save(alvo, compress_level=PNG_NIVEL)
+            feito[key] = alvo
+        else:
+            LEG.draw(ph[cur], key[1], FPS, CAP.posicao()).save(alvo, compress_level=PNG_NIVEL)
             feito[key] = alvo
     cobertos = sum(b - a for a, b, _ in janelas)
     print(f"  CAP: {total} frames, {len(ph)} blocos, {cobertos} frames com legenda "

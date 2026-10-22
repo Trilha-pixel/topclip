@@ -1,9 +1,11 @@
 # Proposta: estilos de motion e a nova Biblioteca
 
-> **Estado: APROVADA. Fase 1 implementada** em 2026-10-22: `lib/estilo.py`,
-> `biblioteca/estilos/papel/`, `./topclip estilo listar|validar`, `motion novo --estilo`,
-> `minha-biblioteca/` e a regressão do Papel (`tests/test_estilo.py`). As fases 2 em
-> diante ainda são proposta.
+> **Estado: APROVADA. Fases 1 e 2 implementadas** em 2026-10-22.
+> Fase 1: `lib/estilo.py`, `biblioteca/estilos/papel/`, `./topclip estilo listar|validar`,
+> `motion novo --estilo`, `minha-biblioteca/` e a regressão do Papel (`tests/test_estilo.py`).
+> Fase 2: as 8 peças em `biblioteca/pecas/`, a legenda por estilo, o estilo Limpo (claro e
+> escuro), `./topclip estilo previa` e o rascunho do clip-010 no Limpo (`tests/test_pecas.py`).
+> As fases 3 em diante ainda são proposta. O que mudou no caminho está na seção 16.
 > Base: a pesquisa de 2026-10-22 (bibliotecas web de motion, caminhos de renderização,
 > tendências de 2026, guias de motion, concorrentes) e o teste do Lottie sobre o clip-010.
 
@@ -431,7 +433,7 @@ Cada fase termina com `./topclip testes` e `./topclip verificar` passando.
 | Fase | Entrega | Tamanho |
 | --- | --- | --- |
 | 1. Fundação ✓ | formato do pacote, validador, `minha-biblioteca/`, `motion novo --estilo`, Papel como pacote, teste de regressão | feito em 2026-10-22 |
-| 2. Peças + Limpo | as 8 peças em `traco: "limpo"`, o estilo Limpo completo (com legenda), um clipe real no Limpo | grande |
+| 2. Peças + Limpo ✓ | as 8 peças em `traco: "limpo"`, o estilo Limpo completo (com legenda), um clipe real no Limpo | feito em 2026-10-22 |
 | 3. Impacto + Luxo | os dois estilos, a legenda `pop`, as variações | médio |
 | 4. Painel | Biblioteca, detalhe, escolha na etapa de motion, Minha marca | médio |
 | 5. Meu estilo | criar com o Claude, remixar, exportar e importar | médio |
@@ -441,10 +443,35 @@ As fases 3 e 4 podem rodar em paralelo, porque não mexem nos mesmos arquivos. O
 primeiro porque é o mais diferente do Papel: se o formato servir para ele, serve para os
 outros.
 
-## 15. Decisões que faltam
+## 15. Decisões tomadas
 
-1. **Aprovar o formato do pacote (seções 4 e 5).** É o que mais custa mudar depois.
-2. **O nome da pasta `minha-biblioteca/`.**
-3. **`thorvg-python` obrigatório ou opcional.** Recomendo obrigatório: tem ~1 MB e não dá
-   atrito na instalação.
-4. **A ordem dos estilos: Limpo, Impacto e Luxo.**
+1. **Formato do pacote** como nas seções 4 e 5, com os ajustes da seção 16.
+2. **Pasta `minha-biblioteca/`** para tudo do usuário.
+3. **`thorvg-python==1.1.3` obrigatório** (no `requirements.txt`; o `verificar` só avisa se
+   faltar, porque só a peça `lottie` depende dele).
+4. **Ordem dos estilos: Limpo (feito), Impacto e Luxo.**
+
+## 16. O que mudou na implementação
+
+Decidido no caminho, com o motivo:
+
+- **`estilo.json` ganhou `cenas`** (`cutaway` ou `overlay`). No `overlay` (Limpo) a cena
+  desenha o próprio fundo (`P.fundo`) e entra e sai em fade, então o render a trata como
+  overlay e o acabamento não tira a transparência. O `motion novo` já acerta o exemplo do
+  SHOTS. Não precisou mexer nas saídas do render (slide, wipe, push continuam do Papel).
+- **Estilo oficial com `compose.py`** (`codigo: true`) troca o compose do projeto recém-
+  -criado pelo dele. Reinstalar um estilo num projeto com cenas escritas **não**
+  sobrescreve o compose (isso apagou as cenas do clip-010 uma vez durante o teste).
+- **`legenda.json` ganhou `peso`, `duracao_alvo`, `fundo` e `fundo_alfa`.** A legenda do
+  Limpo virou **etiqueta** (texto escuro em caixa clara): texto branco com sombra sumia na
+  camisa branca do clip-010. `duracao_alvo` ajusta o `ALVO` do captions, e o `MAXDUR`
+  segue a mesma razão medida no Papel (1,9×).
+- **`pecas/estados.py`** é a máquina de estados de revisão (START/MID/END/EXIT e a folha)
+  para o compose dos estilos; o do Papel continua com a dele.
+- **`./topclip estilo previa <id> [--cena M1]`** gera `capa.png`, `capa-<variação>.png` e
+  `pecas/<peça>.png` dentro do pacote, num projeto temporário, sem a marca do usuário.
+- **Cores e fontes de reserva:** o estilo só é obrigado a ter `fundo`, `texto` e `acento`.
+  `superficie`, `linha`, `apoio` e `sobre_acento` caem numa vizinha (ou no maior contraste),
+  e fonte que falta cai em `apoio`. Assim um estilo criado pelo usuário serve a toda peça.
+- **O Limpo tem uma animação Lottie própria** (`lottie/check.json`, MIT, cor no slot
+  `acento`), feita à mão no formato Lottie — nenhum arquivo de terceiros no repositório.

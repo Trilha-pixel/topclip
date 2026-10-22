@@ -1,0 +1,17 @@
+{
+  "fonte": "fonte.apoio",
+  "peso": 700,
+  "corpo": 62,
+  "enfase": 1.5,
+  "caixa_alta": false,
+  "cor": "cor.texto",
+  "fundo": "cor.superficie",
+  "fundo_alfa": 0.94,
+  "destaque": "cor.acento",
+  "destaques_por_clipe": 2,
+  "contorno": 0,
+  "palavras_por_bloco": 4,
+  "duracao_alvo": 0.55,
+  "animacao": "fade",
+  "posicao": "rosto"
+}

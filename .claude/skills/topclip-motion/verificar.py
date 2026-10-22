@@ -51,6 +51,12 @@ try:
     ok("faster-whisper")
 except ImportError:
     erro("faster-whisper   ->  ./topclip instalar")
+# So a peca `lottie` dos estilos precisa dele: faltando, o resto roda.
+try:
+    tvg = importlib.import_module("thorvg_python")
+    ok(f"thorvg-python {tvg.__version__} (peca lottie)")
+except ImportError:
+    aviso("thorvg-python   ->  ./topclip instalar  (sem ele, so a peca lottie nao roda)")
 
 print("\nferramentas")
 for exe in ("ffmpeg", "ffprobe"):
@@ -114,6 +120,9 @@ try:
             erro(f"{p.name}: {erros_e[0]}" + (f" (+{len(erros_e) - 1})" if len(erros_e) > 1 else ""))
         else:
             aviso(f"{p.name} (seu): {erros_e[0]} — ./topclip estilo validar {p.name}")
+    faltam = [p for p in sorted(E.PECAS) if not (raiz / "biblioteca" / "pecas" / f"{p}.py").exists()]
+    (erro if faltam else ok)(f"pecas em biblioteca/pecas/: {len(E.PECAS) - len(faltam)} de {len(E.PECAS)}"
+                             + (f" (faltam {', '.join(faltam)})" if faltam else ""))
 except Exception as e:
     erro(f"estilo.py: {type(e).__name__}: {e}")
 

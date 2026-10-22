@@ -12,9 +12,14 @@ criar. Atualizar o TopClip nunca mexe lá. Um asset só entra aqui quando vira o
 `./topclip estilo listar` mostra os oficiais e os seus; `./topclip estilo validar <id>`
 confere um pacote. Formato: `docs/proposta-estilos.md`.
 
-| Estilo | Energia | Bom para |
-| --- | --- | --- |
-| `papel` | editorial | storytelling, marketing, negócios, educação |
+| Estilo | Energia | Variações | Bom para |
+| --- | --- | --- | --- |
+| `papel` | editorial | marfim | storytelling, marketing, negócios, educação |
+| `limpo` | calmo | claro, escuro | educação, saúde, produtividade, B2B, tecnologia |
+
+As **peças** (`pecas/`) são os componentes que os estilos compartilham — contador,
+marca-texto, troca de palavra, desfoque, cascata, antes e depois, cartão e Lottie. Cada
+uma veste o estilo do projeto; créditos das ideias em `pecas/CREDITOS.md`.
 
 ## Regras para entrar
 

@@ -8,6 +8,7 @@ le para o acabamento e as pecas leem para cor, fonte e movimento.
 
     ./topclip estilo listar
     ./topclip estilo validar <id|pasta>
+    ./topclip estilo previa <id|pasta> [--cena M1]
     ./topclip motion novo <pasta> --estilo <id> [--variacao <v>] [--sem-marca]
 
 Os oficiais ficam em `biblioteca/estilos/` (no git); os do usuario, em
@@ -83,6 +84,9 @@ MARCA_PARA_TOKEN = {
 }
 
 ORIGENS = {"oficial", "meu", "comunidade"}
+# Como as cenas entram no render: "cutaway" (a mesa opaca do Papel, com saida slide/wipe/
+# push) ou "overlay" (a cena desenha o proprio fundo e entra e sai sozinha, como no Limpo).
+CENAS = {"cutaway", "overlay"}
 ANIMACOES = {"corte_seco", "fade", "pop"}
 POSICOES = {"rosto", "fixa"}
 TRACOS = {"mao", "limpo"}
@@ -194,8 +198,9 @@ def _fonte_ok(valor, pasta):
     return isinstance(valor, str) and (pasta / valor).is_file()
 
 
-def validar(pasta):
-    """Confere o pacote inteiro. Devolve (erros, avisos): pacote com erro nao instala."""
+def validar(pasta, exigir_previa=True):
+    """Confere o pacote inteiro. Devolve (erros, avisos): pacote com erro nao instala.
+    `exigir_previa=False` so para o `previa`, que e quem gera a capa."""
     pasta = Path(pasta)
     erros, avisos = [], []
     for nome in ARQUIVOS:
@@ -260,6 +265,17 @@ def validar(pasta):
         erros.append("codigo deve ser true ou false")
     if est.get("origem") == "comunidade" and codigo:
         erros.append("pacote da comunidade nao pode ter codigo")
+    if est.get("cenas", "cutaway") not in CENAS:
+        erros.append(f"cenas '{est.get('cenas')}' deve ser uma de {sorted(CENAS)}")
+    if isinstance(var, dict):
+        for vid, v in var.items():
+            t = dict(fundo=token(tok, "cor.fundo"), texto=token(tok, "cor.texto"))
+            t.update({k.split(".", 1)[1]: x for k, x in ((v or {}).get("tokens") or {}).items()
+                      if k in ("cor.fundo", "cor.texto")})
+            if all(isinstance(x, str) and RE_HEX.match(x) for x in t.values()):
+                r = contraste(t["fundo"], t["texto"])
+                if r < 4.5:
+                    avisos.append(f"variacao '{vid}': contraste texto/fundo {r:.1f}:1, abaixo de 4,5:1")
 
     # tokens.json
     for c in ("cor.fundo", "cor.texto", "cor.acento", "fonte.titulo", "fonte.apoio"):
@@ -291,11 +307,6 @@ def validar(pasta):
     boil = ext.get("boil", None)
     if boil is not None and (not isinstance(boil, (int, float)) or not 0 <= boil <= 2):
         erros.append("boil deve ser null (sem boil) ou numero entre 0 e 2")
-    fundo, texto = token(tok, "cor.fundo"), token(tok, "cor.texto")
-    if fundo and texto and RE_HEX.match(fundo) and RE_HEX.match(texto):
-        r = contraste(fundo, texto)
-        if r < 4.5:
-            avisos.append(f"contraste texto/fundo {r:.1f}:1, abaixo de 4,5:1")
 
     # legenda.json
     for k, tipo in {"corpo": int, "palavras_por_bloco": int, "destaques_por_clipe": int,
@@ -310,13 +321,21 @@ def validar(pasta):
         erros.append(f"legenda.animacao deve ser uma de {sorted(ANIMACOES)}")
     if leg.get("posicao") not in POSICOES:
         erros.append(f"legenda.posicao deve ser uma de {sorted(POSICOES)}")
+    if "peso" in leg and (not isinstance(leg["peso"], int) or not 100 <= leg["peso"] <= 900):
+        erros.append("legenda.peso deve ser inteiro entre 100 e 900")
+    if "duracao_alvo" in leg and (not isinstance(leg["duracao_alvo"], (int, float))
+                                  or not 0.2 <= leg["duracao_alvo"] <= 2.0):
+        erros.append("legenda.duracao_alvo deve ser numero entre 0,2 e 2 segundos")
     for k in ("fonte", "fonte_enfase"):
         if k in leg and _ref(leg[k], tok, pasta) is None:
             erros.append(f"legenda.{k} '{leg[k]}' nao resolve (token, fonte do kit ou arquivo)")
-    for k in ("cor", "destaque"):
+    for k in ("cor", "destaque") + (("fundo",) if leg.get("fundo") is not None else ()):
         v = _ref(leg.get(k), tok, pasta)
         if not (isinstance(v, str) and RE_HEX.match(v)):
             erros.append(f"legenda.{k} '{leg.get(k)}' nao resolve para cor #RRGGBB")
+    if "fundo_alfa" in leg and (not isinstance(leg["fundo_alfa"], (int, float))
+                                or not 0 < leg["fundo_alfa"] <= 1):
+        erros.append("legenda.fundo_alfa deve ser numero entre 0 e 1")
 
     # arquivos
     total = 0
@@ -348,8 +367,8 @@ def validar(pasta):
                     erros.append(f"lottie/{f.name} usa expressions, que o renderizador nao roda")
             except json.JSONDecodeError:
                 erros.append(f"lottie/{f.name} nao e JSON valido")
-    if not (pasta / "preview" / "capa.png").is_file():
-        erros.append("falta preview/capa.png")
+    if exigir_previa and not (pasta / "preview" / "capa.png").is_file():
+        erros.append(f"falta preview/capa.png (gere com ./topclip estilo previa {pasta.name})")
     if not (pasta / "preview" / "demo.mp4").is_file():
         avisos.append("sem preview/demo.mp4 (a galeria mostra so a capa)")
     return erros, avisos
@@ -457,6 +476,7 @@ def resolver(pasta, variacao=None, marca=None):
     return {
         "id": est["id"], "nome": est["nome"], "versao": est["versao"],
         "origem": est["origem"], "variacao": vid, "energia": est["energia"],
+        "cenas": est.get("cenas", "cutaway"),
         "cor": cores, "fonte": fontes, "movimento": movimento,
         "acabamento": ext["acabamento"], "boil": ext.get("boil"), "traco": ext["traco"],
         "legenda": legenda,
@@ -464,16 +484,30 @@ def resolver(pasta, variacao=None, marca=None):
     }
 
 
-def instalar(pasta, projeto, variacao=None, marca=None):
+def instalar(pasta, projeto, variacao=None, marca=None, exigir_previa=True):
     """
     Copia o pacote para `<projeto>/estilo/` (o projeto congela a versao que usou), a marca
     para `estilo/marca/`, os assets do pacote para `07_assets/cutout/`, e grava o
     `resolvido.json`. Valida antes: pacote com erro nao entra.
+
+    Estilo com cenas proprias (`codigo: true` + `compose.py`) troca o compose.py do projeto
+    pelo dele; estilo de cenas "overlay" acerta o exemplo do SHOTS do render.py.
     """
     pasta, projeto = Path(pasta), Path(projeto)
-    erros, _ = validar(pasta)
+    erros, _ = validar(pasta, exigir_previa)
     if erros:
         raise SystemExit(f"estilo {pasta.name} invalido:\n  " + "\n  ".join(erros))
+    est = carregar(pasta)["estilo"]
+    alvo, molde = projeto / "compose.py", projeto / "compose_template.py"
+    intocado = not alvo.exists() or (molde.exists() and alvo.read_bytes() == molde.read_bytes())
+    if est.get("codigo") and (pasta / "compose.py").is_file() and intocado:
+        # so troca o compose recem-criado: num projeto com cenas escritas, nunca sobrescreve
+        shutil.copy2(pasta / "compose.py", alvo)
+    render = projeto / "render.py"
+    if est.get("cenas") == "overlay" and render.is_file():
+        t = render.read_text(encoding="utf-8")
+        render.write_text(t.replace("77, True),   # exemplo", "77, False),  # exemplo"),
+                          encoding="utf-8")
     r = resolver(pasta, variacao, marca)
     dest = projeto / "estilo"
     if dest.exists():
@@ -510,6 +544,59 @@ def acabamento(raiz_projeto, fx, boil):
     a = r["acabamento"]
     fx = dict(grain=a["grao"], vignette=a["vinheta"], chroma=a["aberracao"], sat=a["saturacao"])
     return fx, (0.0 if r.get("boil") is None else r["boil"])
+
+
+# ---------------------------------------------------------------- previas
+
+def _projeto_temporario(raiz, pasta, destino, variacao):
+    """O minimo de um projeto de motion para renderizar previas (o que o motion novo faz,
+    sem os assets do usuario e sem a marca: a previa mostra o estilo puro)."""
+    skill = Path(raiz) / ".claude" / "skills" / "topclip-motion"
+    destino.mkdir(parents=True)
+    for f in (skill / "lib").glob("*.py"):
+        shutil.copy2(f, destino)
+    shutil.copy2(skill / "lib" / "compose_template.py", destino / "compose.py")
+    shutil.copy2(skill / "lib" / "render_template.py", destino / "render.py")
+    shutil.copytree(skill / "fontes", destino / "fontes")
+    shutil.copytree(Path(raiz) / "biblioteca" / "pecas", destino / "pecas",
+                    ignore=shutil.ignore_patterns("__pycache__"))
+    for sub in ("cutout", "raw"):
+        (destino / "07_assets" / sub).mkdir(parents=True)
+    for png in (Path(raiz) / "biblioteca" / "assets").glob("*.png"):
+        sub = "raw" if png.name == "BG_PAPER.png" else "cutout"
+        shutil.copy2(png, destino / "07_assets" / sub / png.name)
+    instalar(pasta, destino, variacao, None, exigir_previa=False)
+
+
+def previa(pasta, raiz, cena=None):
+    """
+    Gera as previas que a galeria mostra, dentro do proprio pacote:
+      preview/capa.png              a cena `cena` (padrao: a primeira) no END, variacao padrao
+      preview/capa-<variacao>.png   a mesma cena nas outras variacoes
+      preview/pecas/<peca>.png      cada peca declarada, no EXEMPLO dela
+    """
+    import subprocess
+    import tempfile
+    pasta = Path(pasta)
+    est = _json(pasta / "estilo.json")
+    destino = pasta / "preview"
+    (destino / "pecas").mkdir(parents=True, exist_ok=True)
+    gerados = []
+    with tempfile.TemporaryDirectory(prefix="topclip-previa-") as tmp:
+        for i, vid in enumerate(est["variacoes"]):
+            proj = Path(tmp) / vid
+            _projeto_temporario(raiz, pasta, proj, vid)
+            capa = "capa.png" if i == 0 else f"capa-{vid}.png"
+            cmd = [sys.executable, "-m", "pecas.previa", str(destino), "--capa", capa]
+            if i == 0:
+                cmd.append("--pecas")
+            if cena:
+                cmd += ["--cena", cena]
+            r = subprocess.run(cmd, cwd=proj, capture_output=True, text=True)
+            if r.returncode:
+                raise SystemExit(f"previa de {pasta.name} ({vid}) falhou:\n{r.stdout}{r.stderr}")
+            gerados += [l.strip() for l in r.stdout.splitlines() if l.strip()]
+    return gerados
 
 
 # ---------------------------------------------------------------- linha de comando
@@ -563,11 +650,18 @@ def main(argv=None):
     i.add_argument("projeto")
     i.add_argument("--variacao")
     i.add_argument("--sem-marca", action="store_true")
+    pv = sub.add_parser("previa", help="gera preview/ (capa e pecas) dentro do pacote")
+    pv.add_argument("alvo")
+    pv.add_argument("--cena", help="cena do compose.py para a capa (padrao: a primeira)")
     a = ap.parse_args(argv)
     if a.cmd == "listar":
         return _listar(a.raiz)
     if a.cmd == "validar":
         return _validar(a.alvo, a.raiz, a.quieto, a.variacao)
+    if a.cmd == "previa":
+        for linha in previa(achar(a.alvo, a.raiz), a.raiz, a.cena):
+            print(f"  {linha}")
+        return 0
     marca = None if a.sem_marca else Path(a.raiz) / "minha-biblioteca" / "marca"
     r = instalar(achar(a.alvo, a.raiz), a.projeto, a.variacao, marca)
     print(f"  estilo {r['nome']} ({r['variacao']}), versao {r['versao']}")

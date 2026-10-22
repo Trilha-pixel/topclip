@@ -85,6 +85,9 @@ motion_novo() {
     cp "$MOTION/lib/compose_template.py" "$destino/compose.py"
     cp "$MOTION/lib/render_template.py" "$destino/render.py"
     cp -R "$MOTION/fontes" "$destino/fontes"
+    # as peças que todo estilo compartilha: o projeto congela a versão delas também
+    cp -R "$ROOT/biblioteca/pecas" "$destino/pecas"
+    rm -rf "$destino/pecas/__pycache__"
 
     # Os assets oficiais e os que você já desenhou nas suas runs (minha-biblioteca/).
     shopt -s nullglob

@@ -1,0 +1,28 @@
+{
+  "id": "limpo",
+  "nome": "Limpo",
+  "versao": "1.0.0",
+  "topclip": ">=1.0",
+  "origem": "oficial",
+  "autor": "Felipe Top",
+  "licenca": "MIT",
+  "descricao": "Fundo chapado, Inter, um acento só e movimento calmo. Claro ou escuro.",
+  "bom_para": ["educação", "saúde", "produtividade", "B2B", "tecnologia"],
+  "energia": "calmo",
+  "variacoes": {
+    "claro": {"nome": "Claro", "tokens": {}},
+    "escuro": {"nome": "Escuro", "tokens": {
+      "cor.fundo": "#0A0A0B",
+      "cor.superficie": "#16161A",
+      "cor.texto": "#F5F5F7",
+      "cor.apoio": "#A1A1A8",
+      "cor.linha": "#2C2C32",
+      "cor.acento": "#5B8CFF"
+    }}
+  },
+  "pecas": ["contador", "marca_texto", "troca_palavra", "desfoque", "cascata",
+            "antes_depois", "cartao", "lottie"],
+  "slots_da_marca": ["cor.acento", "fonte.titulo", "logo"],
+  "cenas": "overlay",
+  "codigo": true
+}
