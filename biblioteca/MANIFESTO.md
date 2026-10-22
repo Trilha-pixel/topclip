@@ -24,6 +24,12 @@ marca-texto, troca de palavra, desfoque, cascata, antes e depois, cartão, Lotti
 e brilho. Cada uma veste o estilo do projeto (cor, fonte, peso, caixa alta, contorno,
 ritmo); créditos das ideias em `pecas/CREDITOS.md`.
 
+O **desenho** de cada estilo (menos o Papel, que desenha no kit dele) vem do **lápis**
+(`pecas/lapis.py`): os mesmos objetos de `pecas/objetos.py` saem chapados no Limpo,
+adesivo no Impacto e gravura de latão no Luxo — a folha de cada um está em
+`estilos/<id>/preview/objetos.png`. Objeto novo oficial entra em `pecas/objetos.py`; os do
+usuário, em `minha-biblioteca/objetos.py`.
+
 ## Regras para entrar
 
 - PNG com canal alfa, sem texto embutido, sem sombra embutida — sombra é camada.

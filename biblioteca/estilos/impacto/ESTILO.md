@@ -22,10 +22,20 @@ regras universais e a rubrica do Diretor continuam valendo
 5. **Legenda de 1–2 palavras**, caixa alta, contorno de 8 px e sombra dura, entrando em
    pop. A palavra de destaque (até 3 por clipe) muda de cor para o acento — sem pílula.
 
+## O desenho (lápis `impacto`)
+
+O mesmo fluxo do Papel com o desenho do Impacto: **adesivo**. Contorno preto grosso em
+toda forma, cor chapada (corpo no acento, detalhe no cinza de `cor.apoio`, face branca),
+borda branca em volta da silhueta e sombra dura deslocada — a mesma linguagem da
+tipografia. O objeto entra em pop, preso à palavra. Os objetos prontos, neste desenho,
+estão em `preview/objetos.png`.
+
 ## Cenas
 
-As cenas-exemplo estão no `compose.py` do projeto. Toda cena do Impacto é **overlay**
-(`cutaway=False` no SHOTS do render.py); o `motion novo` já deixa o exemplo assim.
+As cenas-exemplo estão no `compose.py` do projeto: M1 a M3 são os registros com objeto
+(objeto em destaque, processo e dado, de `pecas/receitas.py`); de M4 em diante, uma por
+peça. Toda cena do Impacto é **overlay** (`cutaway=False` no SHOTS do render.py); o
+`motion novo` já deixa o exemplo assim.
 
 ## O que segura o Impacto
 

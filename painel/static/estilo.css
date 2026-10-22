@@ -553,6 +553,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 48px) 1
 .variacao-cartao.padrao .variacao-capa { border-color: var(--amarelo); }
 .variacao-cartao figcaption { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 13px; }
 .variacao-cartao figcaption b { margin-right: auto; font: 700 19px/1 var(--display); text-transform: uppercase; }
+.estilo-objetos { display: block; width: min(720px, 100%); height: auto; border-radius: 3px; box-shadow: 0 1px 0 var(--papel-borda); }
 .estilo-demo { width: min(260px, 100%); aspect-ratio: 9 / 16; margin-top: 28px; border-radius: 3px; background: var(--tinta); }
 
 /* escolha do estilo no projeto, na etapa Motion */

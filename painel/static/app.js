@@ -988,7 +988,7 @@ function cartaoEstilo(e, padrao, selecionado) {
 // As peças de um estilo, sempre na mesma ordem: trocar de estilo troca só as imagens.
 function gradePecas(e, ordem = e.pecas.map((p) => p.id)) {
   if (!e.pecas.length) {
-    return `<div class="vazio-pecas">O estilo ${esc(e.nome)} não usa as peças prontas: as cenas dele são desenhadas uma a uma, para cada fala.</div>`;
+    return `<div class="vazio-pecas">O ${esc(e.nome)} não usa estas peças: tudo nele, texto e objeto, é desenhado à mão no kit do papel, uma cena para cada fala.</div>`;
   }
   const dele = Object.fromEntries(e.pecas.map((p) => [p.id, p]));
   return `<div class="pecas">${ordem.map((id) => {
@@ -1152,9 +1152,15 @@ async function telaEstilo(id) {
     ${e.demo ? `<video class="estilo-demo" src="${e.demo}" controls muted loop playsinline preload="metadata"></video>` : ""}
   </section>
 
+  ${e.objetos ? `<section class="papel painel-etapa prateleira">
+    <div class="secao-topo"><div><h2 class="subtitulo">O desenho</h2>
+      <p class="explica">Os objetos que o Claude desenha nas cenas, no traço do ${esc(e.nome)}. Cada fala ganha o seu, preso à palavra: o mesmo relógio sai diferente em cada estilo.</p></div></div>
+    <img class="estilo-objetos" src="${e.objetos}" alt="Os objetos desenhados no estilo ${esc(e.nome)}" loading="lazy">
+  </section>` : ""}
+
   <section class="papel painel-etapa prateleira">
     <div class="secao-topo"><div><h2 class="subtitulo">Peças</h2>
-      <p class="explica">As animações prontas que o Claude usa neste estilo, presas à palavra da fala.</p></div></div>
+      <p class="explica">As animações de texto e de dado que o Claude junta ao desenho, presas à palavra da fala.</p></div></div>
     ${gradePecas(e)}
   </section>`;
 

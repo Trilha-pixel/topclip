@@ -26,9 +26,20 @@ regras universais e a rubrica do Diretor continuam valendo
    para o latão. Sem a faixa (só sombra macia), a itálica fina sumia na camisa branca do
    clip-010 — rascunho de 2026-10-22.
 
+## O desenho (lápis `luxo`)
+
+O mesmo fluxo do Papel com o desenho do Luxo: **gravura em latão**. O traço fino se
+desenha na entrada (um pouco mais que o dobro da entrada do perfil, e sempre termina
+antes da saída da cena); a área de cada forma é escura e opaca, e cobre o que está atrás;
+latão chapado só na parte que importa (a barra do número dito); um halo quente discreto
+atrás do objeto. Objeto inteiro dourado não é Luxo. Os objetos prontos, neste desenho,
+estão em `preview/objetos.png`.
+
 ## Cenas
 
-As cenas-exemplo estão no `compose.py` do projeto. Toda cena do Luxo é **overlay**
+As cenas-exemplo estão no `compose.py` do projeto: M1 a M3 são os registros com objeto
+(objeto em destaque, processo e dado, de `pecas/receitas.py`); de M4 em diante, uma por
+peça. Toda cena do Luxo é **overlay**
 (`cutaway=False` no SHOTS); o `motion novo` já deixa o exemplo assim. Tela cheia usa
 `P.fundo`; sobre o vídeo, `P.cinema` dá o tom de filme sem cobrir o rosto.
 

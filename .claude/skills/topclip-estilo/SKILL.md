@@ -88,6 +88,7 @@ A pessoa fala em palavras e você traduz em `ajustar`:
 | "tudo em maiúscula" | `tipografia.caixa_alta=true` |
 | "contorno preto nas letras" | `tipografia.contorno=0.07 tipografia.cor_contorno=#000000` |
 | "mais calmo" / "mais agitado" | `energia=calmo` / `energia=energico` |
+| "os desenhos tipo adesivo" / "chapados" / "traço fino dourado" | `lapis=impacto` / `lapis=limpo` / `lapis=luxo` |
 | "entrar mais devagar" | `movimento.entrada_quadros=[18,24]` |
 | "legenda maior" | `legenda.corpo=76` |
 | "palavra destacada sem caixa" | `legenda.destaque_modo=texto` |
@@ -99,6 +100,13 @@ Fontes: só as do kit (`Archivo Narrow`, `Archivo Black`, `Anton`, `Permanent Ma
 arquivo `.ttf` livre (OFL, Apache ou UFL) dentro de `fontes/` do pacote, **com o arquivo de
 licença ao lado**. Fonte comercial da pessoa nunca entra num pacote. Ela pode usar a fonte
 dela pela marca (`minha-biblioteca/marca/`), que fica no computador dela.
+
+**O desenho (`lapis`).** Os objetos das cenas (relógio, gráfico, etiqueta, pessoas) são
+desenhados pelo lápis do estilo, com as cores dele: `limpo` (ícone chapado), `impacto`
+(adesivo com contorno preto) ou `luxo` (gravura em traço fino que se desenha). O remix
+herda o do estilo de origem; troque quando o desenho não combinar com a energia (marca
+agitada com desenho de gravura fica lenta). Para ver os objetos no desenho novo:
+`./topclip estilo previa <id>` grava `preview/objetos.png`, que o painel mostra em "O desenho".
 
 Depois de cada rodada de ajustes, gere a amostra de novo e mostre.
 

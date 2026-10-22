@@ -167,8 +167,13 @@ def _aplica(d, chave, valor):
             no[ultimo] = valor
     elif chave.startswith("acabamento."):
         ext.setdefault("acabamento", {})[chave[11:]] = valor
-    elif chave in ("traco", "boil"):
-        ext[chave] = valor
+    elif chave in ("traco", "boil", "lapis"):
+        # lapis = o jeito de desenhar os objetos (limpo, impacto, luxo): a paleta do seu
+        # estilo com o desenho de outro
+        if valor is None:
+            ext.pop(chave, None)
+        else:
+            ext[chave] = valor
     elif chave.startswith("legenda."):
         if valor is None:
             leg.pop(chave[8:], None)
@@ -197,7 +202,7 @@ def _aplica(d, chave, valor):
         est["cenas"] = valor
     else:
         raise ErroEstilo(f"chave desconhecida: '{chave}'. Use cor.*, fonte.*, energia, "
-                         "movimento.*, tipografia.*, acabamento.*, traco, boil, legenda.*, "
+                         "movimento.*, tipografia.*, acabamento.*, traco, boil, lapis, legenda.*, "
                          "variacao.*, nome, descricao, bom_para, slots_da_marca ou pecas")
 
 

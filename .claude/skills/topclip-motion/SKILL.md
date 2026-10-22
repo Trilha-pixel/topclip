@@ -1,6 +1,6 @@
 ---
 name: topclip-motion
-description: Insere motion graphics no estilo TopClip Papel (colagem editorial — papel marfim, fita crepe, anotação à mão) e legenda queimada dentro de um clipe vertical ja cortado (podcast, entrevista, talking head). Use quando o pedido for adicionar motion, ilustrar palavras-chave, animar trechos, "colocar uns motions nesse corte", "ilustrar essa fala", queimar legenda no clipe, ou melhorar e estender motions ja feitos. Cobre o processo inteiro: escolher as frases pelo transcript, gerar e recortar assets PNG, compor as cenas em camadas com registros visuais variados, legendar, revisar com rubrica, e montar o master sem tocar no audio. NAO use para video gerado do zero por IA de video.
+description: Insere motion graphics (no estilo TopClip Papel — colagem editorial, papel marfim, fita crepe, anotação à mão — ou em Limpo, Impacto, Luxo e nos estilos do usuário, com o mesmo fluxo e o desenho de cada um) e legenda queimada dentro de um clipe vertical ja cortado (podcast, entrevista, talking head). Use quando o pedido for adicionar motion, ilustrar palavras-chave, animar trechos, "colocar uns motions nesse corte", "ilustrar essa fala", queimar legenda no clipe, ou melhorar e estender motions ja feitos. Cobre o processo inteiro: escolher as frases pelo transcript, gerar e recortar assets PNG, compor as cenas em camadas com registros visuais variados, legendar, revisar com rubrica, e montar o master sem tocar no audio. NAO use para video gerado do zero por IA de video.
 ---
 
 # Motion editorial sobre footage
@@ -8,8 +8,9 @@ description: Insere motion graphics no estilo TopClip Papel (colagem editorial �
 > Parte do **TopClip**. Todo caminho aqui é relativo à raiz do repositório,
 > e todo comando roda a partir dela, pelo lançador `./topclip`.
 
-Insere cenas de motion no estilo `TOPCLIP PAPEL` dentro de um clipe vertical que
-**já existe**. O áudio é congelado: não dá para reescrever a fala, então tudo se ancora
+Insere cenas de motion dentro de um clipe vertical que **já existe**, no estilo
+`TOPCLIP PAPEL` (o padrão) ou em outro estilo da biblioteca — o fluxo é o mesmo, muda o
+desenho (ver "O mesmo fluxo em todo estilo"). O áudio é congelado: não dá para reescrever a fala, então tudo se ancora
 no que foi dito e em quando foi dito.
 
 ## A identidade viaja junto
@@ -21,9 +22,10 @@ Esta skill é um **kit fechado**, não só um método. Ver `IDENTIDADE.md`.
 | `fontes/` | as 5 fontes da identidade, licenças livres, com os arquivos de licença |
 | `biblioteca/assets/` (raiz do repo) | os assets oficiais do Papel |
 | `minha-biblioteca/assets/` (raiz do repo, fora do git) | os assets desenhados nas runs do usuário — cresce com o uso |
+| `minha-biblioteca/objetos.py` (fora do git) | os objetos do usuário para os estilos com lápis — saem em todo lápis |
 | `biblioteca/estilos/` | os estilos oficiais (`./topclip estilo listar`); o Papel é o padrão |
 | `lib/` | o motor, o kit com as **receitas**, o recorte, o CRT, a legenda, a transcrição, os dois templates |
-| `exemplo/` | o bloco de configuração de um clipe real, e a galeria das receitas (`exemplo/receitas/`) |
+| `exemplo/` | o bloco de configuração de um clipe real, a galeria das receitas (`exemplo/receitas/`) e os moldes dos desenhos do usuário |
 | `verificar.py` | checagem de instalação — rode antes do primeiro projeto |
 | `referencias/` | identidade, registros, **receitas**, transições, legenda, armadilhas, rubricas, prompts |
 
@@ -74,7 +76,7 @@ Cada etapa tem uma trava. Não avance sem ela.
 | --- | --- | --- | --- |
 | 1 | **Ancorar** | tabela palavra → frame | transcript palavra-a-palavra existe |
 | 2 | **Escolher frases** | tabela entra/não-entra com motivo | cada corte tem justificativa escrita |
-| 3 | **Assets** | PNG com alfa por objeto | biblioteca primeiro; o que faltar, desenhado em `minha-biblioteca/desenho.py` |
+| 3 | **Assets** | PNG com alfa por objeto (Papel) ou objeto no lápis (os outros) | biblioteca primeiro; o que faltar, desenhado em `minha-biblioteca/desenho.py` (Papel) ou `minha-biblioteca/objetos.py` (lápis) |
 | 4 | **Recortar** | PNG com alfa | só para asset de gerador de imagem; laudo D1 aprovado |
 | 5 | **Compor** | 4 estados por cena + folha `<cena>_ESTADOS.png` | laudo D2/D3 aprovado |
 | 6 | **Blueprint + transições** | um .md por cena + mapa | entrada e saída definidas |
@@ -131,6 +133,11 @@ parado; acima de 50% o rosto some. Deixe pelo menos 1,5s de rosto entre cenas.
 útil quanto a adotada, e evita refazer a discussão depois.
 
 ## 3. Conseguir os assets
+
+**Estilo com lápis** (Limpo, Impacto, Luxo e os remixes deles — o `estilo/resolvido.json`
+tem `"lapis"`): o objeto não é PNG, é geometria desenhada pelo lápis do estilo. Veja
+"O mesmo fluxo em todo estilo", no fim, e pule as etapas 3 e 4 daqui. O que segue é o
+Papel.
 
 Nesta ordem — pare no primeiro que resolver:
 
@@ -307,18 +314,63 @@ O `render.py` e o `compose.py` leem o acabamento dali. Estilo que não for o Pap
 `estilo/ESTILO.md` do projeto antes de compor — ele manda sobre a `IDENTIDADE.md`.
 `./topclip estilo listar` mostra os disponíveis.
 
-**Estilos com cenas próprias** (Limpo, Impacto, Luxo): o `compose.py` do projeto já vem
-com as cenas-exemplo do estilo, uma por **peça** (`pecas/`, copiada para o projeto):
-`contador`, `marca_texto`, `troca_palavra`, `desfoque`, `cascata`, `antes_depois`,
-`cartao`, `lottie`, `moldura`, `brilho`. Toda peça é
-`P.<peca>.quadro(f, inicio, fim, ESTILO, **dados)` e veste o estilo inteiro — cor, fonte,
-peso, caixa alta, contorno, sombra dura, pop e ritmo vêm do `estilo/resolvido.json`.
-Nunca escreva cor, fonte ou efeito fixo numa cena dessas: **a mesma cena troca de cara
-quando o projeto troca de estilo**. Cenas desses estilos são **overlay**
-(`cutaway=False` no SHOTS): tela cheia desenha o próprio fundo com `P.fundo(...)`;
-sobre o vídeo, `P.cinema(...)` põe as faixas de filme do Luxo. A legenda também é a do
-estilo (`pecas/legenda.py`), com os mesmos blocos e tempos do `captions`. O
-`compose.py` de cada pacote em `biblioteca/estilos/` é o exemplo de cada peça.
+### O mesmo fluxo em todo estilo
+
+Limpo, Impacto e Luxo seguem **o fluxo do Papel, etapa por etapa**: ancorar no
+transcript, escolher as frases que têm objeto, escolher o registro de cada cena, desenhar
+o objeto, travar cada evento na palavra, revisar com a rubrica, render. O que muda é o
+**lápis** — o jeito de desenhar do estilo:
+
+| Estilo | Lápis | O mesmo relógio sai |
+| --- | --- | --- |
+| Papel | `lib/desenho.py` + `lib/kit.py` | recortado em papel, com textura, mão e boil |
+| Limpo | `limpo` | ícone chapado em dois tons do acento, sombra macia |
+| Impacto | `impacto` | adesivo: contorno preto grosso, borda branca, sombra dura |
+| Luxo | `luxo` | gravura em latão que **se desenha** na entrada |
+
+**Objeto.** Escrito uma vez, sai nos três lápis. Os prontos estão em `pecas/objetos.py`
+(`relogio`, `grafico_barras`, `grafico_pizza`, `cedula`, `moedas`, `celular`,
+`calendario`, `etiqueta_preco`, `lampada`, `alvo`, `funil`, `pessoas`, `seta`, `marca`);
+a folha de cada estilo está em `biblioteca/estilos/<id>/preview/objetos.png`. Faltou o
+objeto que a fala pede: desenhe em `minha-biblioteca/objetos.py` — formas com **papel**
+(`corpo`, `face`, `detalhe`, `destaque`, `traco`, `vazado`), nunca cor:
+
+```bash
+mkdir -p minha-biblioteca && cp .claude/skills/topclip-motion/exemplo/objetos_usuario.py minha-biblioteca/objetos.py
+```
+
+O `motion novo` copia o arquivo para o projeto como `objetos_meus.py` (projeto já criado:
+copie à mão). Confira antes de usar: `./topclip py <projeto>/objetos_meus.py <projeto>`
+grava `11_qa/objetos_meus.png` com cada objeto seu nos três lápis. **Nunca** em
+`pecas/objetos.py` nem em `biblioteca/`: são do repositório.
+
+**Cena.** As receitas de `pecas/receitas.py` montam a cena do registro, já travada nas
+palavras:
+
+| Registro | A frase | Receita |
+| --- | --- | --- |
+| Objeto em destaque | nomeia uma coisa concreta | `R.objeto_em_destaque(f, 0, FIM, ESTILO, "relogio", titulo=..., etiqueta=..., objeto_em=..., anima_em=..., de=(0, 0), ate=(3, 0))` |
+| Processo | "de X para Y", causa e efeito | `R.processo(f, 0, FIM, ESTILO, "etiqueta_preco", "pessoas", de_em=..., seta_em=..., para_em=..., rotulos=(..., ...))` |
+| Dado | número, crescimento, proporção | `R.dado(f, 0, FIM, ESTILO, "grafico_barras", titulo=..., grafico_em=..., dur=..., rotulos=[...])` |
+
+Os registros de texto são as **peças** direto: `contador` (número), `marca_texto` (frase
+marcada), `troca_palavra`, `desfoque`, `cascata` (lista), `antes_depois`, `cartao` (sobre
+o vídeo), `lottie`, `moldura`, `brilho`. Objeto solto, sem receita:
+`P.objeto.quadro(f, inicio, fim, ESTILO, "<nome>", centro=..., largura=..., anima_em=..., dur=...)`.
+`anima_em`/`dur` é a animação própria do objeto (ponteiro andando, barra crescendo) e
+segue a fala, não a curva do estilo: a barra chega na palavra em qualquer estilo.
+
+As regras do Papel continuam valendo: **nunca repita o registro em cenas vizinhas**,
+número estimado não vira gráfico limpo, densidade de 30–40%. O `compose.py` do projeto
+já vem com uma cena-exemplo por registro (M1 a M3) e por peça (M4 em diante).
+
+**Tudo vem do estilo.** Toda peça e todo objeto vestem o `estilo/resolvido.json`: cor,
+fonte, peso, caixa alta, contorno, sombra dura, pop, ritmo e lápis. Nunca escreva cor,
+fonte ou efeito fixo numa cena dessas: **a mesma cena troca de cara quando o projeto
+troca de estilo**. Cenas desses estilos são **overlay** (`cutaway=False` no SHOTS): tela
+cheia desenha o próprio fundo com `P.fundo(...)`; sobre o vídeo, `P.cinema(...)` põe as
+faixas de filme do Luxo. A legenda também é a do estilo (`pecas/legenda.py`), com os
+mesmos blocos e tempos do `captions`.
 
 `fontes/` tem que ficar ao lado de `motor.py` — a identidade depende dela e o motor
 falha com mensagem clara se não achar.

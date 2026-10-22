@@ -23,13 +23,23 @@ regras universais e a rubrica do Diretor continuam valendo
 6. **Entra e sai sem corte seco.** Toda cena é overlay: o fundo entra em fade, e a cena
    sai em fade. Nunca slide, wipe ou push (são do Papel).
 
+## O desenho (lápis `limpo`)
+
+O mesmo fluxo do Papel — a frase tem objeto, o objeto é desenhado e entra na palavra —
+com o desenho do Limpo: **ícone de produto**. Chapado, sem contorno; o corpo no acento, o
+detalhe num tom claro do próprio acento, a face na `cor.superficie`; uma sombra macia do
+objeto inteiro. Entra pelo perfil calmo, como as peças. Os objetos prontos, neste
+desenho, estão em `preview/objetos.png`.
+
 ## Cenas
 
-As cenas-exemplo estão no `compose.py` do projeto, uma por peça (M1 a M8). Duas formas:
+As cenas-exemplo estão no `compose.py` do projeto: M1 a M3 são os registros com objeto
+(objeto em destaque, processo e dado, de `pecas/receitas.py`); de M4 em diante, uma por
+peça. Duas formas:
 
 - **Tela cheia**: `P.fundo(...)` mais a peça. É o padrão.
 - **Sobre o vídeo**: só a peça, sem fundo, no terço de cima (centro em y≈520), para o
-  rosto ficar livre. É o caso do cartão (M4).
+  rosto ficar livre. É o caso do cartão (M7).
 
 No `render.py`, **toda cena do Limpo vai com `cutaway=False`** no SHOTS. O `motion novo`
 já deixa o exemplo assim. Com `True`, o acabamento do render tiraria a transparência e a

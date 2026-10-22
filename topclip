@@ -90,6 +90,10 @@ motion_novo() {
     # as peças que todo estilo compartilha: o projeto congela a versão delas também
     cp -R "$ROOT/biblioteca/pecas" "$destino/pecas"
     rm -rf "$destino/pecas/__pycache__"
+    # os objetos que você já desenhou (minha-biblioteca/objetos.py) saem em todo lápis
+    if [ -f "$ROOT/minha-biblioteca/objetos.py" ]; then
+        cp "$ROOT/minha-biblioteca/objetos.py" "$destino/objetos_meus.py"
+    fi
 
     # Os assets oficiais e os que você já desenhou nas suas runs (minha-biblioteca/).
     shopt -s nullglob

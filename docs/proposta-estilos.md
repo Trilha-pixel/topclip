@@ -1,6 +1,6 @@
 # Proposta: estilos de motion e a nova Biblioteca
 
-> **Estado: APROVADA. Fases 1 a 5 implementadas** em 2026-10-22. Falta só a v2 (vitrine).
+> **Estado: APROVADA. Fases 1 a 6 implementadas** em 2026-10-22. Falta só a v2 (vitrine).
 > Fase 1: `lib/estilo.py`, `biblioteca/estilos/papel/`, `./topclip estilo listar|validar`,
 > `motion novo --estilo`, `minha-biblioteca/` e a regressão do Papel (`tests/test_estilo.py`).
 > Fase 2: as 8 peças em `biblioteca/pecas/`, a legenda por estilo, o estilo Limpo (claro e
@@ -11,6 +11,9 @@
 > etapa Motion e Minha marca no painel. Fase 5: `lib/meu_estilo.py` (remixar, ajustar,
 > aprovar, exportar, importar, apagar, paleta, amostra), a skill `topclip-estilo`, o
 > compose-modelo das peças e, no painel, remixar, exportar, apagar e importar arrastando.
+> Fase 6: o desenho por estilo — o fluxo do Papel (frase com objeto → objeto desenhado →
+> registro → palavra) em todo estilo, com o lápis de cada um (`pecas/lapis.py`,
+> `objetos.py`, `objeto.py`, `receitas.py`), os objetos do usuário e "O desenho" no painel.
 > O que mudou no caminho está na seção 16.
 > Base: a pesquisa de 2026-10-22 (bibliotecas web de motion, caminhos de renderização,
 > tendências de 2026, guias de motion, concorrentes) e o teste do Lottie sobre o clip-010.
@@ -443,6 +446,7 @@ Cada fase termina com `./topclip testes` e `./topclip verificar` passando.
 | 3. Impacto + Luxo ✓ | os dois estilos, a legenda `pop`, as variações | feito em 2026-10-22 |
 | 4. Painel ✓ | Biblioteca, detalhe, escolha na etapa de motion, Minha marca | feito em 2026-10-22 |
 | 5. Meu estilo ✓ | criar com o Claude, remixar, exportar e importar | feito em 2026-10-22 |
+| 6. O desenho ✓ | o lápis de cada estilo, objetos, receitas por registro, objetos do usuário | feito em 2026-10-22 |
 | v2 | vitrine da comunidade com CI | médio |
 
 As fases 3 e 4 podem rodar em paralelo, porque não mexem nos mesmos arquivos. O Limpo vem
@@ -552,3 +556,43 @@ Fase 5 (meu estilo):
   importado) recebe as cenas-exemplo genéricas das peças, M1 a M9.
 - **O painel aponta o `meu_estilo.MINHA` para a pasta dele**, e os testes, para uma
   temporária: nenhum teste toca na `minha-biblioteca` de verdade.
+
+Fase 6 (o desenho por estilo):
+
+- **O pedido:** "o Papel não usa peças prontas: as cenas dele são desenhadas uma a uma,
+  para cada fala. Eu quero que o fluxo seja igual nos outros." As fases 2 e 3 tinham dado
+  aos outros estilos só peças de texto. Agora todo estilo segue o mesmo fluxo; o que muda
+  é o **lápis**.
+- **Objeto = geometria com papel, sem cor** (`pecas/objetos.py`): cada forma é `corpo`,
+  `face`, `detalhe`, `destaque`, `traco` ou `vazado`, numa caixa de largura 1. O lápis
+  (`pecas/lapis.py`) decide a tinta com as cores do estilo. Assim, um objeto escrito uma vez
+  sai nos três lápis, e a marca entra sozinha:
+  - `limpo`: ícone chapado, sombra macia;
+  - `impacto`: adesivo com contorno preto, borda branca e sombra dura;
+  - `luxo`: gravura em latão que se desenha.
+- **O lápis é do estilo** (`$extensions.topclip.lapis` no `tokens.json`). O validador
+  cobra: a peça `objeto` exige lápis. O remix herda, e `ajustar lapis=impacto` troca o
+  desenho mantendo a paleta.
+- **Receitas por registro** (`pecas/receitas.py`): objeto em destaque, processo e dado,
+  já travadas nas palavras. Os registros de texto continuam sendo as peças. Os `compose.py`
+  dos estilos e o compose-modelo ganharam M1 a M3 com objeto. As cenas de peça passaram a
+  ser M4 em diante, e a capa agora mostra o desenho.
+- **A animação própria do objeto segue a fala, não a curva do estilo.** Com a curva
+  enérgica, as barras do Impacto chegavam ao topo 2 s antes da palavra no clip-010; agora
+  `p` é linear entre `anima_em` e `anima_em + dur`, e o objeto suaviza cada parte por
+  dentro.
+- **O traço do Luxo termina antes da saída.** Objeto que entra no fim da cena (a etiqueta
+  do clip-010) ficava pela metade.
+- **Luxo opaco, na ordem de pintura:** sem área escura, o traço de trás aparecia através do
+  corpo (aramado). O papel `vazado` (o check sobre o disco) sai na cor do fundo, senão
+  seria latão sobre latão.
+- **O adesivo do Impacto dilata com o OpenCV:** o `MaxFilter` do PIL deixava o render 4x
+  mais lento (129 s contra 35 s). Agora são 59 ms por quadro, contra 45 ms no Limpo.
+- **Quebra de linha equilibrada** (`base.quebra`): com o mesmo número de linhas, a menor
+  largura que ainda cabe, sem palavra órfã.
+- **Objetos do usuário:** `minha-biblioteca/objetos.py`, a partir do molde
+  `exemplo/objetos_usuario.py`. O `motion novo` copia o arquivo para o projeto como
+  `objetos_meus.py`, e ele entra no `OBJETOS`. A folha de conferência mostra cada objeto
+  nos três lápis.
+- **Painel:** a seção "O desenho" mostra `preview/objetos.png` (de `estilo previa`) no
+  detalhe de cada estilo com lápis; o Papel explica que desenha tudo no kit dele.
