@@ -93,6 +93,30 @@ mais fazem o corte parecer natural em vez de amputado.
 
 Se o hook é >50% do clipe, **não use hook — faça linear.**
 
+### Bordas no vale de energia — script, não ouvido
+
+O timing por palavra do Whisper erra 0,1–0,5s em palavras coladas: a borda que
+cai na "fronteira" que ele deu pega a cauda da palavra anterior ou corta a
+última sílaba. Logo depois do Clip Builder, sempre:
+
+```bash
+./topclip corte bordas --run <run-dir>
+```
+
+Para cada borda de segmento que é corte de verdade, mede a energia (RMS a 10ms)
+e leva a borda ao vale: borda já em silêncio claro (< -50 dB) fica; senão vai
+ao silêncio mais próximo em ±0,15s; sem silêncio, ao ponto mais baixo se passar
+de -40 dB. Nunca atravessa palavra — a borda só cai no vão entre duas palavras,
+e nenhuma palavra entra ou sai do corte por causa dela. Eventos, beats e duração
+estimada do candidato são recalculados juntos.
+
+Sem vale abaixo de -40 dB, a borda não se mexe e o clipe ganha `borda_fraca` em
+`warnings`: é fala colada de verdade. Escolha outra borda numa pausa real e rode
+de novo, ou deixe, se não houver pausa ali (o aviso viaja com o clipe até o QC).
+**Não meça RMS à mão** — foi o que custou 13,5 min da fase 3 na run de `docs/12`
+(12.7). O detalhe de cada borda fica em `iterations/bordas-06.json` e em
+`edge_audio` no próprio segmento; rodar de novo não mexe no que já foi medido.
+
 ### Recursos visuais do próprio bruto
 
 Antes de fechar in/out, olhar os frames. O bruto costuma já ter card de título,
@@ -130,6 +154,21 @@ segundo, silêncio. Leva segundos. Hard fail em `08-technical-audit.json` volta
 inválido. O `dedupe` é a sobreposição temporal entre cortes
 (`10-temporal-deduplication.json`).
 
+### Revisão vale para uma versão do corte
+
+Cada entrada de `07`, `09` e `12` é carimbada pelo script com `segments_hash`, a
+versão do corte que o revisor viu. Mudou o corte depois (rebuild, borda movida à
+mão), a revisão daquele clipe fica velha — e só a dele. O ajuste do `bordas`
+**não** conta como versão nova: não tira nem põe palavra.
+
+```bash
+./topclip corte revisoes --run <run-dir>
+```
+
+Sai `limpo: true` ou a lista do que refazer, com o subagente de cada item. Rode
+antes das prévias (passo 3) e das revisões (passo 4). Não carimbe nada à mão: ao
+reenviar um clipe ao revisor, a entrada nova vai sem `segments_hash`.
+
 ## 3. Prévias — já, todas em paralelo
 
 ```bash
@@ -153,7 +192,8 @@ revisões rodam — é tempo que antes ficava parado.
 ./topclip corte blind-packets --run <run-dir>
 ```
 
-Depois, **numa única mensagem**, dispare juntos:
+Se o `revisoes` acusou revisão de feed velha, ela entra nesta rodada. Depois,
+**numa única mensagem**, dispare juntos:
 
 | Subagente | Quantos | Lê | Saída |
 | --- | --- | --- | --- |
@@ -204,9 +244,10 @@ soma 1 ao `rebuild_attempt` de cada corte que refez.
 
 ## 6. Nova rodada — só nos que mudaram
 
-Volte ao passo 2 com os cortes refeitos:
+Rode o `bordas` nos cortes refeitos e volte ao passo 2:
 
 ```bash
+./topclip corte bordas --run <run-dir>
 ./topclip corte audit --run <run-dir>
 ./topclip corte previews --run <run-dir> --clips clip-002,clip-005
 ./topclip corte blind-packets --run <run-dir>

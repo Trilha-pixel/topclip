@@ -14,6 +14,7 @@ Não são hipóteses — cada linha custou um retrabalho.
 | Truncar a última palavra | "vai ser muito gran—" | verificar borda com `silencedetect` |
 | Abrir em "Uhum" | "R$ 200 milhões" | mover o in para a imagem forte |
 | Publicar dois cortes, um contido no outro | "R$ 4 milhões" / "momento certo" | checar contenção antes de cortar |
+| Cortar na fronteira de palavra que o Whisper deu | 113,58s, "Mas\|você" | `./topclip corte bordas` leva ao vale de energia (12.7) |
 
 A checagem de borda de áudio foi o que pegou o corte truncando "grande". Ela é
 barata e não é opcional:
@@ -211,3 +212,84 @@ Lição geral: **nenhum script do pacote deve decodificar o vídeo inteiro antes
 da fase de seleção.** Se um novo passo do pipeline for tentado adicionar antes
 do Clip Hunter e ele tocar no arquivo de vídeo (não só no transcript), isso é
 sinal de que a ordem está errada de novo.
+
+## 12.7 Fase 3 refazendo checagem: 25 min para 2 clipes, 13,5 em retrabalho
+
+Run `aula-yt-teste` (21/10/2026), 2 clipes. A fase 3 levou 25 min, e 13,5 deles
+foram checagem refeita, em cascata:
+
+1. **Borda no meio de palavra colada.** O timing por palavra do Whisper erra
+   0,1–0,5s quando as palavras são coladas. O início em 113,58s (a fronteira
+   "Mas|você" pelo Whisper) pegava o fim do "Mas": a energia mostrava o "Mas"
+   até 113,70 e o "você" só a partir de 114,17 — o intervalo que o Whisper deu
+   ao "você" engolia a pausa e a cauda do "Mas". Outro fim cortava a cauda de
+   "fazer", que o Whisper esticou até 2126,34s por cima da pausa (0,96s para
+   duas sílabas). Corrigido à mão, medindo RMS a 10ms.
+2. **Plano desatualizado.** Mover essas bordas no `11-edit-plans.json` deixou
+   `clip_start`/`clip_end`, chunks de legenda, cards, `motion_anchors`,
+   `punch_ins` e `breath_decupage` apontando para a versão anterior. O Quality
+   Controller reprovou, o recálculo foi feito com script avulso, e o QC rodou
+   de novo.
+3. **Revisão de versão velha descoberta tarde.** O `finalize` consolidou um
+   `07-feed-review.json` feito sobre a versão anterior do corte e deu REBUILD
+   indevido. A revisão de feed foi refeita depois do QC.
+4. **Override fora do pipeline.** Os dois ficaram `WEAK` (gate 7,5) e o usuário
+   mandou seguir, mas o `render` só aceitava `APPROVED`/`LONG_CLIP`: os clipes
+   foram renderizados chamando `render_clip` direto.
+
+| Problema | Correção |
+| --- | --- |
+| borda no meio de palavra colada | `./topclip corte bordas --run` depois do Clip Builder e depois do Edit Director: mede RMS a 10ms e leva cada borda de corte ao vale — fica se já está em silêncio claro (< -50 dB), vai ao silêncio mais próximo em ±0,15s, ou ao ponto mais baixo abaixo de -40 dB; sem vale, `borda_fraca` em `warnings`. Nunca atravessa palavra: só cai no vão entre os corpos das palavras vizinhas (corpo = onde ela soa de fato dentro do intervalo do Whisper). Rodado sobre uma cópia da mesma run: 113,58 → 113,74s (-30,7 → -51,5 dB); 2125,85 → 2125,93s (-29,1 → -54,8 dB, o valor exato da correção manual); 2104,80s sai `borda_fraca` (-37 dB, fala colada sem pausa) |
+| tempos do plano desatualizados | `bordas` e `autoframe` recalculam todo tempo de clipe pela posição na fonte (`scripts/tempos.py`): o que está grudado num corte acompanha o corte, o que está no meio acompanha a fala. Cada segmento guarda `synced_source`, então até borda editada à mão é recuperada; o `validate-artifact` do 11 acusa `tempo_de_clipe_desatualizado` |
+| revisão de versão velha | cada entrada de 07, 09 e 12 é carimbada pelo script com `segments_hash` (versão do corte). `./topclip corte revisoes` lista o que refazer e roda **antes** do QC; o `finalize` para em vez de consolidar status errado. O ajuste do `bordas` e a emenda do `autoframe` não contam como versão nova |
+| usuário quer seguir com WEAK | `finalize --seguir <ids> --motivo "..."`: `user_override` no 13, o render aceita, o relatório mantém `WEAK` numa seção própria. Vale enquanto o corte for o mesmo; hard fail não se força |
+
+Lições:
+
+- **Palavra do Whisper não é borda de corte.** Em palavra colada, o intervalo
+  engole a pausa e a cauda da vizinha, e o meio do intervalo mente (o meio do
+  "fazer" esticado caía antes do fim real da palavra). A borda se decide na
+  energia; o Whisper só diz de que lado cada palavra está.
+- **Todo número derivado precisa de quem o recalcule a partir da fonte.** Tempo
+  de clipe é derivado de `source_start`/`source_end`; recalculá-lo à mão é o
+  mesmo erro de estimar no modelo o que um script calcula.
+- **Revisão vale para uma versão.** Descobrir revisão velha só no `finalize`
+  custa o QC de novo. O portão é antes do QC.
+
+Os testes `tests/test_bordas.py` (áudio sintético que reproduz "Mas|você" e o
+"fazer" esticado), `tests/test_tempos.py` e `tests/test_versoes_e_override.py`
+existem para que isso não volte.
+
+## 12.8 Autoframe apagava o punch-in e podia abrir buraco na fonte
+
+Achados rodando o `autoframe` sobre a run `aula-yt-teste` (21/10/2026), lida sem
+gravar nada nela.
+
+1. **Punch-in sobrescrito.** O Edit Director pôs `zoom: 1.08` em dois segmentos,
+   motivado por número (clip-005, seg 3) e por virada de argumento (clip-010,
+   seg 4) — a troca de zoom era o que disfarçava o jump cut. O `autoframe`
+   tratava `zoom` como campo só dele e gravava o zoom do rosto: os dois saíam
+   1.0, sem aviso. O `framing_reason` continuava dizendo "punch-in 1.08".
+2. **Buraco na cobertura.** `plan_segments` descartava o trecho entre duas
+   keyframes a menos de 0,15s uma da outra (`continue`), e nenhum vizinho
+   cobria esse pedaço. Acontece na janela final de 0,1s antes de um corte de
+   câmera, ou quando o plano do início é curto demais (< 0,3s) e a primeira
+   keyframe vem depois do início do segmento. O render concatena os
+   subsegmentos: aquele áudio sumia do clipe. E a cobertura entra no
+   `segments_hash` (12.7): o buraco virava versão nova do corte e tornava velha
+   a revisão do QC. Na run de teste, só closes (um subsegmento por segmento),
+   não houve buraco; o defeito estava latente.
+
+| Problema | Correção |
+| --- | --- |
+| punch-in do Edit Director virava 1.0 | o zoom do segmento é punch-in **relativo**: zoom final = zoom do rosto × zoom pedido, teto 2.0 (o do schema). Na mesma run: 1.08 → 1.08 nos dois. Com `max()` o punch-in sumiria num plano aberto em que o rosto já pede 1.3 |
+| trecho < 0,15s descartado | os subsegmentos cobrem a faixa do segmento inteira: o trecho curto fica com o vizinho de trás (ou o da frente, no início), e a primeira keyframe vale desde o início do segmento. Mesmo `segments_hash` antes e depois do autoframe |
+
+Lição: **etapa mecânica não reescreve decisão editorial calada.** O autoframe já
+herdava `layout` e `framing_reason` (12.4) e continuava apagando o zoom, que
+também é decisão do Edit Director. E **todo passo que subdivide segmento tem de
+devolver a mesma faixa na fonte**: piscada de enquadramento se resolve no
+enquadramento, nunca tirando áudio.
+
+Os testes `TestZoomDoEditDirector` e `TestCoberturaDaFonte`, em
+`tests/test_autoframe.py`, simulam o `plan_range` e existem para que isso não volte.

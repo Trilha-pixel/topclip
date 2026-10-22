@@ -26,6 +26,8 @@ workspace/runs/<run-id>/
 │   ├── frames/
 │   └── contact-sheets/
 ├── iterations/
+│   ├── bordas-06.json              # medida de cada borda do candidato
+│   └── bordas-11.json              # ...e do plano
 └── output/
     ├── context-index.md
     └── final-clips/

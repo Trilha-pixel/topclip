@@ -63,6 +63,17 @@ silence:
   minimum_duration_seconds: 0.55
   candidate_only: true
 
+bordas:
+  # `./topclip corte bordas`: leva cada borda de segmento ao vale de energia
+  # (RMS a 10 ms). O timing por palavra do Whisper erra 0,1-0,5 s em palavra
+  # colada; ver docs/12-erros-registrados.md (12.7).
+  janela_s: 0.15        # busca do vale em volta da borda
+  janela_max_s: 0.30    # vale que comeca na janela e segue descendo pode ir ate aqui
+  silencio_db: -50      # borda abaixo disso ja esta em silencio claro: fica
+  vale_db: -40          # sem vale abaixo disso: nao mexe e avisa borda_fraca
+  subida_db: 6          # a busca nao passa por cima de som mais alto que a borda
+  hop_s: 0.010
+
 captions:
   scale_style_to_render: true
   style: clean

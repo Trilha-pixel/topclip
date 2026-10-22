@@ -106,6 +106,10 @@
                 },
                 "remove_from_body": {
                   "type": "boolean"
+                },
+                "edge_audio": {
+                  "type": "object",
+                  "description": "Medida de energia de cada borda feita por `./topclip corte bordas` (start/end: t, db, action, from)."
                 }
               },
               "additionalProperties": true

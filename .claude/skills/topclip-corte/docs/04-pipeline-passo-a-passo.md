@@ -139,6 +139,10 @@ Para cada momento:
 
 A timeline pode ser descontínua, mas precisa manter verdade semântica.
 
+Em seguida, `./topclip corte bordas` leva cada borda de corte ao vale de energia
+do áudio (o timing por palavra erra 0,1–0,5s em palavra colada) e recalcula
+eventos e duração estimada.
+
 ## Etapa 7 — Feed Psychology Review
 
 O agente marca a posição temporal de:
@@ -241,9 +245,16 @@ Define:
 - áudio;
 - saída.
 
+Depois do Edit Director, `./topclip corte bordas` de novo (agora no 11): bordas
+no vale e todos os tempos de clipe do plano recalculados pela posição na fonte.
+
 ## Etapa 13 — Finalização
 
-Aplica gates, gera `13-final-clips.json` e separa rejeitados.
+Antes do Quality Controller, `./topclip corte revisoes`: nenhuma revisão feita
+sobre versão anterior do corte. O `finalize` aplica gates, gera
+`13-final-clips.json` e separa rejeitados; para se encontrar revisão velha.
+`--seguir` leva ao render um `WEAK`/`REBUILD` que o usuário escolheu publicar,
+sem mudar o status no relatório.
 
 ## Etapa 14 — Legendas
 

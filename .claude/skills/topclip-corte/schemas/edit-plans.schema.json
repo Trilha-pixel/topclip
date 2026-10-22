@@ -77,6 +77,27 @@
                 "framing_reason": {
                   "type": "string",
                   "description": "Por que este enquadramento neste subsegmento."
+                },
+                "clip_start": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "clip_end": {
+                  "type": "number",
+                  "minimum": 0
+                },
+                "synced_source": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "description": "Faixa da fonte com que clip_start/clip_end foram calculados (scripts/tempos.py). Não edite: é o que permite recalcular quando a borda muda."
+                },
+                "edge_audio": {
+                  "type": "object",
+                  "description": "Medida de energia de cada borda feita por `./topclip corte bordas` (start/end: t, db, action, from)."
                 }
               },
               "additionalProperties": true
@@ -96,6 +117,16 @@
           },
           "editor_notes": {
             "type": "string"
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "timing_sync": {
+            "type": "object",
+            "description": "Último recálculo automático dos tempos de clipe (bordas/autoframe)."
           }
         },
         "additionalProperties": true

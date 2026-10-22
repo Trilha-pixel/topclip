@@ -7,12 +7,32 @@ from typing import Any
 from scripts.utils import load_json, slugify, write_json
 
 
+# O usuário pode mandar seguir um clipe que não passou no gate de nota (WEAK) ou
+# que a revisão mandou refazer (REBUILD). Hard fail (REJECTED) e duplicata, não:
+# são defeito objetivo, não opinião sobre a nota.
+STATUS_QUE_O_USUARIO_PODE_SEGUIR = {"WEAK", "REBUILD"}
+
+
 def _by_id(items: list[dict[str, Any]], key: str = "clip_id") -> dict[str, dict[str, Any]]:
     return {str(item.get(key)): item for item in items if item.get(key) is not None}
 
 
-def consolidate_final(run_dir: str | Path, config: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+def consolidate_final(
+    run_dir: str | Path,
+    config: dict[str, Any],
+    overrides: dict[str, dict[str, Any]] | None = None,
+    current_hashes: dict[str, str] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Consolida 06–12 em 13 (vai para render) e 14 (não vai).
+
+    `overrides`: {clip_id: {"motivo", "em", "segments_hash"}} — o usuário mandou
+    seguir. O clipe vai para o 13 com `user_override` e o status que ganhou
+    (WEAK continua WEAK no relatório), desde que o override seja da versão atual
+    do corte (`current_hashes`).
+    """
     run = Path(run_dir)
+    overrides = overrides or {}
+    current_hashes = current_hashes or {}
     candidates_data = load_json(run / "06-candidates.json")
     candidates = candidates_data.get("clips", [])
     feed = _by_id(load_json(run / "07-feed-review.json", {"reviews": []}).get("reviews", []))
@@ -110,7 +130,18 @@ def consolidate_final(run_dir: str | Path, config: dict[str, Any]) -> tuple[dict
             status = "LONG_CLIP" if duration > 120 or clip.get("profile") == "long_clip" else "APPROVED"
         clip["status"] = status
         clip["final_decision_reasons"] = reasons
-        if status in {"APPROVED", "LONG_CLIP"}:
+        if clip_id in current_hashes:
+            clip["segments_hash"] = current_hashes[clip_id]
+        pedido = overrides.get(clip_id)
+        if pedido and status not in {"APPROVED", "LONG_CLIP"}:
+            versao = pedido.get("segments_hash")
+            if status not in STATUS_QUE_O_USUARIO_PODE_SEGUIR:
+                reasons.append(f"user_override_ignorado: {status} não se força (hard fail ou duplicata)")
+            elif versao and current_hashes.get(clip_id) and versao != current_hashes[clip_id]:
+                reasons.append("user_override_ignorado: era para outra versão do corte — confirme de novo com o usuário")
+            else:
+                clip["user_override"] = {**pedido, "status_kept": status}
+        if status in {"APPROVED", "LONG_CLIP"} or clip.get("user_override"):
             approved.append(clip)
         else:
             rejected.append(clip)
@@ -134,12 +165,16 @@ def write_run_report(run_dir: str | Path, final: dict[str, Any], rejected: dict[
         f"- Rebuild: {counts.get('REBUILD', 0)}",
         f"- Duplicatas: {counts.get('DUPLICATE', 0)}",
         f"- Fracos: {counts.get('WEAK', 0)}",
-        f"- Rejeitados: {counts.get('REJECTED', 0)}", "",
-        "## Clipes aprovados", "",
+        f"- Rejeitados: {counts.get('REJECTED', 0)}",
     ]
-    if not final.get("clips"):
+    seguidos = [clip for clip in final.get("clips", []) if clip.get("user_override")]
+    aprovados = [clip for clip in final.get("clips", []) if not clip.get("user_override")]
+    if seguidos:
+        lines.append(f"- Seguem por decisão do usuário (status mantido): {len(seguidos)}")
+    lines += ["", "## Clipes aprovados", ""]
+    if not aprovados:
         lines.append("Nenhum clipe passou por todos os gates. Isso é um resultado válido.\n")
-    for clip in final.get("clips", []):
+    for clip in aprovados:
         lines += [
             f"### {clip.get('id')} — {clip.get('title', '')}", "",
             f"- Status: `{clip.get('status')}`",
@@ -149,6 +184,19 @@ def write_run_report(run_dir: str | Path, final: dict[str, Any], rejected: dict[
             f"- Duração: {clip.get('technical_metrics', {}).get('duration_seconds', 'n/d')}s",
             f"- Por que funciona: {clip.get('why_it_can_work', '')}", "",
         ]
+    if seguidos:
+        lines += ["## Seguem por decisão do usuário", "",
+                  "Não passaram nos gates e o status fica como está. Vão para render porque o usuário mandou seguir.", ""]
+        for clip in seguidos:
+            override = clip.get("user_override", {})
+            reasons = "; ".join(clip.get("final_decision_reasons", [])) or "sem motivo registrado"
+            lines += [
+                f"### {clip.get('id')} — {clip.get('title', '')}", "",
+                f"- Status: `{clip.get('status')}` (mantido)",
+                f"- Score: {clip.get('publishability_score', 0):.2f}",
+                f"- Por que não passou: {reasons}",
+                f"- Decisão do usuário: {override.get('motivo', '')} ({override.get('em', '')})", "",
+            ]
     lines += ["## Não aprovados", ""]
     for clip in rejected.get("clips", []):
         reasons = "; ".join(clip.get("final_decision_reasons", [])) or "sem motivo registrado"
