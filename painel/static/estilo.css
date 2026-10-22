@@ -291,7 +291,7 @@ main { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 48px) 1
 .proximo { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; margin-top: 30px; padding: 18px 20px; border: 1.5px dashed var(--tinta-3); border-radius: 3px; background: rgba(219, 214, 83, 0.12); }
 .proximo .mao { font-size: 20px; transform: rotate(-4deg); }
 .comando { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.comando code { font: 500 14px/1.4 var(--mono); background: var(--tinta); color: var(--papel); padding: 9px 12px; border-radius: 2px; word-break: break-all; }
+.comando code { font: 500 14px/1.4 var(--mono); background: var(--tinta); color: var(--papel); padding: 9px 12px; border-radius: 2px; overflow-wrap: anywhere; }
 
 /* biblioteca */
 .assets { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 26px; }
@@ -382,3 +382,31 @@ main { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 48px) 1
 .colar input { width: 100%; margin-top: 10px; font: 400 15px var(--texto); padding: 11px 13px; border: 1.5px solid var(--tinta); border-radius: 2px; background: #fff; }
 .colar input:focus { outline: none; box-shadow: 3px 3px 0 var(--amarelo); }
 [hidden] { display: none !important; }
+
+/* atividade ao vivo */
+.atividade { margin: 0 0 26px; padding: 18px 22px; }
+.ativ-topo { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.ativ-estado { display: inline-flex; align-items: center; gap: 9px; font: 700 15px/1 var(--display); text-transform: uppercase; letter-spacing: 0.06em; padding: 8px 12px; border-radius: 999px; border: 1.5px solid var(--tinta); background: var(--papel-claro); white-space: nowrap; }
+.ativ-estado i { width: 10px; height: 10px; border-radius: 50%; background: var(--tinta-3); flex: none; }
+.ativ-estado.rodando i, .ativ-estado.ativo i { background: var(--azul); animation: pulsa 1.4s ease-in-out infinite; }
+.ativ-estado.rodando, .ativ-estado.ativo { border-color: var(--azul); color: var(--azul); }
+.ativ-estado.sua_vez, .ativ-estado.avisar_claude { background: var(--amarelo); }
+.ativ-estado.sua_vez i, .ativ-estado.avisar_claude i { background: var(--tinta); }
+.ativ-estado.erro { border-color: var(--vermelho); color: var(--vermelho); }
+.ativ-estado.erro i { background: var(--vermelho); }
+@keyframes pulsa { 0%, 100% { box-shadow: 0 0 0 0 rgba(46, 130, 247, 0.55); } 50% { box-shadow: 0 0 0 7px rgba(46, 130, 247, 0); } }
+.ativ-agora { font-size: 15px; color: var(--tinta); flex: 1; min-width: 220px; }
+.ativ-agora small { display: block; color: var(--tinta-3); font: 500 12px/1.4 var(--mono); margin-top: 3px; }
+.ativ-lista { list-style: none; margin: 16px 0 0; padding: 14px 0 0; border-top: 1.5px dashed var(--papel-borda); display: grid; gap: 7px; max-height: 360px; overflow: auto; }
+.ativ-lista li { display: grid; grid-template-columns: 74px 20px 1fr; gap: 8px; align-items: baseline; font-size: 14px; color: var(--tinta-2); }
+.ativ-lista li:first-child { color: var(--tinta); font-weight: 600; }
+.ativ-lista time { font: 500 12px/1 var(--mono); color: var(--tinta-3); }
+.ativ-lista .ic { font: 700 13px/1 var(--texto); text-align: center; }
+.ativ-lista .ic.fim, .ativ-lista .ic.arquivo { color: var(--azul); }
+.ativ-lista .ic.erro { color: var(--vermelho); }
+.ativ-lista .ic.voce { color: var(--amarelo-forte); }
+.ativ-vazio { margin: 12px 0 0; font-size: 14px; color: var(--tinta-2); }
+.cartao .ativo-selo { position: absolute; top: 22px; left: 22px; z-index: 3; display: inline-flex; align-items: center; gap: 6px; font: 700 12px/1 var(--display); text-transform: uppercase; letter-spacing: 0.06em; background: var(--papel-claro); color: var(--azul); border: 1.5px solid var(--azul); padding: 5px 8px; border-radius: 999px; }
+.cartao .ativo-selo i { width: 7px; height: 7px; border-radius: 50%; background: var(--azul); animation: pulsa 1.4s ease-in-out infinite; }
+.cartao .ativo-selo.sua_vez { color: var(--tinta); border-color: var(--tinta); background: var(--amarelo); }
+.cartao .ativo-selo.sua_vez i { background: var(--tinta); animation: none; }

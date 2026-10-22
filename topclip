@@ -7,6 +7,7 @@
 #   ./topclip motion novo <pasta>   cria um projeto de motion a partir de um clipe vertical
 #   ./topclip motion transcrever <video> <saida.json>
 #   ./topclip painel                abre o painel no navegador (http://127.0.0.1:7777)
+#   ./topclip log <projeto> "msg"   anota no diário do projeto (aparece no painel)
 #   ./topclip py <script.py> ...    roda qualquer script com o Python da venv
 #   ./topclip testes                roda a suíte de testes
 #
@@ -20,7 +21,7 @@ CORTE="$ROOT/.claude/skills/topclip-corte"
 MOTION="$ROOT/.claude/skills/topclip-motion"
 
 ajuda() {
-    sed -n '2,13p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+    sed -n '2,14p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 precisa_venv() {
@@ -29,6 +30,23 @@ precisa_venv() {
         echo "      Rode primeiro:  ./topclip instalar" >&2
         exit 2
     fi
+}
+
+# Roda um comando anotando início e fim no diário do projeto (painel → Atividade),
+# quando algum argumento aponta para projetos/<nome>. Sem projeto, só roda.
+# $1 = rótulo ("corte", "transcrever"); $2 e $3 = python e script; o resto, os argumentos.
+rodar_registrando() {
+    local rotulo="$1"; shift
+    local projeto
+    projeto="$("$PY" "$ROOT/painel/atividade.py" achar-projeto "${@:3}" 2>/dev/null || true)"
+    if [ -z "$projeto" ]; then
+        exec "$@"
+    fi
+    local id="$$-$(date +%s)" t0=$SECONDS codigo=0
+    "$PY" "$ROOT/painel/atividade.py" inicio "$projeto" "$id" "$$" "$rotulo" "${@:3}" || true
+    "$@" || codigo=$?
+    "$PY" "$ROOT/painel/atividade.py" fim "$projeto" "$id" "$codigo" "$((SECONDS - t0))" "$rotulo" "${@:3}" || true
+    exit "$codigo"
 }
 
 motion_novo() {
@@ -81,14 +99,23 @@ case "$cmd" in
         ;;
     corte)
         precisa_venv
-        exec "$PY" "$CORTE/scripts/vch.py" "$@"
+        rodar_registrando corte "$PY" "$CORTE/scripts/vch.py" "$@"
+        ;;
+    log)
+        precisa_venv
+        if [ $# -lt 2 ]; then
+            echo "uso: ./topclip log projetos/<nome> \"o que está acontecendo\"" >&2
+            exit 2
+        fi
+        alvo="$1"; shift
+        "$PY" "$ROOT/painel/atividade.py" registrar "$alvo" info "$@"
         ;;
     motion)
         sub="${1:-}"
         [ $# -gt 0 ] && shift
         case "$sub" in
             novo) motion_novo "$@" ;;
-            transcrever) precisa_venv; exec "$PY" "$MOTION/lib/transcrever.py" "$@" ;;
+            transcrever) precisa_venv; rodar_registrando transcrever "$PY" "$MOTION/lib/transcrever.py" "$@" ;;
             *) echo "uso: ./topclip motion {novo|transcrever} ..." >&2; exit 2 ;;
         esac
         ;;

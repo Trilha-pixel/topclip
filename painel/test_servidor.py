@@ -167,3 +167,64 @@ class LocalizarVideo(ComProjetosTemporarios):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class Atividade(ComProjetosTemporarios):
+    """O diário que diz se o TopClip está mesmo trabalhando."""
+
+    def setUp(self):
+        super().setUp()
+        self._orig_atv = S.ATV.PROJETOS
+        S.ATV.PROJETOS = S.PROJETOS
+        S.criar_projeto("Diario", "")
+        self.proj = S.PROJETOS / "diario"
+
+    def tearDown(self):
+        S.ATV.PROJETOS = self._orig_atv
+        super().tearDown()
+
+    def test_projeto_novo_espera_o_claude(self):
+        self.assertEqual(S.atividade(self.proj)["estado"], "esperando_claude")
+
+    def test_acha_o_projeto_pelos_argumentos(self):
+        acha = S.ATV.achar_projeto
+        self.assertEqual(acha(["init", "/x/v.mp4", "--workspace", "projetos/diario/runs"]), self.proj)
+        self.assertEqual(acha(["digest", "--run", f"{S.PROJETOS}/diario/runs/r1"]), self.proj)
+        self.assertIsNone(acha(["preflight"]))
+        self.assertIsNone(acha(["--run", "projetos/nao-existe/runs/r1"]))
+
+    def test_comando_rodando_com_processo_vivo(self):
+        import os
+        S.ATV.main(["inicio", str(self.proj), "id1", str(os.getpid()), "corte", "prepare", "--run", "projetos/diario/runs/r"])
+        a = S.atividade(self.proj)
+        self.assertEqual(a["estado"], "rodando")
+        self.assertIn("transcrevendo", a["rodando"]["msg"])
+
+    def test_processo_que_sumiu_vira_interrompido(self):
+        S.ATV.main(["inicio", str(self.proj), "id2", "999999", "corte", "render"])
+        a = S.atividade(self.proj)
+        self.assertNotEqual(a["estado"], "rodando")
+        self.assertEqual(a["eventos"][0]["tipo"], "erro")
+        self.assertIn("interrompido", a["eventos"][0]["msg"])
+
+    def test_fim_com_erro_e_com_sucesso(self):
+        S.ATV.main(["fim", str(self.proj), "id3", "1", "75", "corte", "render"])
+        S.ATV.main(["fim", str(self.proj), "id4", "0", "3700", "corte", "subtitles"])
+        msgs = [e["msg"] for e in S.atividade(self.proj)["eventos"]]
+        self.assertTrue(any("falhou (código 1) depois de 1min 15s" in m for m in msgs))
+        self.assertTrue(any("pronto em 1h 01min" in m for m in msgs))
+
+    def test_sua_vez_e_depois_avisar_o_claude(self):
+        run = self.proj / "runs" / "r1"
+        run.mkdir(parents=True)
+        (run / "00-manifest.json").write_text("{}")
+        (run / "05-viral-moments.json").write_text('{"moments": [{"id": "moment-001"}]}')
+        a = S.atividade(self.proj)
+        self.assertEqual(a["estado"], "sua_vez")
+        self.assertEqual(S.resumo(self.proj)["etapa_atual"], "momentos")
+        S.salvar_escolhas(self.proj, {"momentos": ["moment-001"]})
+        self.assertEqual(S.atividade(self.proj)["estado"], "avisar_claude")
+
+    def test_anotar_nunca_quebra(self):
+        S.ATV.registrar(self.tmp / "nao-existe", "x")          # pasta inexistente: ignora
+        self.assertEqual(S.ATV.main(["fim", "lixo"]), 0)       # argumentos faltando: ignora

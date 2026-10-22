@@ -106,7 +106,12 @@ function marcarNav(qual) {
   document.querySelectorAll("[data-nav]").forEach((a) => a.classList.toggle("ativo", a.dataset.nav === qual));
 }
 
+let relogio = null;            // atualização ao vivo da tela atual
+let escolhaNaoSalva = false;   // não redesenhar por cima de uma escolha em andamento
+
 async function rotear() {
+  clearInterval(relogio);
+  escolhaNaoSalva = false;
   const partes = location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   window.scrollTo(0, 0);
   esconderBarra();
@@ -135,6 +140,8 @@ function cartaoProjeto(p) {
   return `
   <a class="cartao papel fita" href="#/projeto/${esc(p.slug)}">
     ${p.demo ? `<span class="selo-demo">exemplo</span>` : ""}
+    ${["rodando", "ativo"].includes(p.atividade) ? `<span class="ativo-selo"><i></i>trabalhando</span>`
+      : ["sua_vez", "avisar_claude"].includes(p.atividade) ? `<span class="ativo-selo sua_vez"><i></i>sua vez</span>` : ""}
     <div class="capa">${p.capa ? `<img src="${p.capa}" alt="" loading="lazy">` : `<span class="iniciais">${esc(iniciais)}</span>`}</div>
     <h3>${esc(p.nome)}</h3>
     <div class="meta">${esc(p.video || "sem vídeo definido")}</div>
@@ -174,6 +181,13 @@ async function telaInicio() {
        </div>`}`;
 
   app.querySelectorAll('[data-acao="novo"]').forEach((b) => (b.onclick = abrirNovoProjeto));
+  const chave = (lista) => JSON.stringify(lista.map((p) => [p.slug, p.atividade, p.etapa_atual]));
+  const antes = chave(projetos);
+  relogio = setInterval(async () => {
+    if (document.querySelector(".modal-fundo")) return;          // formulário aberto: não mexe
+    const r = await api("/api/projetos").catch(() => null);
+    if (r && chave(r.projetos) !== antes) { clearInterval(relogio); telaInicio(); }
+  }, 5000);
   const demo = app.querySelector('[data-acao="demo"]');
   if (demo) demo.onclick = async () => { const r = await api("/api/demo", { method: "POST" }); location.hash = `#/projeto/${r.slug}`; };
 }
@@ -330,11 +344,13 @@ async function telaProjeto(slug, etapa) {
     <button class="botao claro pequeno" data-acao="abrir">Abrir pasta</button>
   </div>
   ${trilhaEtapas(p, ativa)}
+  <section class="atividade papel" id="atividade"><div class="mudo mono">carregando a atividade…</div></section>
   <section class="painel-etapa papel">${corpo}</section>`;
 
   app.querySelectorAll("[data-etapa]").forEach((b) => (b.onclick = () => (location.hash = `#/projeto/${slug}/${b.dataset.etapa}`)));
   app.querySelector('[data-acao="abrir"]').onclick = () => api(`/api/projetos/${slug}/abrir`, { method: "POST" }).catch((e) => aviso(esc(e.message)));
   ligarEscolhas(p, ativa);
+  acompanharAtividade(slug, etapa);
 }
 
 const pedirAoClaude = (p) => `/topclip projetos/${p.slug}`;
@@ -492,7 +508,7 @@ function ligarEscolhas(p, ativa) {
       (el.closest("[data-cartao]") || el).classList.toggle("escolhido", sim);
     });
   };
-  const alternar = (id) => { conjunto.has(id) ? conjunto.delete(id) : conjunto.add(id); mudou = true; atualizar(); };
+  const alternar = (id) => { conjunto.has(id) ? conjunto.delete(id) : conjunto.add(id); mudou = true; escolhaNaoSalva = true; atualizar(); };
 
   app.querySelectorAll(`[data-item="${tipo}"]`).forEach((el) => {
     el.addEventListener("click", (e) => { if (e.target.closest("video, details, a")) return; alternar(el.dataset.id); });
@@ -507,6 +523,7 @@ function ligarEscolhas(p, ativa) {
     try {
       await api(`/api/projetos/${p.slug}/escolhas`, { method: "POST", body: { [tipo]: [...conjunto] } });
       mudou = false;
+      escolhaNaoSalva = false;
       atualizar();
       barra.classList.add("visivel");
       app.querySelector("[data-depois-salvar]")?.removeAttribute("hidden");
@@ -517,6 +534,86 @@ function ligarEscolhas(p, ativa) {
     }
   };
   atualizar();
+}
+
+// ------------------------------------------------------------------ atividade ao vivo
+function ha(s) {
+  if (s == null) return "";
+  if (s < 10) return "agora";
+  if (s < 60) return `há ${s}s`;
+  if (s < 3600) return `há ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
+  return `há ${Math.floor(s / 86400)} dia${s >= 172800 ? "s" : ""}`;
+}
+
+function horario(iso) {
+  const d = new Date(iso);
+  const hoje = new Date().toDateString() === d.toDateString();
+  const hh = d.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit", second: hoje ? "2-digit" : undefined });
+  return hoje ? hh : `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hh}`;
+}
+
+const ICONE_EVENTO = { inicio: "▶", fim: "✓", arquivo: "✓", erro: "✕", info: "•", voce: "★", projeto: "+" };
+let atividadeAberta = false;
+
+function desenharAtividade(slug, a) {
+  const caixa = document.getElementById("atividade");
+  if (!caixa) return;
+  const ultimo = a.eventos[0];
+  const falhou = ultimo && ultimo.tipo === "erro" && a.estado !== "rodando";
+  const cls = falhou ? "erro" : a.estado;
+  const rotulo = falhou ? "Algo falhou" : {
+    rodando: "Trabalhando", ativo: "Trabalhando", sua_vez: "Sua vez", avisar_claude: "Sua vez",
+    esperando_claude: "Esperando o Claude", parado: "Parado",
+  }[a.estado];
+
+  let agora;
+  if (falhou) agora = `${esc(ultimo.msg)}<small>Veja a conversa com o Claude para o detalhe do erro.</small>`;
+  else if (a.estado === "rodando") agora = `${esc(a.rodando.msg)}<small>começou ${ha(a.rodando.ha_s)} · o painel atualiza sozinho</small>`;
+  else if (a.estado === "ativo") agora = `${esc(ultimo.msg)}<small>última notícia ${ha(a.ultima_ha_s)}</small>`;
+  else if (a.estado === "sua_vez") agora = `${esc(a.sua_vez.msg)} <button class="link" data-ir-etapa="${a.sua_vez.etapa}">escolher agora</button>`;
+  else if (a.estado === "avisar_claude") agora = `Você já escolheu. Agora diga ao Claude: ${comando("escolhi no painel, pode seguir")}`;
+  else if (a.estado === "esperando_claude") agora = `Nada começou ainda. Cole no Claude Code, aberto na pasta do TopClip: ${comando(`/topclip projetos/${slug}`)}`;
+  else agora = `${esc(ultimo ? ultimo.msg : "")}<small>última notícia ${ha(a.ultima_ha_s)} · se o Claude ainda estiver pensando, a próxima etapa aparece aqui sozinha</small>`;
+
+  const lista = atividadeAberta ? a.eventos : a.eventos.slice(0, 6);
+  caixa.innerHTML = `
+    <div class="ativ-topo">
+      <span class="ativ-estado ${cls}"><i></i>${rotulo}</span>
+      <div class="ativ-agora">${agora}</div>
+      ${a.eventos.length > 6 ? `<button class="link" data-ativ-alternar>${atividadeAberta ? "ver menos" : `ver tudo (${a.eventos.length})`}</button>` : ""}
+    </div>
+    ${a.eventos.length ? `<ul class="ativ-lista">${lista.map((e) => `
+      <li><time datetime="${esc(e.t)}">${horario(e.t)}</time><span class="ic ${e.tipo}">${ICONE_EVENTO[e.tipo] || "•"}</span><span>${esc(e.msg)}</span></li>`).join("")}</ul>`
+      : `<p class="ativ-vazio">O que o TopClip fizer neste projeto aparece aqui, ao vivo.</p>`}`;
+  caixa.querySelector("[data-ativ-alternar]")?.addEventListener("click", () => { atividadeAberta = !atividadeAberta; desenharAtividade(slug, a); });
+  caixa.querySelector("[data-ir-etapa]")?.addEventListener("click", (e) => (location.hash = `#/projeto/${slug}/${e.target.dataset.irEtapa}`));
+}
+
+function acompanharAtividade(slug, etapa) {
+  let assinatura = null, chaveAnterior = null;
+  const rota = location.hash;
+  const passo = async () => {
+    if (location.hash !== rota) return clearInterval(relogio);
+    const a = await api(`/api/projetos/${encodeURIComponent(slug)}/atividade`).catch(() => null);
+    if (!a) return;
+    if (assinatura && a.assinatura !== assinatura && !escolhaNaoSalva) {
+      // apareceu coisa nova (momentos, prévias, clipes): redesenha mantendo a rolagem
+      clearInterval(relogio);
+      const y = window.scrollY;
+      await telaProjeto(slug, etapa);
+      window.scrollTo(0, y);
+      return;
+    }
+    assinatura = a.assinatura;
+    const chave = JSON.stringify([a.estado, a.eventos.slice(0, 12), a.sua_vez, a.rodando && a.rodando.msg, atividadeAberta]);
+    if (chave !== chaveAnterior || ["rodando", "ativo", "parado"].includes(a.estado)) {
+      desenharAtividade(slug, a);
+      chaveAnterior = chave;
+    }
+  };
+  passo();
+  relogio = setInterval(passo, 3000);
 }
 
 // ------------------------------------------------------------------ biblioteca

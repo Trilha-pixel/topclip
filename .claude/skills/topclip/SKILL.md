@@ -67,6 +67,21 @@ Os ids são os de `05-viral-moments.json` e `06-candidates.json`. Confirme em um
 linha o que vai seguir ("seguindo com 2 momentos: …") e continue só com eles. Lista
 vazia ou arquivo ausente: pergunte, não presuma.
 
+### Narre o que está fazendo — o painel mostra ao vivo
+
+O painel tem uma caixa **Atividade** que diz se o TopClip está trabalhando. Os comandos
+`./topclip corte …` e `./topclip motion transcrever …` se registram sozinhos (início,
+fim, duração, erro) quando um argumento aponta para `projetos/<nome>`. O que **você**
+faz entre eles — subagente lendo, decisão, espera — só aparece se você anotar:
+
+```bash
+./topclip log projetos/<nome> "Clip Hunter procurando momentos que funcionam fora de contexto"
+```
+
+Anote ao começar cada etapa e cada subagente, e ao parar num portão ("momentos
+prontos — esperando sua escolha"). Uma linha curta, em português de gente, sem jargão
+de arquivo. Sem isso, a pessoa vê o painel parado enquanto você trabalha e acha que travou.
+
 ## 2. Cortes — skill `topclip-corte`
 
 Invoque a skill `topclip-corte` com o vídeo e `--workspace projetos/<nome>/runs`.

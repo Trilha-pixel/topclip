@@ -122,6 +122,10 @@ portão de cada fase já é o ponto de conversa.
 a pasta `projetos/` fica fora do git. Sem `--workspace` a run é gravada dentro
 da skill e some da vista.
 
+**Progresso no painel.** Com o caminho do projeto nos argumentos, cada `./topclip
+corte …` se anota sozinho no diário que o painel mostra. Ao invocar um subagente ou
+parar num portão, anote também: `./topclip log projetos/<nome> "o que está acontecendo"`.
+
 ## Fronteira com a topclip-motion
 
 Esta skill entrega `clip-vertical.mp4` **limpo** — sem legenda queimada e sem

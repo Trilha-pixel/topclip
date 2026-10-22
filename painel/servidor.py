@@ -105,7 +105,9 @@ def resumo(proj: Path) -> dict:
     run = run_mais_recente(proj)
     et = etapas(proj, run)
     ordem = ["momentos", "cortes", "vertical", "motion", "entrega"]
-    atual = next((k for k in ordem if et[k] != "feito"), "entrega")
+    ativ = atividade(proj)
+    # quando é a vez da pessoa escolher, a etapa da escolha é a atual — não a seguinte
+    atual = ativ["sua_vez"]["etapa"] if ativ["sua_vez"] else next((k for k in ordem if et[k] != "feito"), "entrega")
     capa = None
     for padrao in ("motion/*/08_images/frames/*_END.png", "motion/*/08_images/frames/*.png",
                    "motion/*/08_images/frames/*.jpg"):
@@ -124,6 +126,7 @@ def resumo(proj: Path) -> dict:
         "n_momentos": len((momentos or {}).get("moments", [])),
         "capa": capa,
         "demo": bool(info.get("demo")),
+        "atividade": ativ["estado"],
     }
 
 
@@ -242,6 +245,7 @@ def criar_projeto(nome: str, video: str) -> dict:
     (proj / "projeto.json").write_text(json.dumps({
         "nome": nome, "video": video, "criado": datetime.now().isoformat(timespec="seconds"),
     }, ensure_ascii=False, indent=1), encoding="utf-8")
+    ATV.registrar(proj, "projeto criado no painel — esperando o Claude começar", tipo="projeto")
     return {"slug": s, "aviso": aviso}
 
 
@@ -254,7 +258,166 @@ def salvar_escolhas(proj: Path, dados: dict) -> dict:
         atual["observacao"] = str(dados["observacao"])[:2000]
     atual["atualizado"] = datetime.now().isoformat(timespec="seconds")
     (proj / "escolhas.json").write_text(json.dumps(atual, ensure_ascii=False, indent=1), encoding="utf-8")
+    for chave, nomes in (("momentos", ("momento", "momentos")), ("cortes", ("corte", "cortes"))):
+        if chave in dados and isinstance(dados[chave], list):
+            n = len(dados[chave])
+            ATV.registrar(proj, f"você escolheu {n} {nomes[0] if n == 1 else nomes[1]} no painel", tipo="voce")
     return atual
+
+
+# ------------------------------------------------------------------ atividade
+import atividade as ATV  # noqa: E402  — o diário que o lançador e o Claude escrevem
+
+ARTEFATOS = {
+    "00-manifest.json": "run criada",
+    "01-media.json": "vídeo analisado (duração, imagem e áudio)",
+    "02-transcript.json": "transcrição pronta, palavra a palavra",
+    "02-digest.md": "resumo da transcrição pronto para o Claude ler",
+    "04-context-map.json": "o Claude mapeou os assuntos do vídeo",
+    "05-viral-moments.json": "momentos encontrados",
+    "06-candidates.json": "cortes montados",
+    "07-feed-review.json": "revisão de retenção feita",
+    "09-blind-review.json": "revisão cega feita",
+    "10-deduplication.json": "cortes repetidos removidos",
+    "11-edit-plans.json": "plano de edição do vertical pronto",
+    "12-quality-review.json": "controle de qualidade feito",
+    "13-final-clips.json": "lista final de clipes fechada",
+    "15-run-report.md": "relatório da run pronto",
+    "16-output-verification.json": "clipes finais conferidos",
+}
+JANELA_ATIVO_S = 10 * 60      # notícia do Claude mais nova que isso = ainda trabalhando
+
+
+def _nascimento(p: Path) -> float:
+    st = p.stat()
+    return getattr(st, "st_birthtime", st.st_mtime)
+
+
+def _evento_arquivo(p: Path, msg: str, quando=None) -> dict:
+    ts = quando if quando is not None else _nascimento(p)
+    return {"ts": ts, "t": datetime.fromtimestamp(ts).isoformat(timespec="seconds"), "tipo": "arquivo", "msg": msg}
+
+
+def eventos_de_arquivos(proj: Path, run: Path | None) -> list[dict]:
+    ev = []
+    if run:
+        for nome, rotulo in ARTEFATOS.items():
+            p = run / nome
+            if not p.exists():
+                continue
+            if nome == "05-viral-moments.json":
+                n = len((ler_json(p, {}) or {}).get("moments", []))
+                rotulo = f"{n} momento{'s' if n != 1 else ''} encontrado{'s' if n != 1 else ''}"
+            elif nome == "06-candidates.json":
+                n = len((ler_json(p, {}) or {}).get("clips", []))
+                rotulo = f"{n} corte{'s' if n != 1 else ''} montado{'s' if n != 1 else ''}"
+            ev.append(_evento_arquivo(p, rotulo))
+        for p in run.glob("preview/*.mp4"):
+            ev.append(_evento_arquivo(p, f"prévia pronta: {p.stem}"))
+        for p in run.glob("output/final-clips/*/*/clip-vertical.mp4"):
+            ev.append(_evento_arquivo(p, f"vertical pronto: {p.parent.name}"))
+    for m in (proj / "motion").glob("*"):
+        if not (m / "compose.py").exists():
+            continue
+        quadros = list((m / "08_images" / "frames").glob("*.png")) + list((m / "08_images" / "frames").glob("*.jpg"))
+        if quadros:
+            ultimo = max(quadros, key=lambda q: q.stat().st_mtime)
+            ev.append(_evento_arquivo(ultimo, f"motion {m.name}: {len(quadros)} quadro{'s' if len(quadros) != 1 else ''} composto{'s' if len(quadros) != 1 else ''}",
+                                      ultimo.stat().st_mtime))
+        for p in (m / "12_master").glob("*.mp4"):
+            ev.append(_evento_arquivo(p, f"master com motion pronto: {m.name}"))
+    for p in (proj / "entregas").glob("*.mp4"):
+        ev.append(_evento_arquivo(p, f"entregue: {p.stem}"))
+    return ev
+
+
+def _pid_vivo(pid) -> bool:
+    import os
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except PermissionError:
+        return True
+    except Exception:
+        return False
+
+
+def atividade(proj: Path) -> dict:
+    diario = ATV.ler(proj)
+    abertos: dict[str, dict] = {}
+    eventos = []
+    for i, e in enumerate(diario):
+        try:
+            # + i microssegundos: eventos do mesmo segundo mantêm a ordem em que aconteceram
+            ts = datetime.fromisoformat(e["t"]).timestamp() + i * 1e-6
+        except Exception:
+            continue
+        e = {**e, "ts": ts}
+        if e.get("tipo") == "inicio":
+            abertos[e.get("id", "")] = e
+        elif e.get("tipo") in ("fim", "erro"):
+            abertos.pop(e.get("id", ""), None)
+        eventos.append(e)
+
+    rodando = None
+    for e in abertos.values():
+        if _pid_vivo(e.get("pid")):
+            if not rodando or e["ts"] > rodando["ts"]:
+                rodando = e
+        else:   # começou e o processo sumiu sem anotar o fim: travou ou foi interrompido
+            eventos.append({**e, "tipo": "erro", "msg": f"{e['msg']} — interrompido", "ts": e["ts"] + 0.001})
+
+    run = run_mais_recente(proj)
+    eventos += eventos_de_arquivos(proj, run)
+    eventos.sort(key=lambda e: e["ts"], reverse=True)
+    agora = datetime.now().timestamp()
+    ultima = eventos[0]["ts"] if eventos else None
+
+    sua_vez = None
+    if not rodando:
+        esc = ler_json(proj / "escolhas.json", {}) or {}
+        mom = run / "05-viral-moments.json" if run else None
+        cand = run / "06-candidates.json" if run else None
+        if mom and mom.exists() and not esc.get("momentos") and not (cand and cand.exists()):
+            sua_vez = {"etapa": "momentos", "msg": "Os momentos estão prontos. Escolha quais viram corte."}
+        elif cand and cand.exists() and not esc.get("cortes") and not list(run.glob("output/final-clips/*/*/clip-vertical.mp4")):
+            sua_vez = {"etapa": "cortes", "msg": "Os cortes estão prontos. Assista e escolha quais viram vertical."}
+
+    reais = [e for e in eventos if e.get("tipo") != "projeto"]
+    if rodando:
+        estado = "rodando"
+    elif eventos and eventos[0].get("tipo") == "voce":
+        estado = "avisar_claude"
+    elif sua_vez:
+        estado = "sua_vez"
+    elif not reais:
+        estado = "esperando_claude"
+    elif ultima and agora - ultima < JANELA_ATIVO_S and eventos[0].get("tipo") in ("info", "inicio"):
+        estado = "ativo"
+    else:
+        estado = "parado"
+
+    return {
+        "estado": estado,
+        "rodando": {"msg": rodando["msg"], "desde": rodando["t"], "ha_s": int(agora - rodando["ts"])} if rodando else None,
+        "sua_vez": sua_vez,
+        "ultima_ha_s": int(agora - ultima) if ultima else None,
+        "eventos": [{k: e.get(k) for k in ("t", "tipo", "msg")} for e in eventos[:80]],
+        "assinatura": _assinatura(proj, run),
+    }
+
+
+def _assinatura(proj: Path, run: Path | None) -> str:
+    """Muda quando aparece arquivo novo que mude o que a tela mostra — aí o painel redesenha."""
+    partes = [str(p.relative_to(proj)) for p in sorted(proj.glob("runs/*/0[0-9]-*.json"))]
+    partes += [str(p.relative_to(proj)) for p in sorted(proj.glob("runs/*/1[0-9]-*.json"))]
+    if run:
+        partes += [p.name for p in run.glob("preview/*.mp4")] + [p.parent.name for p in run.glob("output/final-clips/*/*/clip-vertical.mp4")]
+    partes += [str(p.relative_to(proj)) for p in proj.glob("motion/*/08_images/frames/*")]
+    partes += [str(p.relative_to(proj)) for p in proj.glob("motion/*/12_master/*.mp4")]
+    partes += [p.name for p in proj.glob("entregas/*.mp4")]
+    import hashlib
+    return hashlib.sha1("|".join(sorted(partes)).encode()).hexdigest()[:12]
 
 
 # ------------------------------------------------------------------ escolher o vídeo
@@ -477,6 +640,10 @@ class Painel(BaseHTTPRequestHandler):
             lista = [resumo(p) for p in PROJETOS.iterdir() if p.is_dir() and not p.name.startswith(".")]
             lista.sort(key=lambda r: r.get("criado") or "", reverse=True)
             return self._json({"projetos": lista})
+        m = re.fullmatch(r"/api/projetos/([^/]+)/atividade", rota)
+        if m:
+            p = self._projeto(m.group(1))
+            return self._json(atividade(p)) if p else self._erro("projeto não encontrado", HTTPStatus.NOT_FOUND)
         m = re.fullmatch(r"/api/projetos/([^/]+)", rota)
         if m:
             p = self._projeto(m.group(1))
