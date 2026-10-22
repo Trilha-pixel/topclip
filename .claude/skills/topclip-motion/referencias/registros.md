@@ -16,6 +16,19 @@ de animar.
 Regra pratica: **nao repita registro em cenas vizinhas**. Se M2 e mesa de pesquisa,
 M3 nao pode ser.
 
+**Receitas prontas por registro** (`referencias/receitas.md`, exemplo de cada uma no
+`compose.py` que todo projeto recebe):
+
+| Registro | Receita | Funcao do kit |
+| --- | --- | --- |
+| Mesa de pesquisa | fita-etiqueta dimensionada pela palavra | `tape_label` |
+| Dado a mao | barras em hachura com contorno em 2 passadas | `hatch_bar` |
+| Dado a mao | conta montada a mao, item a item | `hand_tally`, `conta`, `sublinhado_duplo` |
+| Processo | etiqueta de preco com barbante (destino da seta) | `price_tag` |
+| Anotacao de campo | item escrito e riscado pela tinta | `ink_bbox`, `strike_ink` |
+| Anotacao de campo (overlay) | tira de papel no topo, sobre o video | `bilhete`, `nota_topo` |
+| todos | papel no tamanho de uso (pautado, quadriculado, kraft) | `scrap`, `fita` |
+
 ## Documentario retro — a tela
 
 O conteudo da tela e desenhado por nos, **em blocos, nunca em texto**:

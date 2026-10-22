@@ -28,9 +28,12 @@ SHOTS = [
 CAP.configurar(
     words_json=ROOT / "00_brief" / "transcript_palavras.json",
 
-    # Janelas livres de motion, recuadas 0,15s das bordas para nao encostar na saida da
-    # cena. Repare no que FICOU DE FORA: os vaos de 0,90s (49,20-50,10) e 1,20s
-    # (30,60-31,80) entre motions. Legenda de um segundo entre dois cutaways pisca.
+    # Janelas livres de motion. Os valores abaixo sao os do clipe 06, que ainda recuava
+    # 0,15s das bordas — NAO repita: o recuo apagou palavras na run seguinte (o "Nao" de
+    # "Nao e dificil fazer"). Hoje: janelas=CAP.janelas_livres(SHOTS, DUR), coladas nas
+    # cenas, e o check() acusa palavra sem legenda. Repare nos vaos de 0,90s
+    # (49,20-50,10) e 1,20s (30,60-31,80) entre motions: legenda de um segundo entre
+    # dois cutaways pisca — se ler mal, estique uma das cenas sobre o vao.
     janelas=[(0.20, 6.95), (15.05, 17.75), (21.75, 28.20), (35.05, 43.65),
              (53.65, 55.30)],
 

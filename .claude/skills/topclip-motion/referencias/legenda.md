@@ -21,6 +21,9 @@ Tudo abaixo foi **medido frame a frame** numa referência do estilo (talking hea
 | vertical | centro do bloco em **0,696H** | bbox do bloco |
 | largura de linha | p90 = **0,48W** | bbox por linha |
 
+O **vertical** de 0,696H foi medido num podcast, com o queixo em y≈1102. Ele é o
+padrão, não a regra: a legenda se posiciona pelo rosto (abaixo).
+
 ## As duas correções que mais mudam o resultado
 
 **1. A fluidez não vem de easing, vem de ritmo.** A versão anterior animava a entrada
@@ -47,6 +50,38 @@ raro — no clipe inteiro, duas palavras.
 - Bloco de uma palavra só existe se ela **carrega sentido** — conjunção sozinha no meio
   da tela lê como erro de corte.
 
+## Altura: abaixo do queixo mais baixo
+
+Num vídeo selfie o rosto fica mais baixo que no podcast da referência. No clip-005 o
+queixo desce até y≈1486 quando ele se inclina, e o padrão (CY 1330) cobria a boca — a
+run corrigiu à mão para CY 1545 / TETO 1410, e ainda assim o pior frame ficou no limite.
+
+Agora a altura sai do rosto. Com `video=` em `captions.configurar`, a primeira passada
+de legenda amostra as janelas a 4 fps, detecta o rosto com o **YuNet** da skill de corte
+(borda de baixo da caixa = queixo, ±20px, conferido nos dois clipes da run) e usa o
+**pior frame** — o queixo mais baixo de todas as janelas (armadilha 38):
+
+```text
+TETO = max(1120, queixo + 12)          a tinta nunca sobe acima disto
+CY   = max(1330, TETO + 48)            e o bloco desce só o necessário
+CY  <= 1660 − 48                       nunca dentro da faixa de interface
+```
+
+Medido nos dois clipes da run: clip-005 → CY 1546 / TETO 1498; clip-010 → CY 1487 /
+TETO 1439. Sem o modelo, cascata Haar do OpenCV (p90, corrigida para a caixa mais
+curta). Sem rosto detectado ou sem `video`: posição fixa 1330/1120, **com aviso** —
+confira num frame. O resultado fica em `00_brief/legenda_rosto.json` e só é refeito se
+o vídeo ou as janelas mudarem. Para fixar à mão: `configurar(..., posicao=(cy, teto))`.
+
+## Ênfase longa: o corpo desce até caber
+
+A ênfase a 168px (2,1× o corpo) estoura em palavra longa: "MENSALIDADE," media 946px,
+de x=67 a 1014 — dentro dos 120px da direita. Palavra nunca quebra, então o **corpo
+dessa palavra** desce até ela caber em `LARGURA_MAX` (780px, 150px de cada lado); as
+curtas continuam a 168. "MENSALIDADE," sai a 135px, o mesmo que a run escolheu à mão
+(136). `LARGURA` (560) continua sendo só a quebra das linhas de corpo — usada como teto
+da ênfase, ela levaria a palavra a 1,24× o corpo e mataria o dispositivo.
+
 ## Onde a legenda entra
 
 A referência é talking head puro e legenda o vídeo inteiro. Com motion graphics o caso
@@ -57,6 +92,37 @@ como defeito.
 
 Bloco **nunca atravessa um corte** do próprio clipe: junta o fim de uma frase com o começo
 de outra e lê como erro de decupagem. Corte conhecido entra em `CORTES`.
+
+### Cole o início da janela no fim da cena
+
+As janelas são o **complemento exato** das cenas: começam onde uma cena termina e
+terminam onde a próxima começa — `janelas=captions.janelas_livres(SHOTS, DUR)`. **Não
+recue as bordas.** O recuo de 0,15s que se usava apagava a palavra que cai no vão: no
+clip-005 sumiu o "Não" de "Não é difícil fazer" (a tela dizia "é difícil fazer", o
+contrário do áudio). Somado à regra antiga (só entrava a palavra *inteira* dentro da
+janela), o recuo levou ainda "isso", "Se", "para", "consegue", "serviço" e "Você" nos
+dois clipes da run. O bloco não invade a cena porque é **preso à janela** — a sobra
+depois da última palavra é cortada na borda.
+
+Cada palavra é da janela ou da cena onde cai o **meio** dela: a palavra que atravessa a
+borda fica com quem tem a maior parte dela.
+
+### Cada palavra na tela enquanto é dita
+
+O teto de duração do bloco (`MAXDUR`, 0,62s) existe para o bloco não ficar pendurado
+depois da fala — não para cortar a fala. Ele cortava: no clip-010 "mas também para"
+saía em 38,12s e o "para" (38,14s) ia à tela **antes** de ser dito e sumia justo quando
+era dito; no clip-005, "de você ter um" mostrava "ter um" adiantado. Agora o bloco
+nunca sai antes de a última palavra dele terminar, e o bloco que fica longo porque a
+fala é lenta se **divide** na fronteira de palavra mais perto do meio — só onde os dois
+lados têm palavra de conteúdo (nunca "de um" sozinho). O `check()` para com erro se
+qualquer palavra não estiver na tela enquanto é dita.
+
+`captions.check()` roda **antes** do render e para com erro se alguma palavra é dita
+com o rosto na tela e fica sem legenda — fora de toda janela e fora de toda cena —,
+com destaque para negação ("não", "nunca", "nem", "nada"…). Janela curta (< 2s) entre
+duas cenas gera aviso: se a legenda piscar ali, estique uma das cenas sobre o vão em
+vez de tirar a janela.
 
 ## A tipografia também é impressa
 

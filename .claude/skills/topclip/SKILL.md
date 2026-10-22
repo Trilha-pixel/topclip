@@ -120,9 +120,15 @@ próximo vídeo começa com mais coisa pronta.
 Mostre o plano de motion (frases escolhidas e recusadas) antes de compor. É o portão
 desta etapa.
 
+Para ganhar tempo: comece cada cena pela receita do registro dela
+(`topclip-motion/referencias/receitas.md` — o `compose.py` já traz um exemplo pronto de
+cada), revise pelos `<cena>_ESTADOS.png` e pelo `render.py --rascunho`, e monte o master
+final (`render.py`, x264 slow) **uma vez**, depois da revisão aprovada.
+
 ## 4. Entrega
 
-Copie cada master verificado para `projetos/<nome>/entregas/<clipe>.mp4` e mostre a
+Copie cada master verificado (`12_master/MASTER_v01.mp4` — nunca o `RASCUNHO.mp4`,
+que é só para revisão) para `projetos/<nome>/entregas/<clipe>.mp4` e mostre a
 lista ao usuário com duração e o caminho de cada um. Não declare sucesso sem a
 verificação do master (duração, cadência e MD5 do áudio contra a fonte).
 
