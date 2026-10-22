@@ -3,12 +3,14 @@
 Diário de atividade de um projeto: `projetos/<nome>/atividade.jsonl`.
 
 É o que o painel mostra em "Atividade" — para a pessoa saber se o TopClip está mesmo
-trabalhando. Três fontes escrevem aqui:
+trabalhando. Quatro fontes escrevem aqui:
 
   * o lançador `./topclip`, sozinho, no início e no fim de cada comando de corte ou
     transcrição (com duração e se deu erro);
   * o Claude, narrando as etapas dele:  ./topclip log projetos/<nome> "procurando momentos"
-  * o próprio painel, quando a pessoa cria o projeto ou salva escolhas.
+  * o próprio painel, quando a pessoa cria o projeto ou salva escolhas;
+  * a transcrição do `corte prepare` (scripts/transcribe.py), anotando o avanço algumas
+    vezes por minuto com tipo "progresso" — o painel mostra só o mais recente.
 
 Uso pelo lançador (não precisa chamar à mão):
     atividade.py registrar <projeto> <tipo> <mensagem...>

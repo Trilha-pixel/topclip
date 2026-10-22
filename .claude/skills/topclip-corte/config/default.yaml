@@ -37,14 +37,17 @@ scoring_weights:
   editability: 0.04
 
 transcription:
+  # auto = mlx-whisper (GPU do Mac Apple Silicon) quando instalado; senão
+  # faster-whisper (CPU, ou CUDA). Força um com mlx-whisper | faster-whisper.
   backend: auto
   model: small
   language: pt
   device: auto
   compute_type: auto
   word_timestamps: true
-  vad_filter: true
+  vad_filter: true          # só no faster-whisper; o mlx-whisper não tem VAD
   diarization: false
+  progress_interval_seconds: 15   # de quanto em quanto tempo o avanço vai para o painel
 
 visual_index:
   interval_seconds: 5.0

@@ -18,6 +18,7 @@ def run_preflight() -> dict[str, Any]:
         "jsonschema": importlib.util.find_spec("jsonschema") is not None,
         "PIL": importlib.util.find_spec("PIL") is not None,
         "faster_whisper": importlib.util.find_spec("faster_whisper") is not None,
+        "mlx_whisper": importlib.util.find_spec("mlx_whisper") is not None,
     }
     ffmpeg_filters = ""
     subtitles_filter = False
@@ -42,7 +43,7 @@ def run_preflight() -> dict[str, Any]:
         "schemas_found": len(schemas),
         "ready_for_analysis": python_ok and dependencies["yaml"] and dependencies["jsonschema"],
         "ready_for_render": python_ok and bool(ffmpeg) and bool(ffprobe),
-        "ready_for_auto_transcription": dependencies["faster_whisper"],
+        "ready_for_auto_transcription": dependencies["faster_whisper"] or dependencies["mlx_whisper"],
     }
 
 
@@ -55,7 +56,7 @@ def print_preflight(report: dict[str, Any]) -> None:
     print(f"FFprobe: {flag(report['ffprobe']['ok'])}")
     print(f"Filtro ASS/subtitles: {flag(report['ffmpeg']['subtitles_filter'])}")
     for name, ok in report["dependencies"].items():
-        optional = " (opcional)" if name == "faster_whisper" else ""
+        optional = " (opcional)" if name in ("faster_whisper", "mlx_whisper") else ""
         print(f"Python {name}{optional}: {flag(ok)}")
     print(f"Schemas encontrados: {report['schemas_found']}")
     print(f"Análise: {flag(report['ready_for_analysis'])}")

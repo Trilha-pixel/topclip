@@ -22,7 +22,7 @@ from scripts.preflight import print_preflight, run_preflight
 from scripts.render import render_all
 from scripts.reports import consolidate_final, write_context_index, write_run_report
 from scripts.subtitles import build_caption_files
-from scripts.transcribe import transcribe_faster_whisper
+from scripts.transcribe import ProgressoTranscricao, transcribe
 from scripts.utils import (
     HarnessError,
     PROJECT_ROOT,
@@ -228,17 +228,17 @@ def _prepare_transcript(run: Path, manifest: dict[str, Any], cfg: dict[str, Any]
     if not video_path:
         raise HarnessError("Sem vídeo e sem transcript")
     tcfg = cfg.get("transcription", {})
-    backend = tcfg.get("backend", "auto")
-    if backend not in {"auto", "faster-whisper"}:
-        raise HarnessError(f"Backend de transcrição não implementado neste pacote: {backend}")
-    transcribe_faster_whisper(
+    transcribe(
         video_path,
         output,
+        backend=str(tcfg.get("backend", "auto")),
         model_name=str(tcfg.get("model", "small")),
         language=tcfg.get("language", "pt"),
         device=str(tcfg.get("device", "auto")),
         compute_type=str(tcfg.get("compute_type", "auto")),
         vad_filter=bool(tcfg.get("vad_filter", True)),
+        # Em vídeo longo é a maior espera da run: o avanço vai para o painel.
+        progress=ProgressoTranscricao(output, intervalo_s=float(tcfg.get("progress_interval_seconds", 15))),
     )
     return "02-transcript.json"
 

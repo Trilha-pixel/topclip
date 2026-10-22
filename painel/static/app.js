@@ -553,7 +553,7 @@ function horario(iso) {
   return hoje ? hh : `${d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })} ${hh}`;
 }
 
-const ICONE_EVENTO = { inicio: "▶", fim: "✓", arquivo: "✓", erro: "✕", info: "•", voce: "★", projeto: "+" };
+const ICONE_EVENTO = { inicio: "▶", fim: "✓", arquivo: "✓", erro: "✕", info: "•", progresso: "…", voce: "★", projeto: "+" };
 let atividadeAberta = false;
 
 function desenharAtividade(slug, a) {
@@ -569,7 +569,13 @@ function desenharAtividade(slug, a) {
 
   let agora;
   if (falhou) agora = `${esc(ultimo.msg)}<small>Veja a conversa com o Claude para o detalhe do erro.</small>`;
-  else if (a.estado === "rodando") agora = `${esc(a.rodando.msg)}<small>começou ${ha(a.rodando.ha_s)} · o painel atualiza sozinho</small>`;
+  else if (a.estado === "rodando") {
+    // progresso: hoje só a transcrição anota ("transcrevendo: 12:30 de 36:10 (35%)")
+    const r = a.rodando;
+    const barra = r.pct != null ? `<span class="ativ-barra"><i style="width:${Math.max(0, Math.min(100, r.pct))}%"></i></span>` : "";
+    const progresso = r.progresso ? `<small class="ativ-progresso">${barra}${esc(r.progresso)}</small>` : "";
+    agora = `${esc(r.msg)}${progresso}<small>começou ${ha(r.ha_s)} · o painel atualiza sozinho</small>`;
+  }
   else if (a.estado === "ativo") agora = `${esc(ultimo.msg)}<small>última notícia ${ha(a.ultima_ha_s)}</small>`;
   else if (a.estado === "sua_vez") agora = `${esc(a.sua_vez.msg)} <button class="link" data-ir-etapa="${a.sua_vez.etapa}">escolher agora</button>`;
   else if (a.estado === "avisar_claude") agora = `Você já escolheu. Agora diga ao Claude: ${comando("escolhi no painel, pode seguir")}`;

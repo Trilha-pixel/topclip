@@ -6,6 +6,8 @@ jsonschema>=4.0
 
 # Transcrição palavra a palavra (cortes e motion). Baixa ~1,5 GB de modelo na 1ª vez.
 faster-whisper>=1.0
+# Em Mac com Apple Silicon o instalar.sh põe também o mlx-whisper (transcrição na
+# GPU). Não está aqui porque só existe para Mac e precisa de --no-deps (veja lá).
 
 # Enquadramento por locutor ativo e composição do motion.
 # O pin não é capricho: o 5.0.0 removeu cv2.dnn.readNetFromCaffe e quebra o detector.

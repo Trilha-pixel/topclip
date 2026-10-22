@@ -114,6 +114,31 @@ def checar_python() -> None:
         else:
             linha(AVISO, modulo, f"opcional: {para_que}")
             avisos.append(f"modulo {modulo} ausente (opcional)")
+    _checar_transcricao()
+
+
+def _checar_transcricao() -> None:
+    """Em Apple Silicon a transcricao roda na GPU (mlx-whisper); senao, na CPU."""
+    from scripts.transcribe import apple_silicon, escolher_backend
+    from scripts.utils import load_yaml
+    if apple_silicon():
+        try:
+            # import de verdade, nao so find_spec: pega dependencia faltando
+            importlib.import_module("mlx_whisper")
+            linha(OK, "mlx_whisper", "transcrever na GPU do Mac — 2 a 2,5x mais rapido que na CPU")
+        except Exception as exc:
+            linha(AVISO, "mlx_whisper", f"opcional: transcrever na GPU do Mac ({type(exc).__name__}) "
+                  "— rode ./topclip instalar; sem ele a transcricao usa a CPU")
+            avisos.append("mlx-whisper ausente (opcional: transcricao mais lenta, na CPU)")
+    try:
+        tcfg = load_yaml(ROOT / "config" / "default.yaml").get("transcription", {})
+        backend = escolher_backend(str(tcfg.get("backend", "auto")), str(tcfg.get("model", "small")),
+                                   str(tcfg.get("device", "auto")))
+        linha(OK, f"transcricao: {backend}", f"modelo {tcfg.get('model', 'small')}, "
+              f"backend {tcfg.get('backend', 'auto')} no config/default.yaml")
+    except Exception as exc:
+        linha(FALHA, "transcription.backend", str(exc)[:100])
+        problemas.append("transcription.backend invalido no config")
 
 
 ESPERADOS = {

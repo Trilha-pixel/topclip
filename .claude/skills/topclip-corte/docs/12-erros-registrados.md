@@ -156,6 +156,7 @@ contra si mesma e o score se dilui.
 | `pip install opencv-contrib-python` sem versão | trava no 5.0.0, sem `readNetFromCaffe` e sem haarcascades | pinar `==4.10.0.84` |
 | `pip install scenedetect` sem teto | o 0.7 exige `opencv-python` e puxa o 5.0.0 junto do contrib, os dois brigando pelo mesmo `cv2` | `scenedetect>=0.6.4,<0.7,!=0.6.7.1`, sem extra `[opencv]` (o contrib já serve) |
 | `scenedetect==0.6.7.1` | rebaixa `click` para 8.2.1 e o `huggingface-hub` do faster-whisper (exige `>=8.4.2`) quebra no `pip check` | excluir o 0.6.7.1; o 0.6.7 não tem esse teto |
+| `pip install mlx-whisper` com dependências | puxa o `torch` (~400 MB) só para `mlx_whisper/torch_whisper.py`, um módulo de teste que nunca é importado | `--no-deps` + as dependências reais à mão (`instalar.sh`). O `pip check` passa a acusar "mlx-whisper requires torch" — esperado, não corrija instalando o torch |
 | Insistir em `mediapipe` | `Check failed: service_ Service is unavailable` no `DrishtiMetalHelper`, mesmo com `delegate=CPU` | usar o detector do OpenCV |
 | Testar substring `"ass"` nos filtros do ffmpeg | casa com `lowpass`, `highpass`, `bass`, `allpass`, `bandpass` — falso positivo | casar por palavra inteira (já corrigido em `preflight.py`) |
 | `-c copy` para cortar | corta no keyframe errado, in/out não bate com o transcript | sempre recodificar |
