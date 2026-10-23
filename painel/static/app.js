@@ -91,6 +91,60 @@ async function copiar(texto, botao) {
   if (botao) { const o = botao.textContent; botao.textContent = "Copiado!"; setTimeout(() => (botao.textContent = o), 1400); }
 }
 
+// Preferência só deste navegador (uma dobra aberta, por exemplo). Sem armazenamento, vale o padrão.
+function lerPref(chave, padrao) {
+  try { const v = localStorage.getItem(`topclip:${chave}`); return v == null ? padrao : JSON.parse(v); } catch { return padrao; }
+}
+function gravarPref(chave, valor) {
+  try { localStorage.setItem(`topclip:${chave}`, JSON.stringify(valor)); } catch { /* sem armazenamento: só não lembra */ }
+}
+
+// Lista longa em páginas. Os itens de todas as páginas já estão no HTML — a escolha marca
+// item de qualquer página e "marcar todos" pega todos —, a página só mostra e esconde.
+// Quando a tela redesenha sozinha (chegou coisa nova), volta para a mesma página.
+const POR_PAGINA = 6;
+const paginaAberta = {};
+
+function paginas(chave, total, por = POR_PAGINA) {
+  if (total <= por) return "";
+  const n = Math.ceil(total / por);
+  return `
+  <nav class="paginas" data-paginas="${esc(chave)}" data-por="${por}" aria-label="Páginas">
+    <button type="button" class="pag-seta" data-pag="-1" aria-label="Página anterior">‹</button>
+    ${Array.from({ length: n }, (_, i) => `<button type="button" class="pag-num" data-pag-num="${i}">${i + 1}</button>`).join("")}
+    <button type="button" class="pag-seta" data-pag="1" aria-label="Próxima página">›</button>
+    <span class="pag-conta"></span>
+  </nav>`;
+}
+
+function ligarPaginas(raiz = app) {
+  raiz.querySelectorAll("[data-paginas]").forEach((nav) => {
+    const chave = nav.dataset.paginas;
+    const lista = [...raiz.querySelectorAll("[data-paginada]")].find((l) => l.dataset.paginada === chave);
+    if (!lista) return;
+    const itens = [...lista.children];
+    const por = Number(nav.dataset.por) || POR_PAGINA;
+    const n = Math.ceil(itens.length / por);
+    const mostrar = (pg, rolar) => {
+      pg = Math.max(0, Math.min(n - 1, pg));
+      paginaAberta[chave] = pg;
+      itens.forEach((el, i) => (el.hidden = Math.floor(i / por) !== pg));
+      nav.querySelectorAll("[data-pag-num]").forEach((b) => b.setAttribute("aria-current", Number(b.dataset.pagNum) === pg ? "page" : "false"));
+      nav.querySelector('[data-pag="-1"]').disabled = pg === 0;
+      nav.querySelector('[data-pag="1"]').disabled = pg === n - 1;
+      nav.querySelector(".pag-conta").textContent = `${pg * por + 1}–${Math.min(itens.length, (pg + 1) * por)} de ${itens.length}`;
+      lista.querySelectorAll("video").forEach((v) => v.closest("[hidden]") && v.pause());
+      if (rolar) lista.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    nav.addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b || b.disabled) return;
+      mostrar(b.dataset.pagNum != null ? Number(b.dataset.pagNum) : (paginaAberta[chave] || 0) + Number(b.dataset.pag), true);
+    });
+    mostrar(paginaAberta[chave] || 0, false);
+  });
+}
+
 const comando = (texto) =>
   `<div class="comando"><code>${esc(texto)}</code><button class="botao claro pequeno" data-copiar="${esc(texto)}">Copiar</button></div>`;
 
@@ -440,6 +494,8 @@ async function telaProjeto(slug, etapa) {
   app.querySelector('[data-acao="abrir"]').onclick = () => api(`/api/projetos/${slug}/abrir`, { method: "POST" }).catch((e) => aviso(esc(e.message)));
   app.querySelector('[data-acao="apagar"]').onclick = () => abrirApagarProjeto(p);
   ligarEscolhas(p, ativa);
+  ligarPaginas();
+  ligarMotion();
   if (estilos) ligarEstilo(p, estilos);
   acompanharAtividade(slug, etapa, ativa);
 }
@@ -499,40 +555,58 @@ function blocoMomentos(p) {
   }
   const comNota = p.momentos.some((m) => m.nota != null);
   const melhores = melhoresMomentos(p).length;
+  const abertos = p.momentos.filter((m) => !m.feito);
+  const feitos = p.momentos.filter((m) => m.feito);
   return `
   <div class="secao-topo">
-    <div><h2 class="subtitulo">${p.momentos.length} momentos encontrados</h2>
+    <div><h2 class="subtitulo">${p.momentos.length} momentos encontrados${feitos.length ? ` <span class="mudo">(${abertos.length} para escolher)</span>` : ""}</h2>
       <p class="explica">Marque <b>poucos — de 2 a ${MOMENTOS_RECOMENDADOS}</b>. Cada momento marcado vira corte, revisão e prévia: marcar demais deixa a próxima etapa bem mais lenta. O Claude só segue com os escolhidos.</p>
       ${comNota ? `<p class="explica">Em ordem de <b>nota estimada</b> — a mesma conta que decide no fim. Abaixo de ${num(p.gate)}, o corte tende a sair fraco.</p>` : ""}</div>
-    <div style="display:flex;gap:16px">${comNota
+    ${abertos.length ? `<div class="acoes-lista">${comNota
       ? (melhores ? `<button class="link" data-melhores>marcar os ${melhores} melhores</button>` : "")
-      : `<button class="link" data-todos="momentos">marcar todos</button>`}<button class="link" data-limpar="momentos">limpar</button></div>
+      : `<button class="link" data-todos="momentos">marcar todos</button>`}<button class="link" data-limpar="momentos">limpar</button></div>` : ""}
   </div>
-  <div class="lista">
-    ${p.momentos.map((m) => `
-      <article class="momento ${escolhas.momentos.has(m.id) ? "escolhido" : ""} ${m.feito || ""}" ${m.feito ? "" : `data-item="momentos" data-id="${esc(m.id)}" tabindex="0" role="checkbox" aria-checked="${escolhas.momentos.has(m.id)}"`}>
-        <div class="momento-lado">
-          <span class="tempo">${esc(m.inicio)} → ${esc(m.fim)}</span>
-          ${m.nota != null ? `<span class="nota ${m.abaixo_do_gate.length ? "fraca" : ""}">${num(m.nota)}<small>/10</small><span class="nota-rotulo">nota estimada</span></span>` : ""}
-        </div>
-        <div>
-          <p class="citacao">${esc(m.quote)}</p>
-          <div class="tags">
-            ${carimbo(m.feito, "tag")}
-            ${m.abaixo_do_gate.length ? `<span class="tag risco">pode sair fraco</span>` : ""}
-            ${m.trigger ? `<span class="tag forte">${esc(rotulo(m.trigger))}</span>` : ""}
-            ${m.profile && rotulo(m.profile) !== rotulo(m.trigger) ? `<span class="tag">${esc(rotulo(m.profile))}</span>` : ""}
-            ${m.confidence != null ? `<span class="tag">confiança ${Math.round(m.confidence * 100)}%</span>` : ""}
-            ${m.risk_of_distortion && m.risk_of_distortion !== "baixo" ? `<span class="tag risco">risco de distorção: ${esc(rotulo(m.risk_of_distortion))}</span>` : ""}
-          </div>
-          ${m.abaixo_do_gate.length ? `<p class="detalhe"><b>Abaixo do mínimo:</b> ${m.abaixo_do_gate.map(esc).join(" · ")}</p>` : ""}
-          ${m.context_needed ? `<p class="detalhe"><b>Contexto:</b> ${esc(m.context_needed)}</p>` : ""}
-          ${m.payoff_candidate ? `<p class="detalhe"><b>Fecha com:</b> ${esc(m.payoff_candidate)}</p>` : ""}
-        </div>
-        <span class="marcar">${m.feito === "pronto" ? VISTO.replace('stroke="#2a292c"', 'stroke="#fff"') : VISTO}</span>
-      </article>`).join("")}
-  </div>
-  <div data-depois-salvar hidden>${proximoPasso("agora diga ao Claude:", "escolhi no painel, pode seguir")}</div>`;
+  ${abertos.length ? `<div class="lista" data-paginada="${esc(p.slug)}:momentos">${abertos.map(cartaoMomento).join("")}</div>
+  ${paginas(`${p.slug}:momentos`, abertos.length)}`
+    : `<p class="explica">Todos os momentos já viraram clipe ou estão em produção.</p>`}
+  <div data-depois-salvar hidden>${proximoPasso("agora diga ao Claude:", "escolhi no painel, pode seguir")}</div>
+  ${grupoFeitos(feitos, ["momento", "momentos"], `<div class="lista">${feitos.map(cartaoMomento).join("")}</div>`)}`;
+}
+
+function cartaoMomento(m) {
+  const sim = escolhas.momentos.has(m.id);
+  return `
+  <article class="momento ${sim ? "escolhido" : ""} ${m.feito || ""}" ${m.feito ? "" : `data-item="momentos" data-id="${esc(m.id)}" tabindex="0" role="checkbox" aria-checked="${sim}"`}>
+    <div class="momento-lado">
+      <span class="tempo">${esc(m.inicio)} → ${esc(m.fim)}</span>
+      ${m.nota != null ? `<span class="nota ${m.abaixo_do_gate.length ? "fraca" : ""}">${num(m.nota)}<small>/10</small><span class="nota-rotulo">nota estimada</span></span>` : ""}
+    </div>
+    <div>
+      <p class="citacao">${esc(m.quote)}</p>
+      <div class="tags">
+        ${carimbo(m.feito, "tag")}
+        ${m.abaixo_do_gate.length ? `<span class="tag risco">pode sair fraco</span>` : ""}
+        ${m.trigger ? `<span class="tag forte">${esc(rotulo(m.trigger))}</span>` : ""}
+        ${m.profile && rotulo(m.profile) !== rotulo(m.trigger) ? `<span class="tag">${esc(rotulo(m.profile))}</span>` : ""}
+        ${m.confidence != null ? `<span class="tag">confiança ${Math.round(m.confidence * 100)}%</span>` : ""}
+        ${m.risk_of_distortion && m.risk_of_distortion !== "baixo" ? `<span class="tag risco">risco de distorção: ${esc(rotulo(m.risk_of_distortion))}</span>` : ""}
+      </div>
+      ${m.abaixo_do_gate.length ? `<p class="detalhe"><b>Abaixo do mínimo:</b> ${m.abaixo_do_gate.map(esc).join(" · ")}</p>` : ""}
+      ${m.context_needed || m.payoff_candidate ? `<details class="detalhe mais"><summary>contexto e fechamento</summary>
+        ${m.context_needed ? `<p><b>Contexto:</b> ${esc(m.context_needed)}</p>` : ""}
+        ${m.payoff_candidate ? `<p><b>Fecha com:</b> ${esc(m.payoff_candidate)}</p>` : ""}</details>` : ""}
+    </div>
+    <span class="marcar">${m.feito === "pronto" ? VISTO_BRANCO : VISTO}</span>
+  </article>`;
+}
+
+// O que já saiu (ou está saindo) não volta para a escolha: fica embaixo, dobrado.
+function grupoFeitos(lista, [um, varios], conteudo) {
+  const n = lista.length;
+  if (!n) return "";
+  const prontos = lista.every((x) => x.feito === "pronto");
+  const texto = `${n === 1 ? um : varios} ${!prontos ? "já feitos ou em produção" : n === 1 ? "já virou clipe" : "já viraram clipe"}`;
+  return `<details class="grupo-feitos"><summary><span class="carimbo pronto em-linha">✓ ${n}</span> ${esc(texto)} <span class="link">ver</span></summary>${conteudo}</details>`;
 }
 
 // Os que passariam no gate, melhor nota primeiro, no máximo o recomendado — fora os já feitos.
@@ -550,48 +624,55 @@ function blocoCortes(p) {
       <p class="explica">Com os momentos escolhidos, o Claude crava o início e o fim de cada corte no timing das palavras e gera uma prévia para você assistir.</p></div></div>
     ${p.momentos.length ? proximoPasso("escolheu os momentos? diga ao Claude:", "escolhi no painel, pode seguir") : proximoPasso("comece pelo Claude:", pedirAoClaude(p))}`;
   }
-  const prontos = p.cortes.filter((c) => c.feito === "pronto").length;
-  const faltam = p.cortes.filter((c) => !c.feito).length;
+  const abertos = p.cortes.filter((c) => !c.feito);
+  const feitos = p.cortes.filter((c) => c.feito);
+  const cartao = (c) => cartaoCorte(p, c);
   return `
   <div class="secao-topo">
-    <div><h2 class="subtitulo">${p.cortes.length} cortes para assistir${prontos ? ` <span class="mudo">(${prontos} ${prontos === 1 ? "pronto" : "prontos"})</span>` : ""}</h2>
-      <p class="explica">${prontos
-        ? `Os marcados com <span class="carimbo pronto em-linha">✓ pronto</span> já estão na Entrega. Marque os próximos que viram vertical.`
+    <div><h2 class="subtitulo">${p.cortes.length} cortes para assistir${feitos.length ? ` <span class="mudo">(${abertos.length} para escolher)</span>` : ""}</h2>
+      <p class="explica">${feitos.length
+        ? "Os que já saíram estão lá embaixo, dobrados. Marque os próximos que viram vertical."
         : "Assista e marque os que viram vertical. Os outros param aqui."}</p></div>
-    ${faltam ? `<div style="display:flex;gap:16px"><button class="link" data-todos="cortes">${faltam < p.cortes.length ? "marcar os que faltam" : "marcar todos"}</button><button class="link" data-limpar="cortes">limpar</button></div>` : ""}
+    ${abertos.length ? `<div class="acoes-lista"><button class="link" data-todos="cortes">${feitos.length ? "marcar os que faltam" : "marcar todos"}</button><button class="link" data-limpar="cortes">limpar</button></div>` : ""}
   </div>
-  <div class="cortes">
-    ${p.cortes.map((c) => `
-      <article class="corte ${escolhas.cortes.has(c.id) ? "escolhido" : ""} ${c.feito || ""}" data-cartao="${esc(c.id)}">
-        ${carimbo(c.feito)}
-        ${c.preview ? `<video src="${c.preview}" controls preload="metadata" playsinline></video>`
-                    : `<div class="sem-video">a prévia aparece aqui<br>quando o Claude cortar</div>`}
-        <div class="corte-corpo">
-          <div style="display:flex;justify-content:space-between;gap:12px;align-items:start">
-            <h4>${esc(c.titulo || c.id)}</h4>
-            ${c.nota != null ? `<span class="nota ${c.abaixo_do_gate.length ? "fraca" : ""}">${num(c.nota)}<small>/10</small></span>` : ""}
-          </div>
-          <div class="tags">
-            ${c.abaixo_do_gate.length ? `<span class="tag risco">pode sair fraco</span>` : ""}
-            ${c.duracao ? `<span class="tag forte">${Math.round(c.duracao)}s</span>` : ""}
-            ${c.perfil ? `<span class="tag">${esc(rotulo(c.perfil))}</span>` : ""}
-            ${c.status ? `<span class="tag">${esc(rotulo(c.status))}</span>` : ""}
-            ${c.falhas.map((f) => `<span class="tag risco">${esc(rotulo(f))}</span>`).join("")}
-          </div>
-          ${c.abaixo_do_gate.length ? `<p class="detalhe"><b>Abaixo do mínimo:</b> ${c.abaixo_do_gate.map(esc).join(" · ")}</p>` : ""}
-          ${c.porque ? `<p class="detalhe"><b>Por que funciona:</b> ${esc(c.porque)}</p>` : ""}
-          ${c.transcricao ? `<details class="detalhe"><summary>ler a fala do corte</summary><p>${esc(c.transcricao)}</p></details>` : ""}
-          <div class="corte-rodape">
-            ${c.feito === "pronto" ? `<a class="link" href="#/projeto/${esc(p.slug)}/entrega">já está na entrega →</a>`
-              : c.feito ? `<span class="mudo mono">começado, ainda sem entrega</span>`
-              : `<button class="alternar" data-item="cortes" data-id="${esc(c.id)}" role="checkbox" aria-checked="${escolhas.cortes.has(c.id)}">
-              <span class="marcar">${VISTO}</span> vira vertical
-            </button>`}
-          </div>
-        </div>
-      </article>`).join("")}
-  </div>
-  <div data-depois-salvar hidden>${proximoPasso("agora diga ao Claude:", "escolhi no painel, pode seguir")}</div>`;
+  ${abertos.length ? `<div class="cortes" data-paginada="${esc(p.slug)}:cortes">${abertos.map(cartao).join("")}</div>
+  ${paginas(`${p.slug}:cortes`, abertos.length)}`
+    : `<p class="explica">Todos os cortes já viraram clipe ou estão em produção.</p>`}
+  <div data-depois-salvar hidden>${proximoPasso("agora diga ao Claude:", "escolhi no painel, pode seguir")}</div>
+  ${grupoFeitos(feitos, ["corte", "cortes"], `<div class="cortes">${feitos.map(cartao).join("")}</div>`)}`;
+}
+
+function cartaoCorte(p, c) {
+  const sim = escolhas.cortes.has(c.id);
+  return `
+  <article class="corte ${sim ? "escolhido" : ""} ${c.feito || ""} ${c.preview ? "" : "sem-previa"}" data-cartao="${esc(c.id)}">
+    ${carimbo(c.feito)}
+    ${c.preview ? `<video src="${c.preview}" controls preload="metadata" playsinline></video>`
+                : `<div class="sem-video">a prévia aparece aqui quando o Claude cortar</div>`}
+    <div class="corte-corpo">
+      <div class="corte-cabeca">
+        <h4>${esc(c.titulo || c.id)}</h4>
+        ${c.nota != null ? `<span class="nota ${c.abaixo_do_gate.length ? "fraca" : ""}">${num(c.nota)}<small>/10</small></span>` : ""}
+      </div>
+      <div class="tags">
+        ${c.abaixo_do_gate.length ? `<span class="tag risco">pode sair fraco</span>` : ""}
+        ${c.duracao ? `<span class="tag forte">${Math.round(c.duracao)}s</span>` : ""}
+        ${c.perfil ? `<span class="tag">${esc(rotulo(c.perfil))}</span>` : ""}
+        ${c.status ? `<span class="tag">${esc(rotulo(c.status))}</span>` : ""}
+        ${c.falhas.map((f) => `<span class="tag risco">${esc(rotulo(f))}</span>`).join("")}
+      </div>
+      ${c.abaixo_do_gate.length ? `<p class="detalhe"><b>Abaixo do mínimo:</b> ${c.abaixo_do_gate.map(esc).join(" · ")}</p>` : ""}
+      ${c.porque ? `<p class="detalhe"><b>Por que funciona:</b> ${esc(c.porque)}</p>` : ""}
+      ${c.transcricao ? `<details class="detalhe"><summary>ler a fala do corte</summary><p>${esc(c.transcricao)}</p></details>` : ""}
+      <div class="corte-rodape">
+        ${c.feito === "pronto" ? `<a class="link" href="#/projeto/${esc(p.slug)}/entrega">já está na entrega →</a>`
+          : c.feito ? `<span class="mudo mono">começado, ainda sem entrega</span>`
+          : `<button class="alternar" data-item="cortes" data-id="${esc(c.id)}" role="checkbox" aria-checked="${sim}">
+          <span class="marcar">${VISTO}</span> vira vertical
+        </button>`}
+      </div>
+    </div>
+  </article>`;
 }
 
 function blocoVertical(p) {
@@ -605,7 +686,7 @@ function blocoVertical(p) {
   <div class="secao-topo"><div><h2 class="subtitulo">${p.verticais.length} clipes verticais</h2>
     <p class="explica">Limpos, sem legenda e sem motion — prontos para a próxima etapa.</p></div></div>
   <div class="verticais">
-    ${p.verticais.map((v) => `<div class="vertical"><video src="${v.video}" controls preload="metadata" playsinline></video><div class="rotulo">${esc(v.nome)}</div></div>`).join("")}
+    ${p.verticais.map((v) => `<div class="vertical"><video src="${v.video}" controls preload="metadata" playsinline></video>${rotuloClipe(p, v.nome)}</div>`).join("")}
   </div>
   ${proximoPasso("quer motion e legenda? diga ao Claude:", "coloca motion nos verticais aprovados")}
   <p class="explica" style="margin-top:14px"><a class="link" href="#/projeto/${esc(p.slug)}/motion">antes, escolha o estilo do motion →</a></p>`;
@@ -619,15 +700,68 @@ function blocoMotion(p, estilos) {
     ${blocoEstilo(p, estilos)}
     ${proximoPasso("com os verticais prontos, peça:", "coloca motion nos verticais aprovados")}`;
   }
-  return blocoEstilo(p, estilos) + p.motion.map((m) => `
-    <div class="motion-bloco">
-      <div class="secao-topo"><h2 class="subtitulo">${esc(m.nome)}</h2><span class="tags">${m.estilo ? `<span class="tag">estilo ${esc(m.estilo)}</span>` : ""}${m.master ? `<span class="tag forte">master pronto</span>` : `<span class="tag">em produção</span>`}</span></div>
-      <div class="verticais">
-        ${m.master ? `<div class="vertical"><video src="${m.master}" controls preload="metadata" playsinline></video><div class="rotulo">master final</div></div>`
-          : m.rascunho ? `<div class="vertical"><video src="${m.rascunho}" controls preload="metadata" playsinline></video><div class="rotulo">rascunho (revisão)</div></div>` : ""}
-        ${m.quadros.map((q) => `<div class="vertical"><img src="${q}" alt="" loading="lazy"><div class="rotulo">${esc(decodeURIComponent(q.split("/").pop()))}</div></div>`).join("")}
+  // um cartão por clipe: clip-010, clip-010-limpo e clip-010-luxo são versões do mesmo corte
+  const grupos = new Map();
+  p.motion.forEach((m) => {
+    const base = baseDoClipe(m.nome);
+    grupos.set(base, [...(grupos.get(base) || []), m]);
+  });
+  const n = grupos.size;
+  return blocoEstilo(p, estilos) + `
+  <div class="secao-topo"><div><h2 class="subtitulo">${n} ${n === 1 ? "clipe" : "clipes"} no motion</h2>
+    <p class="explica">Cada versão é o mesmo corte num estilo. O <b>master</b> é o final; o <b>rascunho</b> é só para revisar.</p></div></div>
+  <div class="motion-clipes">${[...grupos].map(([base, versoes]) => cartaoMotion(p, base, versoes)).join("")}</div>`;
+}
+
+// "clip-010-quanto-mais-barato" e "clip-010-limpo" -> "clip-010"
+const baseDoClipe = (nome) => (String(nome).match(/^clip-\d+/) || [nome])[0];
+const tituloDoClipe = (p, nome) => (p.cortes.find((c) => c.id === baseDoClipe(nome)) || {}).titulo || "";
+const rotuloClipe = (p, nome, extra = "") => {
+  const titulo = tituloDoClipe(p, nome);
+  return `<div class="rotulo">${titulo ? `<b>${esc(titulo)}</b>` : ""}<span>${esc(titulo ? baseDoClipe(nome) : nome)}${extra}</span></div>`;
+};
+
+function cartaoMotion(p, base, versoes) {
+  // o master primeiro: é o que vale. Sem estilo congelado, o clipe é de antes dos estilos — Papel.
+  const ordem = [...versoes].sort((a, b) => !!b.master - !!a.master);
+  const naEntrega = p.entregas.some((e) => baseDoClipe(e.nome) === base);
+  const situacao = (m) => (m.master ? "master" : m.rascunho ? "rascunho" : "em produção");
+  const video = (m) => (m.master || m.rascunho
+    ? `<video src="${m.master || m.rascunho}" controls preload="metadata" playsinline></video>`
+    : `<div class="sem-video">o vídeo aparece aqui quando o Claude montar o rascunho</div>`);
+  const nomeQuadro = (q) => decodeURIComponent(q.split("/").pop()).replace(/\.\w+$/, "");
+  return `
+  <article class="motion-clipe" data-motion="${esc(base)}">
+    <div class="motion-cabeca">
+      <div><span class="motion-id">${esc(base)}</span><h3>${esc(tituloDoClipe(p, base) || base)}</h3></div>
+      ${naEntrega ? `<a class="carimbo pronto" href="#/projeto/${esc(p.slug)}/entrega">✓ na entrega</a>` : ""}
+    </div>
+    ${ordem.length > 1 ? `<div class="motion-versoes" role="tablist" aria-label="Versões">${ordem.map((m, i) => `
+      <button type="button" class="chip ${i ? "" : "ativo"}" role="tab" aria-selected="${!i}" data-versao="${i}">${esc(m.estilo || "Papel")}<small>${situacao(m)}</small></button>`).join("")}</div>` : ""}
+    ${ordem.map((m, i) => `
+    <div class="motion-versao" data-versao-painel="${i}" ${i ? "hidden" : ""}>
+      <div class="motion-tela">${video(m)}</div>
+      <div class="motion-info">
+        <p class="motion-situacao"><b>${ordem.length > 1 ? "" : `${esc(m.estilo || "Papel")} · `}${m.master ? "Master pronto" : m.rascunho ? "Rascunho para revisão" : "Em produção"}</b>
+          ${m.master ? "" : m.rascunho ? "— o master sai depois que a revisão for aprovada." : "— as cenas aparecem aqui conforme o Claude compõe."}</p>
+        ${m.quadros.length ? `
+        <div class="motion-quadros-cabeca">quadros das cenas (${m.quadros.length})</div>
+        <div class="motion-quadros">${m.quadros.map((q) => `<a href="${q}" target="_blank" rel="noopener" title="${esc(nomeQuadro(q))}"><img src="${q}" alt="${esc(nomeQuadro(q))}" loading="lazy"></a>`).join("")}</div>` : ""}
       </div>
-    </div>`).join("");
+    </div>`).join("")}
+  </article>`;
+}
+
+function ligarMotion() {
+  app.querySelectorAll("[data-motion]").forEach((cartao) => {
+    cartao.querySelectorAll("[data-versao]").forEach((b) => b.addEventListener("click", () => {
+      cartao.querySelectorAll("[data-versao]").forEach((x) => { x.classList.toggle("ativo", x === b); x.setAttribute("aria-selected", x === b); });
+      cartao.querySelectorAll("[data-versao-painel]").forEach((painel) => {
+        painel.hidden = painel.dataset.versaoPainel !== b.dataset.versao;
+        if (painel.hidden) painel.querySelectorAll("video").forEach((v) => v.pause());
+      });
+    }));
+  });
 }
 
 // ------------------------------------------------------------------ estilo do motion (no projeto)
@@ -739,7 +873,7 @@ function blocoEntrega(p) {
     <button class="botao pequeno" data-acao="abrir-entregas">Abrir pasta</button></div>
   <div class="verticais">
     ${p.entregas.map((e) => `<div class="vertical"><video src="${e.video}" controls preload="metadata" playsinline></video>
-      <div class="rotulo">${esc(e.nome)} · ${e.mb} MB · <a href="${e.video}" download>baixar</a></div></div>`).join("")}
+      ${rotuloClipe(p, e.nome, ` · ${num(e.mb)} MB · <a href="${e.video}" download>baixar</a>`)}</div>`).join("")}
   </div>`;
 }
 
@@ -823,6 +957,9 @@ function horario(iso) {
 const ICONE_EVENTO = { inicio: "▶", fim: "✓", arquivo: "✓", erro: "✕", info: "•", progresso: "…", voce: "★", projeto: "+" };
 let atividadeAberta = false;
 let logDeTodas = false;        // o log mostra só a etapa aberta; "todas as etapas" junta tudo
+// O passo a passo e o log ficam dobrados: a faixa de cima já diz o estado e o %.
+// Abrir ou fechar fica lembrado neste navegador (sem armazenamento, começa dobrado).
+let atividadeDetalhe = lerPref("atividade-detalhe", false);
 
 const barraPct = (pct, cls = "ativ-barra") =>
   pct != null ? `<span class="${cls}"><i style="width:${Math.max(0, Math.min(100, pct))}%"></i></span>` : "";
@@ -884,12 +1021,18 @@ function desenharAtividade(slug, a, ativa) {
   const nomeEtapa = (ETAPAS.find((e) => e.id === ativa) || ETAPAS[0]).nome;
   const daEtapa = logDeTodas ? a.eventos : a.eventos.filter((e) => e.etapa === ativa);
   const lista = atividadeAberta ? daEtapa : daEtapa.slice(0, 6);
+  const prog = (a.etapas || {})[ativa];
   caixa.innerHTML = `
     <div class="ativ-topo">
       <span class="ativ-estado ${cls}"><i></i>${rotulo}</span>
       <div class="ativ-agora">${agora}</div>
+      <button class="ativ-resumo" data-ativ-detalhe aria-expanded="${atividadeDetalhe}">
+        ${prog ? `<span class="ativ-resumo-nome">${esc(nomeEtapa)}</span><b>${prog.pct}%</b>${barraPct(prog.pct, "ativ-resumo-barra")}` : ""}
+        <span class="link">${atividadeDetalhe ? "esconder detalhes" : "passo a passo e log"}</span>
+      </button>
     </div>
-    ${blocoProgresso(nomeEtapa, (a.etapas || {})[ativa])}
+    <div class="ativ-detalhe" ${atividadeDetalhe ? "" : "hidden"}>
+    ${blocoProgresso(nomeEtapa, prog)}
     <div class="ativ-log-cabeca">
       <span>${logDeTodas ? "log de todas as etapas" : `log da etapa ${esc(nomeEtapa.toLowerCase())}`} (${daEtapa.length})</span>
       <span class="ativ-log-acoes">
@@ -899,7 +1042,13 @@ function desenharAtividade(slug, a, ativa) {
     </div>
     ${daEtapa.length ? `<ul class="ativ-lista">${lista.map((e) => `
       <li><time datetime="${esc(e.t)}">${horario(e.t)}</time><span class="ic ${e.tipo}">${ICONE_EVENTO[e.tipo] || "•"}</span><span>${esc(e.msg)}${logDeTodas && e.etapa ? ` <small class="ativ-etapa">${esc(e.etapa)}</small>` : ""}</span></li>`).join("")}</ul>`
-      : `<p class="ativ-vazio">${a.eventos.length ? "Nada nesta etapa ainda — o que o TopClip fizer nela aparece aqui, ao vivo." : "O que o TopClip fizer neste projeto aparece aqui, ao vivo."}</p>`}`;
+      : `<p class="ativ-vazio">${a.eventos.length ? "Nada nesta etapa ainda — o que o TopClip fizer nela aparece aqui, ao vivo." : "O que o TopClip fizer neste projeto aparece aqui, ao vivo."}</p>`}
+    </div>`;
+  caixa.querySelector("[data-ativ-detalhe]").addEventListener("click", () => {
+    atividadeDetalhe = !atividadeDetalhe;
+    gravarPref("atividade-detalhe", atividadeDetalhe);
+    desenharAtividade(slug, a, ativa);
+  });
   caixa.querySelector("[data-ativ-alternar]")?.addEventListener("click", () => { atividadeAberta = !atividadeAberta; desenharAtividade(slug, a, ativa); });
   caixa.querySelector("[data-log-todas]")?.addEventListener("click", () => { logDeTodas = !logDeTodas; desenharAtividade(slug, a, ativa); });
   caixa.querySelector("[data-ir-etapa]")?.addEventListener("click", (e) => (location.hash = `#/projeto/${slug}/${e.target.dataset.irEtapa}`));
