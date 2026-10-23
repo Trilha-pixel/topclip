@@ -887,3 +887,7 @@ form.remixar .explica { grid-column: 1 / -1; margin: 0; }
   .niet-inicio.no-heroi { display: none; }
   .niet-inicio.no-pe { display: block; margin-top: 44px; }
 }
+/* o polaroide da tela inicial leva ao NIET Clube (utm_content=heroi) */
+.heroi-arte > a { display: block; }
+.heroi-arte img { transition: transform 0.15s ease; }
+.heroi-arte > a:hover img { transform: rotate(2deg) translateY(-3px); }
