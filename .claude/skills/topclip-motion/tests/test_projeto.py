@@ -7,6 +7,7 @@ legenda conferida e o laudo D5 automatico. Tudo em subprocesso: importar o `kit`
 as pastas do projeto ao lado dele.
 """
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -15,6 +16,8 @@ from pathlib import Path
 
 SKILL = Path(__file__).resolve().parent.parent
 RAIZ = SKILL.parents[2]
+# No Windows o ./topclip roda no bash do Git; um "bash" solto pegaria o do WSL.
+BASH = shutil.which("bash") or "bash"
 PY = sys.executable
 
 
@@ -30,7 +33,7 @@ class TestProjetoLimpo(unittest.TestCase):
     def setUpClass(cls):
         cls.tmp = tempfile.TemporaryDirectory(prefix="topclip-teste-")
         cls.proj = Path(cls.tmp.name) / "motion"
-        subprocess.run(["bash", str(RAIZ / "topclip"), "motion", "novo", str(cls.proj)],
+        subprocess.run([BASH, str(RAIZ / "topclip"), "motion", "novo", str(cls.proj)],
                        check=True, stdout=subprocess.DEVNULL)
 
     @classmethod

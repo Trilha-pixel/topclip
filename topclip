@@ -24,10 +24,30 @@
 #
 # Existe porque o python3 do sistema no macOS é o 3.9 e o pacote exige 3.10+.
 # Tudo passa pela venv do repositório, em .venv/.
+# No Windows roda no Git Bash, o terminal que o Claude Code usa lá.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY="$ROOT/.venv/bin/python"
+MEU_PID=$$
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)
+        # Windows: a venv guarda o Python em Scripts/, e o $$ do Git Bash não é o número
+        # que o Windows (e o painel) conhece para este processo.
+        PY="$ROOT/.venv/Scripts/python.exe"
+        MEU_PID="$(cat /proc/$$/winpid 2>/dev/null || echo $$)"
+        # O que o winget instalou (ffmpeg, Deno) só entra no PATH de programas abertos
+        # depois — e o Claude já estava aberto durante o ./topclip instalar.
+        for d in "${LOCALAPPDATA:-}/Microsoft/WinGet/Links" "${PROGRAMFILES:-}/WinGet/Links" \
+                 "${USERPROFILE:-}/.deno/bin"; do
+            d="$(cygpath -u "$d" 2>/dev/null || echo "$d")"
+            [ -d "$d" ] && PATH="$PATH:$d"
+        done
+        export PATH
+        # Sem isto o Python do Windows lê e grava texto em cp1252, e acento vira lixo.
+        export PYTHONUTF8=1
+        ;;
+esac
 CORTE="$ROOT/.claude/skills/topclip-corte"
 MOTION="$ROOT/.claude/skills/topclip-motion"
 POST="$ROOT/.claude/skills/topclip-post"
@@ -54,11 +74,12 @@ rodar_registrando() {
     local de=3 projeto
     [ "$rotulo" = "py" ] && de=2
     projeto="$("$PY" "$ROOT/painel/atividade.py" achar-projeto "${@:$de}" 2>/dev/null || true)"
+    projeto="${projeto%$'\r'}"      # o print do Python no Windows termina em \r\n
     if [ -z "$projeto" ]; then
         exec "$@"
     fi
     local id="$$-$(date +%s)" t0=$SECONDS codigo=0
-    "$PY" "$ROOT/painel/atividade.py" inicio "$projeto" "$id" "$$" "$rotulo" "${@:$de}" || true
+    "$PY" "$ROOT/painel/atividade.py" inicio "$projeto" "$id" "$MEU_PID" "$rotulo" "${@:$de}" || true
     TOPCLIP_ATIVIDADE="$id" "$@" || codigo=$?
     "$PY" "$ROOT/painel/atividade.py" fim "$projeto" "$id" "$codigo" "$((SECONDS - t0))" "$rotulo" "${@:$de}" || true
     exit "$codigo"

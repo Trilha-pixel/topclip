@@ -21,13 +21,24 @@ import meu_estilo as M  # noqa: E402
 from PIL import Image  # noqa: E402
 
 
+def _liga_pasta(link: Path, alvo: Path) -> None:
+    """Atalho de pasta. No Windows o symlink pede o modo desenvolvedor; a junção, nada."""
+    try:
+        link.symlink_to(alvo, target_is_directory=True)
+    except OSError:
+        if sys.platform != "win32":
+            raise
+        import _winapi
+        _winapi.CreateJunction(str(alvo), str(link))
+
+
 class _Raiz(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix="topclip-meu-")
         self.raiz = Path(self.tmp.name) / "repo"
         self.raiz.mkdir()
         for nome in ("biblioteca", ".claude"):
-            (self.raiz / nome).symlink_to(RAIZ / nome)
+            _liga_pasta(self.raiz / nome, RAIZ / nome)
 
     def tearDown(self):
         self.tmp.cleanup()

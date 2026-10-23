@@ -64,7 +64,7 @@ for exe in ("ffmpeg", "ffprobe"):
         v = subprocess.run([exe, "-version"], capture_output=True, text=True)
         ok(f"{exe}  {v.stdout.splitlines()[0].split(' version ')[-1][:24]}")
     else:
-        erro(f"{exe}   ->  brew install ffmpeg  |  apt install ffmpeg")
+        erro(f"{exe}   ->  ./topclip instalar")
 
 print("\nkit que viaja com a skill")
 fontes = sorted((S / "fontes").glob("*.ttf"))

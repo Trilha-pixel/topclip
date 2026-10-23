@@ -127,7 +127,7 @@ def descrever(comando: list[str]) -> str:
 def achar_projeto(args: list[str]) -> Path | None:
     """A pasta `projetos/<nome>` que algum argumento cita (relativo ou absoluto)."""
     for a in args:
-        m = re.search(r"(?:^|/)projetos/([a-z0-9][a-z0-9-]*)", a)
+        m = re.search(r"(?:^|[/\\])projetos[/\\]([a-z0-9][a-z0-9-]*)", a)
         if m:
             p = PROJETOS / m.group(1)
             if p.is_dir():

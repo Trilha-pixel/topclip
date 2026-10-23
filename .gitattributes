@@ -1,0 +1,15 @@
+# Fim de linha sempre LF, inclusive num clone feito no Windows: o Git do Windows troca
+# para CRLF por padrão, e um script bash com CRLF não roda (`bash\r: not found`).
+* text=auto eol=lf
+
+# As licenças das fontes vieram assim dos autores: ficam como estão.
+.claude/skills/*/fontes/*.txt -text
+
+*.png binary
+*.jpg binary
+*.npy binary
+*.ttf binary
+*.otf binary
+*.woff2 binary
+*.mp4 binary
+*.onnx binary

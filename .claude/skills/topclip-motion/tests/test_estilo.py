@@ -15,6 +15,8 @@ from pathlib import Path
 
 SKILL = Path(__file__).resolve().parent.parent
 RAIZ = SKILL.parents[2]
+# No Windows o ./topclip roda no bash do Git; um "bash" solto pegaria o do WSL.
+BASH = shutil.which("bash") or "bash"
 PAPEL = RAIZ / "biblioteca" / "estilos" / "papel"
 sys.path.insert(0, str(SKILL / "lib"))
 
@@ -233,7 +235,7 @@ class TestResolucao(_ComPacote):
 
 
 def _topclip(*args):
-    return subprocess.run(["bash", str(RAIZ / "topclip"), *args], capture_output=True, text=True)
+    return subprocess.run([BASH, str(RAIZ / "topclip"), *args], capture_output=True, text=True)
 
 
 class TestMotionNovo(unittest.TestCase):

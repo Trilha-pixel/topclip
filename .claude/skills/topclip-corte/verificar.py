@@ -23,7 +23,7 @@ REPO = ROOT.parents[2]   # <repo>/.claude/skills/topclip-corte -> <repo>
 
 # O python3 do PATH pode ser o 3.9 do sistema. Diagnosticar com ele daria um
 # retrato do interpretador errado, entao reentra na venv do repositorio quando existe.
-_VENV_PY = REPO / ".venv" / "bin" / "python"
+_VENV_PY = REPO / ".venv" / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
 if _VENV_PY.exists() and Path(sys.executable).resolve() != _VENV_PY.resolve():
     import os
     os.execv(str(_VENV_PY), [str(_VENV_PY), str(Path(__file__).resolve()), *sys.argv[1:]])
@@ -71,8 +71,8 @@ def _checar_libass(ffmpeg: str) -> None:
 def checar_binarios() -> None:
     secao("Binarios")
     for nome, obrigatorio, como in [
-        ("ffmpeg", True, "brew install ffmpeg"),
-        ("ffprobe", True, "brew install ffmpeg"),
+        ("ffmpeg", True, "./topclip instalar"),
+        ("ffprobe", True, "./topclip instalar"),
     ]:
         caminho = shutil.which(nome)
         if caminho:
@@ -93,7 +93,7 @@ def checar_binarios() -> None:
         linha(OK, f"JavaScript ({js[0]})", f"{js[1]} — baixar vídeo do YouTube por link")
     else:
         linha(AVISO, "JavaScript (Deno ou Node)",
-              "opcional: baixar vídeo do YouTube por link — brew install deno (ou ./topclip instalar)")
+              "opcional: baixar vídeo do YouTube por link — ./topclip instalar (ou https://deno.com)")
         avisos.append("Deno/Node ausente (opcional: link do YouTube)")
 
 

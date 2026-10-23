@@ -359,7 +359,7 @@ function abrirNovoProjeto() {
   const definirVideo = (caminho) => {
     form.video.value = caminho;
     form.link.value = linkConferido = "";
-    const arq = caminho.split("/").pop();
+    const arq = caminho.split(/[\\/]/).pop();
     escolhido.querySelector("[data-escolhido-nome]").textContent = arq;
     escolhido.querySelector("[data-escolhido-caminho]").textContent = caminho;
     escolhido.hidden = false;

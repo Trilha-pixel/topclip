@@ -10,6 +10,7 @@ so com o que a skill entrega. E o teste de instalacao limpa (armadilha 31): cons
 fora do modulo, asset que nao existe na biblioteca, nome divergindo entre kit e
 template — tudo isso so aparece aqui, nao na leitura.
 """
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -35,7 +36,7 @@ LARGURA = 300          # cada estado a 300px: a leitura do laudo D2 ("legivel a 
 
 def projeto_limpo(pasta):
     """Um projeto de motion como o usuario recebe, pelo lancador de verdade."""
-    subprocess.run(["bash", str(RAIZ / "topclip"), "motion", "novo", str(pasta)],
+    subprocess.run([shutil.which("bash") or "bash", str(RAIZ / "topclip"), "motion", "novo", str(pasta)],
                    check=True, stdout=subprocess.DEVNULL)
     return pasta
 

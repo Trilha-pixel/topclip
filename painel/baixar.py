@@ -22,7 +22,6 @@ de 3h passa de 10 GB e deixa a transcrição e o autoframe mais lentos sem ganho
 from __future__ import annotations
 
 import argparse
-import fcntl
 import json
 import os
 import re
@@ -32,6 +31,12 @@ import sys
 import time
 from pathlib import Path
 from urllib.parse import urlparse
+
+try:
+    import fcntl
+except ImportError:      # Windows
+    fcntl = None
+    import msvcrt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import atividade as ATV  # noqa: E402
@@ -302,15 +307,31 @@ class Andamento:
             print(f"  {msg}", flush=True)
 
 
+def _travar(arquivo, esperar: bool) -> bool:
+    """Trava exclusiva no arquivo; sem `esperar`, False se outro processo já tem."""
+    if fcntl:
+        try:
+            fcntl.flock(arquivo, fcntl.LOCK_EX | (0 if esperar else fcntl.LOCK_NB))
+            return True
+        except BlockingIOError:
+            return False
+    while True:          # Windows: o LK_LOCK desiste em 10 s, então a espera é aqui
+        try:
+            msvcrt.locking(arquivo.fileno(), msvcrt.LK_NBLCK, 1)
+            return True
+        except OSError:
+            if not esperar:
+                return False
+            time.sleep(1)
+
+
 def baixar(link: str, proj: Path, cookies: str | None = None) -> Path:
     """Baixa para `proj/video.mp4`. Dois pedidos para o mesmo projeto: o segundo espera o primeiro."""
     proj.mkdir(parents=True, exist_ok=True)
     with (proj / TRAVA).open("w") as trava:
-        try:
-            fcntl.flock(trava, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+        if not _travar(trava, esperar=False):
             print("Já tem um download deste projeto rodando (o painel começou). Esperando terminar…", flush=True)
-            fcntl.flock(trava, fcntl.LOCK_EX)
+            _travar(trava, esperar=True)
         pronto = ja_baixado(proj, link)
         if pronto:
             return pronto

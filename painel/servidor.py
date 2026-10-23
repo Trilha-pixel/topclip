@@ -41,9 +41,36 @@ VIDEO = {".mp4", ".mov", ".m4v", ".webm"}
 IMAGEM = {".png", ".jpg", ".jpeg", ".webp"}
 mimetypes.add_type("font/ttf", ".ttf")
 mimetypes.add_type("image/svg+xml", ".svg")
+WINDOWS = sys.platform == "win32"
 
 
 # ------------------------------------------------------------------ utilidades
+def topclip(*args) -> list[str]:
+    """O comando que chama o ./topclip. No Windows ele é um script do Git Bash, que o
+    Windows não abre sozinho — e um `bash` solto acharia primeiro o do WSL, em System32."""
+    if not WINDOWS:
+        return [str(RAIZ / "topclip"), *map(str, args)]
+    import shutil
+    bash = shutil.which("bash") or r"C:\Program Files\Git\bin\bash.exe"
+    return [bash, str(RAIZ / "topclip"), *map(str, args)]
+
+
+def em_segundo_plano() -> dict:
+    """Para o Popen de um comando que continua se o painel fechar (Ctrl+C no terminal)."""
+    if WINDOWS:
+        return {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW}
+    return {"start_new_session": True}
+
+
+def powershell(script: str, **kw) -> subprocess.CompletedProcess:
+    """Roda um script do PowerShell (Windows) e devolve a saída em UTF-8."""
+    import base64
+    script = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false\n" + script
+    codificado = base64.b64encode(script.encode("utf-16-le")).decode()
+    return subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-STA", "-EncodedCommand", codificado],
+                          capture_output=True, encoding="utf-8", errors="replace", **kw)
+
+
 def slug(texto: str) -> str:
     t = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode()
     t = re.sub(r"[^a-zA-Z0-9]+", "-", t).strip("-").lower()
@@ -877,7 +904,7 @@ def saude(forcar=False) -> dict:
     if _saude_cache and not forcar:
         return _saude_cache
     try:
-        proc = subprocess.run([str(RAIZ / "topclip"), "verificar"], capture_output=True, text=True,
+        proc = subprocess.run(topclip("verificar"), capture_output=True, encoding="utf-8", errors="replace",
                               timeout=180, cwd=str(RAIZ))
         saida = re.sub(r"\x1b\[[0-9;]*m", "", proc.stdout + proc.stderr)
         ok = proc.returncode == 0
@@ -930,8 +957,8 @@ def iniciar_download(proj: Path) -> None:
     """Baixa o link do projeto em segundo plano, numa sessão própria: fechar o painel não
     interrompe. O avanço vai para o diário (Atividade); a saída crua, para baixar.log."""
     with (proj / "baixar.log").open("ab") as log:
-        subprocess.Popen([str(RAIZ / "topclip"), "baixar", str(proj)], cwd=str(RAIZ), stdin=subprocess.DEVNULL,
-                         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        subprocess.Popen(topclip("baixar", proj), cwd=str(RAIZ), stdin=subprocess.DEVNULL,
+                         stdout=log, stderr=subprocess.STDOUT, **em_segundo_plano())
 
 
 def info_do_link(link: str) -> dict:
@@ -986,8 +1013,20 @@ def apagar_projeto(proj: Path) -> dict:
 
 def para_lixeira(p: Path) -> None:
     """Lixeira do sistema: `trash` do macOS 15+ (com "Devolver" no Finder), o Finder nos
-    Macs mais antigos, `gio trash` ou `trash-put` no Linux."""
+    Macs mais antigos, `gio trash` ou `trash-put` no Linux, a Lixeira do Windows."""
     import shutil
+    if WINDOWS:
+        import os
+        try:
+            proc = powershell("Add-Type -AssemblyName Microsoft.VisualBasic\n"
+                              "[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory("
+                              "$env:TOPCLIP_LIXO, 'OnlyErrorDialogs', 'SendToRecycleBin')",
+                              env={**os.environ, "TOPCLIP_LIXO": str(p)}, timeout=60)
+        except Exception as e:
+            raise ValueError(f"Não consegui mandar para a Lixeira: {e}")
+        if proc.returncode != 0:
+            raise ValueError(f"Não consegui mandar para a Lixeira. Apague a pasta pelo Explorador de Arquivos: {p}")
+        return
     if sys.platform == "darwin":
         cmd = (["trash", str(p)] if shutil.which("trash") else
                ["osascript", "-e", "on run argv", "-e",
@@ -1215,8 +1254,8 @@ def gerar_prints(proj: Path) -> dict:
         raise ValueError("Não achei o vídeo deste projeto. Confira o caminho (ou espere o download terminar).")
     PJ.pasta(proj).mkdir(parents=True, exist_ok=True)
     with (PJ.pasta(proj) / "prints.log").open("ab") as log:
-        subprocess.Popen([str(RAIZ / "topclip"), "post", "prints", str(proj)], cwd=str(RAIZ), stdin=subprocess.DEVNULL,
-                         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        subprocess.Popen(topclip("post", "prints", proj), cwd=str(RAIZ), stdin=subprocess.DEVNULL,
+                         stdout=log, stderr=subprocess.STDOUT, **em_segundo_plano())
     return {"ok": True}
 
 
@@ -1307,6 +1346,26 @@ def eventos_de_arquivos(proj: Path, run: Path | None) -> list[dict]:
 
 def _pid_vivo(pid) -> bool:
     import os
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if WINDOWS:       # lá o os.kill(pid, 0) manda um Ctrl+C para o processo
+        import ctypes
+        from ctypes import wintypes
+        k = ctypes.WinDLL("kernel32", use_last_error=True)
+        k.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+        k.OpenProcess.restype = wintypes.HANDLE
+        k.GetExitCodeProcess.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.DWORD)]
+        k.CloseHandle.argtypes = [wintypes.HANDLE]
+        h = k.OpenProcess(0x1000, False, pid)    # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return ctypes.get_last_error() == 5          # acesso negado: existe
+        try:
+            codigo = wintypes.DWORD()
+            return bool(k.GetExitCodeProcess(h, ctypes.byref(codigo))) and codigo.value == 259   # STILL_ACTIVE
+        finally:
+            k.CloseHandle(h)
     try:
         os.kill(int(pid), 0)
         return True
@@ -1469,11 +1528,28 @@ ESCOLHER_MAC = [
     "POSIX path of f",
 ]
 
+# A janela de escolha nasce "sempre na frente": senão abre atrás do navegador.
+ESCOLHER_WINDOWS = """Add-Type -AssemblyName System.Windows.Forms
+$d = New-Object System.Windows.Forms.OpenFileDialog
+$d.Title = 'Escolha o vídeo para o TopClip'
+$d.Filter = 'Vídeos|*.mp4;*.mov;*.m4v;*.mkv;*.webm'
+$dono = New-Object System.Windows.Forms.Form -Property @{TopMost = $true}
+if ($d.ShowDialog($dono) -eq 'OK') { [Console]::Out.Write($d.FileName) } else { exit 1 }
+"""
+
 
 def escolher_video() -> dict:
     if not _dialogo.acquire(blocking=False):
         return {"erro": "Já tem uma janela de escolha aberta — olhe atrás do navegador."}
     try:
+        if WINDOWS:
+            proc = powershell(ESCOLHER_WINDOWS, timeout=900)
+            caminho = proc.stdout.strip().lstrip("\ufeff")
+            if proc.returncode == 0 and caminho:
+                return {"caminho": caminho}
+            if proc.returncode == 1:
+                return {"cancelado": True}
+            return {"erro": "Não consegui abrir a janela de escolha. Cole o caminho no campo abaixo."}
         if sys.platform == "darwin":
             cmd = ["osascript"] + [arg for linha in ESCOLHER_MAC for arg in ("-e", linha)]
         else:
@@ -1540,7 +1616,8 @@ def localizar_video(nome: str, tamanho, pastas=None) -> dict:
         except Exception:
             candidatos = []
     else:
-        base = pastas if pastas is not None else [Path.home() / p for p in PASTAS_COMUNS]
+        comuns = PASTAS_COMUNS + (["OneDrive"] if WINDOWS else [])   # Área de Trabalho e Documentos no OneDrive
+        base = pastas if pastas is not None else [Path.home() / p for p in comuns]
         candidatos = list(_varrer(base, nome))
 
     def mesmo_tamanho(p: Path) -> bool:
@@ -1826,8 +1903,12 @@ class Painel(BaseHTTPRequestHandler):
                 p = self._projeto(m.group(1))
                 if not p:
                     return self._erro("projeto não encontrado", HTTPStatus.NOT_FOUND)
-                abridor = "open" if sys.platform == "darwin" else "xdg-open"
-                subprocess.Popen([abridor, str(p)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if WINDOWS:
+                    import os
+                    os.startfile(str(p))
+                else:
+                    abridor = "open" if sys.platform == "darwin" else "xdg-open"
+                    subprocess.Popen([abridor, str(p)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 return self._json({"ok": True})
         except ValueError as e:
             return self._erro(str(e))

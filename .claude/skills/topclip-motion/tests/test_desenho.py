@@ -25,6 +25,17 @@ from pecas import lapis as L, objeto, receitas as R  # noqa: E402
 from pecas.base import quebra  # noqa: E402
 from pecas.objetos import OBJETOS  # noqa: E402
 
+
+def _liga_pasta(link: Path, alvo: Path) -> None:
+    """Atalho de pasta. No Windows o symlink pede o modo desenvolvedor; a junção, nada."""
+    try:
+        link.symlink_to(alvo, target_is_directory=True)
+    except OSError:
+        if sys.platform != "win32":
+            raise
+        import _winapi
+        _winapi.CreateJunction(str(alvo), str(link))
+
 LAPIS_DO = {"limpo": "limpo", "impacto": "impacto", "luxo": "luxo"}
 
 
@@ -300,7 +311,7 @@ class TestComandoObjetos(unittest.TestCase):
         self.M = meus_objetos
         self.tmp = tempfile.TemporaryDirectory(prefix="topclip-raiz-")
         self.raiz = Path(self.tmp.name)
-        (self.raiz / "biblioteca").symlink_to(RAIZ / "biblioteca")
+        _liga_pasta(self.raiz / "biblioteca", RAIZ / "biblioteca")
         (self.raiz / "minha-biblioteca").mkdir()
         self.arq = self.raiz / "minha-biblioteca" / "objetos.py"
 

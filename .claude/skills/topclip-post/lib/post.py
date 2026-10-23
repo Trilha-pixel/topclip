@@ -255,7 +255,8 @@ def cmd_fontes(_a) -> int:
 
 def main(argv=None) -> int:
     import signal
-    signal.signal(signal.SIGPIPE, signal.SIG_DFL)      # `| head` sem traceback
+    if hasattr(signal, "SIGPIPE"):                       # não existe no Windows
+        signal.signal(signal.SIGPIPE, signal.SIG_DFL)      # `| head` sem traceback
     ap = argparse.ArgumentParser(prog="./topclip post", description="Posts virais: frase + prints do vídeo")
     sub = ap.add_subparsers(dest="cmd", required=True)
     s = sub.add_parser("texto", help="a transcrição em linhas com o tempo")

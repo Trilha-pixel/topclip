@@ -9,6 +9,9 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # <repo>/.claude/skills/topclip-corte -> <repo>/.venv
 VENV="$(cd "$ROOT/../../.." && pwd)/.venv/bin/python"
+case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*) VENV="${VENV%/bin/python}/Scripts/python.exe"; export PYTHONUTF8=1 ;;
+esac
 
 if [ -x "$VENV" ]; then
     exec "$VENV" "$ROOT/scripts/vch.py" "$@"
