@@ -18,6 +18,10 @@ editorial com legenda queimada. Tudo rodando no seu computador, comandado pelo C
 
 <p align="center"><sub>Uma cena de motion do TopClip — cada objeto foi desenhado em código pelo Claude.</sub></p>
 
+> **Gostou? Me ajuda de graça:** deixe uma ⭐ aqui no GitHub e me siga no Instagram
+> [@realfelipetop](https://www.instagram.com/realfelipetop/). É lá que saem os tutoriais e
+> as novidades do TopClip.
+
 ## O que ele faz
 
 | | |
@@ -70,6 +74,7 @@ Ou chame direto:
 | `/topclip-corte video.mp4` | só os cortes verticais, sem motion |
 | `/topclip-motion` | só o motion e a legenda, num clipe vertical que já existe |
 | `/topclip-post` | posts de imagem: 14 frases do vídeo, cada uma com prints do rosto |
+| `/topclip-estilo` | cria o estilo de motion com a cara da sua marca, ou remixa um oficial |
 
 Em cada etapa o Claude **para e mostra o resultado** antes de seguir: primeiro a lista
 de momentos, cada um com uma nota estimada, depois os cortes para você assistir,
@@ -152,6 +157,9 @@ TopClip recorta e compõe.
 
 ## O que é bom saber
 
+- **O TopClip não tem servidor.** Vídeos e projetos ficam no seu computador. O que o
+  Claude lê (a transcrição, alguns quadros) passa pela sua conta do Claude Code, como em
+  qualquer conversa com ele.
 - **O Claude Code exige um plano pago** (Pro ou Max) ou chave de API. O TopClip em si
   é gratuito; o pipeline usa bastante contexto, então vídeos muito longos consomem mais.
 - **A primeira transcrição baixa os modelos**: ~0,5 GB para os cortes e ~1,6 GB para o
@@ -180,7 +188,9 @@ topclip/
 │   ├── skills/
 │   │   ├── topclip/         o fluxo completo
 │   │   ├── topclip-corte/   cortes e vertical
-│   │   └── topclip-motion/  motion e legenda
+│   │   ├── topclip-motion/  motion e legenda
+│   │   ├── topclip-estilo/  o seu estilo de motion
+│   │   └── topclip-post/    posts virais de imagem
 │   └── agents/              os 8 subagentes do pipeline de cortes
 ├── painel/                  o painel local (Python puro + uma página web)
 ├── biblioteca/              estilos e assets oficiais
@@ -193,7 +203,7 @@ topclip/
 Criado por **Felipe Top**, conversando com o Claude Code. Quer aprender a criar
 ferramentas como essa, para vender ou para usar na sua empresa? O caminho começa no
 [NIET Clube](https://www.nietclube.com.br/?utm_source=topclip&utm_medium=github&utm_content=readme).
-Tutoriais e bastidores no Instagram [@realfelipetop](https://www.instagram.com/realfelipetop/).
+Tutoriais e bastidores no Instagram: [me siga em @realfelipetop](https://www.instagram.com/realfelipetop/).
 
 ## Licença
 

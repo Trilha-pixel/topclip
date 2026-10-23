@@ -928,6 +928,7 @@ function blocoEntrega(p) {
   return `
   <div class="secao-topo"><div><h2 class="subtitulo">${p.entregas.length} clipes prontos para postar</h2>
     <p class="explica">Baixe ou abra a pasta. Bom post! 🎉</p>
+    <p class="explica">O TopClip te ajudou? <a class="link" href="https://www.instagram.com/realfelipetop/" target="_blank" rel="noopener">Me siga no Instagram @realfelipetop</a>: é lá que saem os tutoriais e as novidades.</p>
     ${faltam ? `<p class="explica">Ainda tem ${faltam} ${faltam === 1 ? "corte que você não fez" : "cortes que você não fez"}. <a class="link" href="#/projeto/${esc(p.slug)}/cortes">escolher os próximos</a></p>` : ""}</div>
     <button class="botao pequeno" data-acao="abrir-entregas">Abrir pasta</button></div>
   <div class="verticais">
