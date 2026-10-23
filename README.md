@@ -41,7 +41,7 @@ Precisa de **macOS** ou **Linux** (no Windows, use o [WSL](https://learn.microso
 [Claude Code](https://claude.com/claude-code).
 
 ```bash
-git clone https://github.com/Trilha-pixel/topclip.git
+git clone https://github.com/realfelipetop/topclip.git
 cd topclip
 ./topclip instalar
 ```

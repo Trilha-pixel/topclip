@@ -134,7 +134,7 @@ def banner():
     c.alpha_composite(V.hand_underline(c.size, 92, 640, 446, progress=1.0, width=6, color=AZUL, seed=5))
     texto(c, (88, 500), "cortes · vertical 9:16 · motion · legenda", V.F_MONO, 26, cor=(91, 89, 94))
     texto(c, (88, 556), "@realfelipetop", V.F_MARKER, 34)
-    texto(c, (370, 566), "github.com/Trilha-pixel/topclip", V.F_MONO, 22, cor=(91, 89, 94))
+    texto(c, (370, 566), "github.com/realfelipetop/topclip", V.F_MONO, 22, cor=(91, 89, 94))
     colar(c, foto_com_fita(250, -5), (930, 22))
     return V.finish(c, grain=0.03, vignette=0.05, chroma=0, sat=0.96).convert("RGB")
 
@@ -156,7 +156,7 @@ def post():
     texto(c, (96, 820), "grátis e", V.F_MARKER, 52)
     texto(c, (96, 884), "open source", V.F_MARKER, 52)
     texto(c, (90, 1196), "@realfelipetop", V.F_MARKER, 46)
-    texto(c, (90, 1262), "github.com/Trilha-pixel/topclip", V.F_MONO, 28, cor=(91, 89, 94))
+    texto(c, (90, 1262), "github.com/realfelipetop/topclip", V.F_MONO, 28, cor=(91, 89, 94))
     return V.finish(c, grain=0.03, vignette=0.05, chroma=0, sat=0.96).convert("RGB")
 
 

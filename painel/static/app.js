@@ -2507,7 +2507,7 @@ async function telaInstalacao() {
       <h2 class="subtitulo" style="margin-bottom:22px">Como instalar</h2>
       <ol class="passos">
         <li><div><h4>Instale o Claude Code</h4><p class="explica">É ele que faz os cortes. Precisa de um plano pago do Claude (Pro ou Max). <a class="link" href="https://claude.com/claude-code" target="_blank" rel="noopener">claude.com/claude-code</a></p></div></li>
-        <li><div><h4>Baixe o TopClip</h4>${comando("git clone https://github.com/Trilha-pixel/topclip.git && cd topclip")}</div></li>
+        <li><div><h4>Baixe o TopClip</h4>${comando("git clone https://github.com/realfelipetop/topclip.git && cd topclip")}</div></li>
         <li><div><h4>Rode o instalador</h4><p class="explica">Coloca o ffmpeg, o Python e o resto. Só uma vez.</p>${comando("./topclip instalar")}</div></li>
         <li><div><h4>Abra o painel</h4>${comando("./topclip painel")}</div></li>
       </ol>
