@@ -2351,7 +2351,7 @@ async function telaMarca() {
   <div class="marca-tela">
     <form class="papel painel-etapa marca-form" autocomplete="off">
       <div class="campo-duplo">
-        <div class="campo"><label for="m-nome">Nome da marca</label><input id="m-nome" name="nome" value="${esc(m.marca.nome)}" placeholder="Felipe Top"></div>
+        <div class="campo"><label for="m-nome">Nome da marca</label><input id="m-nome" name="nome" value="${esc(m.marca.nome)}" placeholder="Sua marca"></div>
         <div class="campo"><label for="m-arroba">Seu @</label><input id="m-arroba" name="arroba" value="${esc(m.marca.arroba)}" placeholder="@seuperfil"></div>
       </div>
       <fieldset class="campo"><legend>Cores</legend>

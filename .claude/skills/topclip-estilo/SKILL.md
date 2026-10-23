@@ -93,7 +93,7 @@ A pessoa fala em palavras e você traduz em `ajustar`:
 | "legenda maior" | `legenda.corpo=76` |
 | "palavra destacada sem caixa" | `legenda.destaque_modo=texto` |
 | "uma versão escura" | `variacao.escuro.nome=Escuro variacao.escuro.cor.fundo=#0A0A0A ...` |
-| "nome / para quem é" | `nome="Felipe Top"` `bom_para=marketing,vendas` |
+| "nome / para quem é" | `nome="Ana Lima"` `bom_para=marketing,vendas` |
 
 Fontes: só as do kit (`Archivo Narrow`, `Archivo Black`, `Anton`, `Permanent Marker`,
 `IBM Plex Mono`, `Fraunces`, `Fraunces Italic`, `Inter`, `Playfair Display Italic`) ou um
