@@ -268,7 +268,7 @@ async function telaInicio() {
       ${bilheteInicio("no-heroi")}
     </div>
     <div class="heroi-arte">
-      <img src="/static/img/heroi.jpg" alt="Cena de motion do TopClip: despertador sobre papel pontilhado com a palavra MVP na fita crepe">
+      <img src="/static/img/heroi.jpg" alt="Isso é uma agência: três clipes verticais, de um podcaster, um médico e um advogado, com uma seta até a etiqueta de preço R$, todo mês">
       <div class="rabisco">desenhado pelo Claude, em código${SETA}</div>
     </div>
   </section>
