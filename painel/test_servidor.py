@@ -120,6 +120,17 @@ class Http(ComProjetosTemporarios):
             status, _, _ = self.pedir(caminho)
             self.assertIn(status, (403, 404), caminho)
 
+    def test_logo_do_niet_e_svg_na_cor_da_tinta(self):
+        # o painel desenha as asas com <use href="/static/marca/niet.svg#niet">: sem cor fixa,
+        # elas pegam a cor do texto em volta (um PNG traria o fundo branco junto)
+        status, cab, corpo = self.pedir("/static/marca/niet.svg")
+        self.assertEqual(status, 200)
+        self.assertEqual(cab["Content-Type"], "image/svg+xml")
+        svg = corpo.decode()
+        self.assertIn('id="niet"', svg)
+        self.assertIn('fill="currentColor"', svg)
+        self.assertNotRegex(svg, r"#[0-9a-fA-F]{3,6}\b|<image")
+
     def test_post_de_outra_origem_e_recusado(self):
         status, _, _ = self.pedir("/api/projetos", {"Origin": "https://site-malicioso.com",
                                                     "Content-Type": "application/json"},

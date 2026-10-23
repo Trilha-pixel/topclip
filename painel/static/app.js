@@ -99,6 +99,36 @@ function gravarPref(chave, valor) {
   try { localStorage.setItem(`topclip:${chave}`, JSON.stringify(valor)); } catch { /* sem armazenamento: só não lembra */ }
 }
 
+// ------------------------------------------------------------------ NIET Clube
+// Bilhetes pequenos no Papel, nada de pop-up nem chamada de rede: só um link que a pessoa
+// abre se quiser. O utm_content diz qual lugar do painel trouxe a visita.
+const NIET_URL = "https://www.nietclube.com.br/";
+function linkNiet(lugar) {
+  return NIET_URL + "?utm_source=topclip&utm_medium=painel&utm_content=" + lugar;
+}
+
+// As asas, na cor da tinta: o SVG pinta com currentColor.
+const logoNiet = (largura) =>
+  `<svg class="niet-logo" viewBox="0 0 1044 537" width="${largura}" height="${(largura * 537 / 1044).toFixed(1)}" aria-hidden="true"><use href="/static/marca/niet.svg#niet"/></svg>`;
+
+// O "×" esconde o bilhete neste navegador; sem armazenamento, ele só volta a aparecer.
+function bilheteNiet(chave, classe, miolo, acao) {
+  if (lerPref(chave, false)) return "";
+  return `
+  <aside class="${classe} niet" data-niet="${esc(chave)}">
+    <button type="button" class="niet-fechar" data-fechar-niet="${esc(chave)}" aria-label="Esconder este bilhete" title="Esconder">×</button>
+    ${miolo}
+    <div class="niet-pe">${acao}<span class="niet-assinatura">${logoNiet(28)}NIET Clube</span></div>
+  </aside>`;
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-fechar-niet]");
+  if (!b) return;
+  gravarPref(b.dataset.fecharNiet, true);
+  document.querySelectorAll(`[data-niet="${CSS.escape(b.dataset.fecharNiet)}"]`).forEach((el) => el.remove());
+});
+
 // Lista longa em páginas. Os itens de todas as páginas já estão no HTML — a escolha marca
 // item de qualquer página e "marcar todos" pega todos —, a página só mostra e esconde.
 // Quando a tela redesenha sozinha (chegou coisa nova), volta para a mesma página.
@@ -216,6 +246,13 @@ function cartaoProjeto(p) {
   </a>`;
 }
 
+// No computador fica embaixo dos botões, na sobra da coluna do polaroide; no celular as
+// colunas empilham e ali empurraria os projetos, então vai para depois deles.
+const bilheteInicio = (onde) => bilheteNiet("niet-inicio", `papel fita niet-inicio ${onde}`,
+  `<span class="mao niet-rotulo">quem fez o TopClip</span>
+   <p>Eu fiz o TopClip conversando com o Claude. Quer criar ferramentas como essa, para vender ou para usar na sua empresa? O primeiro passo é o curso de Lovable do NIET Clube.</p>`,
+  `<a class="link" href="${linkNiet("inicio")}" target="_blank" rel="noopener">conhecer o NIET Clube →</a>`);
+
 async function telaInicio() {
   const { projetos } = await api("/api/projetos");
   const temExemplo = projetos.some((p) => p.slug === "exemplo-podcast");
@@ -228,6 +265,7 @@ async function telaInicio() {
         <button class="botao" data-acao="novo">+ Novo projeto</button>
         ${temExemplo ? "" : `<button class="botao claro" data-acao="demo">Ver um exemplo</button>`}
       </div>
+      ${bilheteInicio("no-heroi")}
     </div>
     <div class="heroi-arte">
       <img src="/static/img/heroi.jpg" alt="Cena de motion do TopClip: despertador sobre papel pontilhado com a palavra MVP na fita crepe">
@@ -244,7 +282,8 @@ async function telaInicio() {
          <h3 class="titulo">Nenhum projeto ainda</h3>
          <p class="lead" style="margin:14px auto 26px">Crie o primeiro: dê um nome, aponte o vídeo, e o painel te diz o que pedir ao Claude.</p>
          <button class="botao" data-acao="novo">+ Novo projeto</button>
-       </div>`}`;
+       </div>`}
+  ${bilheteInicio("no-pe")}`;
 
   app.querySelectorAll('[data-acao="novo"]').forEach((b) => (b.onclick = abrirNovoProjeto));
   const chave = (lista) => JSON.stringify(lista.map((p) => [p.slug, p.atividade, p.etapa_atual, p.n_prontos]));
@@ -892,7 +931,11 @@ function blocoEntrega(p) {
   <div class="verticais">
     ${p.entregas.map((e) => `<div class="vertical"><video src="${e.video}" controls preload="metadata" playsinline></video>
       ${rotuloClipe(p, e.nome, ` · ${num(e.mb)} MB · <a href="${e.video}" download>baixar</a>`)}</div>`).join("")}
-  </div>`;
+  </div>
+  ${bilheteNiet(`niet-entrega-${p.slug}`, "papel fita niet-entrega",
+    `<h3 class="subtitulo">Você acabou de fazer o trabalho de uma agência</h3>
+     <p class="explica">Tem podcaster, médico, advogado e empresário pagando todo mês para alguém fazer exatamente isso. No NIET Clube eu te ensino a sair do zero aos R$30 mil por mês com uma agência de cortes, do jeito que eu montei a minha.</p>`,
+    `<a class="botao" href="${linkNiet("entrega")}" target="_blank" rel="noopener">Quero montar minha agência →</a>`)}`;
 }
 
 // ------------------------------------------------------------------ escolhas
@@ -2467,7 +2510,11 @@ async function telaInstalacao() {
       </ol>
     </section>
     <section class="papel painel-etapa" id="saude"><div class="carregando">verificando…</div></section>
-  </div>`;
+  </div>
+  ${bilheteNiet("niet-instalacao", "papel niet-instalacao",
+    `<h2 class="subtitulo">Quer mudar alguma coisa?</h2>
+     <p class="explica">O TopClip é código aberto: dá para mudar uma tela, criar um recurso ou fazer outra ferramenta do zero. Quer aprender a fazer isso começando do zero? O primeiro passo é o curso de Lovable do NIET Clube.</p>`,
+    `<a class="link" href="${linkNiet("instalacao")}" target="_blank" rel="noopener">começar pelo Lovable →</a>`)}`;
   await mostrarSaude(false);
 }
 

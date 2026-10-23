@@ -190,8 +190,10 @@ topclip/
 
 ## Quem fez
 
-Criado por **Felipe Top**. Tutoriais, bastidores e novidades do TopClip no Instagram:
-[@realfelipetop](https://www.instagram.com/realfelipetop/).
+Criado por **Felipe Top**, conversando com o Claude Code. Quer aprender a criar
+ferramentas como essa, para vender ou para usar na sua empresa? O caminho começa no
+[NIET Clube](https://www.nietclube.com.br/?utm_source=topclip&utm_medium=github&utm_content=readme).
+Tutoriais e bastidores no Instagram [@realfelipetop](https://www.instagram.com/realfelipetop/).
 
 ## Licença
 

@@ -865,3 +865,25 @@ form.remixar .explica { grid-column: 1 / -1; margin: 0; }
   .post-zoom { grid-column: 1 / -1; grid-auto-flow: column; justify-content: start; }
   .modo { flex: 1 1 100%; }
 }
+
+/* ------------------------------------------------------------ bilhetes do NIET Clube
+   Pequenos e no Papel, sem cor nem fonte nova: as asas saem na cor da tinta (currentColor). */
+.niet { padding: 22px 24px 18px; }
+.niet-fechar { position: absolute; top: 6px; right: 8px; z-index: 3; width: 30px; height: 30px; padding: 0; border: 0; background: none; cursor: pointer; font: 400 22px/1 var(--texto); color: var(--tinta-3); }
+.niet-fechar:hover { color: var(--tinta); }
+.niet .subtitulo { padding-right: 30px; }
+.niet .explica { max-width: none; }
+.niet-pe { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px 20px; margin-top: 16px; }
+.niet-assinatura { display: inline-flex; align-items: center; gap: 8px; font: 700 15px/1 var(--display); letter-spacing: 0.03em; white-space: nowrap; }
+.niet-logo { flex: none; color: var(--tinta); }
+.niet-entrega { max-width: 720px; margin-top: 44px; }
+.niet-inicio { max-width: 480px; margin-top: 22px; padding: 16px 20px 13px; transform: rotate(-1deg); }
+.niet-inicio p { margin: 6px 0 0; padding-right: 10px; font-size: 14px; line-height: 1.5; color: var(--tinta-2); }
+.niet-rotulo { display: inline-block; font-size: 17px; transform: rotate(-2deg); }
+.niet-inicio.no-pe { display: none; }
+.niet-instalacao { max-width: 720px; margin-top: 28px; }
+.rodape-niet { display: inline-flex; align-items: center; gap: 6px; }
+@media (max-width: 860px) {
+  .niet-inicio.no-heroi { display: none; }
+  .niet-inicio.no-pe { display: block; margin-top: 44px; }
+}
