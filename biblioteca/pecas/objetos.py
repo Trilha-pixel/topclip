@@ -298,6 +298,18 @@ def seta(p=1.0, curva=0.0, angulo=0):
     return _gira([poli(corpo, "destaque")], angulo, 0.5, 0.5), 1.0, {"ponta": (x1, y)}
 
 
+def igual(p=1.0):
+    """O sinal de igual do processo de equivalencia ("isso e o mesmo que"): as duas barras
+    crescem do centro para fora, a de cima primeiro."""
+    f = []
+    for i, y in enumerate((0.36, 0.64)):
+        k = _suave((p - i * 0.25) / 0.75)
+        if k > 0:
+            m = 0.40 * k
+            f.append(ret(0.5 - m, y - 0.075, 0.5 + m, y + 0.075, 0.05, "destaque"))
+    return f, 1.0, {}
+
+
 def marca(p=1.0, tipo="sim"):
     """Sim (check) ou nao (x), desenhado no disco do acento."""
     f = [circulo(0.5, 0.5, 0.42, "destaque" if tipo == "sim" else "corpo", duplo=True)]
@@ -317,12 +329,16 @@ def marca(p=1.0, tipo="sim"):
 OBJETOS = {"relogio": relogio, "grafico_barras": grafico_barras, "grafico_pizza": grafico_pizza,
            "cedula": cedula, "moedas": moedas, "celular": celular, "calendario": calendario,
            "etiqueta_preco": etiqueta_preco, "lampada": lampada, "alvo": alvo, "funil": funil,
-           "pessoas": pessoas, "seta": seta, "marca": marca}
+           "pessoas": pessoas, "seta": seta, "igual": igual, "marca": marca}
 
 # Os objetos que a pessoa desenhou nas runs dela (minha-biblioteca/objetos.py, que o
 # `motion novo` copia para o projeto como objetos_meus.py) entram na mesma lista.
 try:
     import objetos_meus as _meus           # noqa: E402
-    OBJETOS.update(getattr(_meus, "OBJETOS", {}))
+    OBJETOS.update({k: v for k, v in getattr(_meus, "OBJETOS", {}).items() if k not in OBJETOS})
 except ImportError:
     pass
+except Exception as _e:                    # o arquivo do usuario com erro nao derruba o render
+    import sys as _sys
+    print(f"AVISO: objetos_meus.py com erro ({_e}); sigo sem os seus objetos. "
+          "Confira com ./topclip objetos", file=_sys.stderr)

@@ -1014,6 +1014,19 @@ function prateleiraPecas(lista, sel) {
   ${gradePecas(sel, ordem)}`;
 }
 
+// Os objetos do Limpo, do Impacto e do Luxo: os mesmos para os três, no traço de cada um.
+function secaoObjetos(o) {
+  if (!o) return "";
+  const seus = o.seus || [];
+  return `
+    <h3 class="prateleira-sub">No Limpo, no Impacto e no Luxo</h3>
+    <p class="explica">${o.oficiais.length} objetos prontos, que saem no traço de cada estilo (abra um estilo e veja em “O desenho”)${seus.length ? `, e ${seus.length === 1 ? "um desenhado" : `${seus.length} desenhados`} para os seus vídeos:` : "."}</p>
+    ${o.erro ? `<p class="estilo-erro">O arquivo dos seus objetos tem um erro: ${esc(o.erro)}. Peça ao Claude para conferir.</p>` : ""}
+    ${seus.length ? `${o.folha ? `<img class="objetos-folha" src="${o.folha}" alt="Os seus objetos no Limpo, no Impacto e no Luxo" loading="lazy">` : ""}
+      <ul class="objetos-seus">${seus.map((x) => `<li><b>${esc(x.nome.replace(/_/g, " "))}</b>${esc(x.descricao)}</li>`).join("")}</ul>`
+    : `<p class="explica">Quando a fala pede um objeto que não está na lista, o Claude desenha, e ele aparece aqui para os próximos vídeos.</p>`}`;
+}
+
 function cartaoMarca(m) {
   const c = m.marca.cores;
   return `
@@ -1032,7 +1045,7 @@ function cartaoMarca(m) {
 async function telaBiblioteca(partes = []) {
   if (partes[1] === "estilo" && partes[2]) return telaEstilo(partes[2]);
   if (partes[1] === "marca") return telaMarca();
-  const [{ estilos, padrao }, { assets }, m] = await Promise.all([api("/api/estilos"), api("/api/biblioteca"), api("/api/marca")]);
+  const [{ estilos, padrao }, { assets, objetos }, m] = await Promise.all([api("/api/estilos"), api("/api/biblioteca"), api("/api/marca")]);
   // as peças começam no estilo escolhido antes, senão no seu padrão, senão no primeiro que tem peças
   let sel = estilos.find((e) => e.id === estiloDasPecas) || estilos.find((e) => e.id === padrao.estilo && e.pecas.length)
     || estilos.find((e) => e.pecas.length) || estilos[0];
@@ -1067,6 +1080,7 @@ async function telaBiblioteca(partes = []) {
   <section class="prateleira">
     <div class="secao-topo"><div><h2 class="subtitulo">Objetos desenhados</h2>
       <p class="explica">Todo objeto desenhado num vídeo fica aqui para o próximo. Quanto mais você usa, mais coisa já vem pronta.</p></div></div>
+    <h3 class="prateleira-sub">No Papel</h3>
     ${assets.length ? `<div class="assets">${assets.map((a, i) => `
       <figure class="asset papel ${i % 3 === 1 ? "fita" : ""}" style="margin:0">
         <div class="vitrine ${a.arquivo.startsWith("BG_") ? "fundo" : ""}"><img src="${a.url}" alt="${esc(a.objeto || a.arquivo)}" loading="lazy"></div>
@@ -1074,6 +1088,7 @@ async function telaBiblioteca(partes = []) {
         <p>${esc(a.objeto || "")}</p>
       </figure>`).join("")}</div>`
     : `<div class="vazio papel"><h3 class="titulo">Nada desenhado ainda</h3><p class="lead" style="margin:14px auto">O primeiro vídeo com motion já começa a encher.</p></div>`}
+    ${secaoObjetos(objetos)}
   </section>`;
 
   const trocar = (id) => {

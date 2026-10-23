@@ -11,13 +11,42 @@ Ele não opina sobre gosto. Responde perguntas fechadas, por escrito, todas.
 
 | Momento | Alvo | Laudo |
 | --- | --- | --- |
-| D1 | cada PNG isolado | `LAUDO_D1_ASSETS.md` |
+| D0 | o plano (`00_brief/PLANO_MOTION.md`) | `LAUDO_D0_PLANO.md` |
+| D1 | cada PNG isolado (Papel) ou objeto novo na folha (lápis) | `LAUDO_D1_ASSETS.md` |
 | D2 | cada frame composto, parado | `LAUDO_D2_FRAMES.md` |
 | D3 | os 4 estados lidos em sequência | `LAUDO_D3_ESTADOS.md` |
 | D4 | o motion sobre o vídeo, no tempo real | `LAUDO_D4_PLATE.md` |
 | D5 | o master | `LAUDO_D5_MASTER.md` |
 
+## D0 — o plano
+
+Antes de desenhar qualquer coisa. Vale para todo estilo.
+
+1. Cada frase que entrou tem objeto concreto, ou é a instrução ou o payoff? → não =
+   **HIGH** (a cena vira enfeite)
+2. **Toda frase com objeto concreto virou desenho** (objeto em destaque, processo ou
+   dado)? Cena de texto no lugar de um objeto que a fala nomeia → **BLOCKER**. Cena de
+   texto só com o motivo escrito na coluna Objeto.
+3. O objeto da cena é **o da fala**, e não um parecido que já estava pronto? → não =
+   **HIGH**
+4. Cada objeto tem origem: biblioteca (`./topclip objetos`) ou novo? Novo foi conferido
+   na folha antes de compor? → não = **HIGH**
+5. Registro repetido em cenas vizinhas? → sim = **HIGH**
+6. Cobertura entre 30% e 40%, com pelo menos 1,5 s de rosto entre cenas? → fora =
+   **MEDIUM**
+7. As frases que ficaram de fora têm motivo escrito? → não = **MEDIUM**
+
 ## D1 — asset isolado
+
+**Estilo com lápis** (Limpo, Impacto, Luxo): o "asset" é o objeto novo na folha
+`minha-biblioteca/objetos.png`. Pergunte só estas:
+
+1. Reconheço o objeto em 1 segundo, nos três lápis? → não = **BLOCKER**
+2. Alguma forma tem cor fixa, em vez de papel? → sim = **BLOCKER** (a marca não entra)
+3. A parte que importa está no papel `destaque`, e só ela? → não = **HIGH**
+4. Sobra detalhe que some a 300 px de largura? → sim = **MEDIUM** (é sinal, não retrato)
+
+**Papel** (PNG):
 
 1. Borda física irregular, ou vetorial digital? → vetorial = **BLOCKER**
 2. Tem sombra embutida na imagem? → sim = **BLOCKER** (sombra é camada)

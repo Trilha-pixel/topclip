@@ -32,10 +32,12 @@ Vídeo longo → clipes verticais 9:16 com motion e legenda. Quatro skills em
   Estilo da pessoa (remixar, ajustar, aprovar, exportar, importar, paleta, amostra no
   clipe): skill `topclip-estilo`. Estilo oficial nunca se edita — remixa.
 - **Todo estilo segue o fluxo do Papel** (frase com objeto → objeto desenhado → registro →
-  palavra); muda o lápis (`biblioteca/pecas/lapis.py`). Objeto novo oficial em
-  `biblioteca/pecas/objetos.py`, só com o papel de cada forma (nunca cor): sai nos três
-  lápis. Os do usuário em `minha-biblioteca/objetos.py` (molde em
-  `.claude/skills/topclip-motion/exemplo/objetos_usuario.py`).
+  palavra); muda o lápis (`biblioteca/pecas/lapis.py`). Frase com objeto vira desenho,
+  nunca texto (D0 da rubrica). Antes de desenhar: `./topclip objetos` (a biblioteca
+  primeiro). Objeto novo oficial em `biblioteca/pecas/objetos.py`, só com o papel de cada
+  forma (nunca cor): sai nos três lápis. Os do usuário em `minha-biblioteca/objetos.py`
+  (molde em `.claude/skills/topclip-motion/exemplo/objetos_usuario.py`), conferidos com
+  `./topclip objetos`; chegam sozinhos ao projeto a cada `./topclip py`.
 - **Assets desenhados numa run vão para `minha-biblioteca/`**, fora do git: função em
   `minha-biblioteca/desenho.py` (molde em `.claude/skills/topclip-motion/exemplo/desenho_usuario.py`),
   PNG em `minha-biblioteca/assets/`, linha em `minha-biblioteca/MANIFESTO.md`. Nunca em

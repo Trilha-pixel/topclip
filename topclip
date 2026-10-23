@@ -11,6 +11,8 @@
 #   ./topclip estilo validar <id>   confere um pacote de estilo
 #   ./topclip estilo remixar|ajustar|aprovar|exportar|importar|apagar|paleta|amostra ...
 #                                   o seu estilo (./topclip estilo -h; skill topclip-estilo)
+#   ./topclip objetos               os objetos dos estilos com lápis (oficiais e os seus); confere
+#                                   os seus (minha-biblioteca/objetos.py) e grava a folha deles
 #   ./topclip baixar <link> [projetos/<nome>]   baixa o vídeo de um link (YouTube, Instagram)
 #   ./topclip painel                abre o painel no navegador (http://127.0.0.1:7777)
 #   ./topclip log <projeto> "msg"   anota no diário do projeto (aparece no painel)
@@ -57,6 +59,17 @@ rodar_registrando() {
     TOPCLIP_ATIVIDADE="$id" "$@" || codigo=$?
     "$PY" "$ROOT/painel/atividade.py" fim "$projeto" "$id" "$codigo" "$((SECONDS - t0))" "$rotulo" "${@:$de}" || true
     exit "$codigo"
+}
+
+# Os seus objetos (minha-biblioteca/objetos.py) chegam sozinhos a cada projeto de motion:
+# todo `./topclip py` de um script do projeto leva a versão atual (objetos_meus.py). Objeto
+# desenhado no meio de um projeto já entra no próximo render.
+levar_objetos() {
+    local src="$ROOT/minha-biblioteca/objetos.py" dir
+    [ -f "$src" ] && [ -f "${1:-}" ] || return 0
+    dir="$(cd "$(dirname "$1")" && pwd)"
+    [ -f "$dir/pecas/objetos.py" ] || return 0
+    cmp -s "$src" "$dir/objetos_meus.py" || cp "$src" "$dir/objetos_meus.py"
 }
 
 motion_novo() {
@@ -157,6 +170,10 @@ case "$cmd" in
         precisa_venv
         exec "$PY" "$MOTION/lib/estilo.py" --raiz "$ROOT" "$@"
         ;;
+    objetos)
+        precisa_venv
+        exec "$PY" "$MOTION/lib/meus_objetos.py" --raiz "$ROOT" "$@"
+        ;;
     baixar)
         # anota o próprio início e fim no diário: o projeto pode nem existir antes
         precisa_venv
@@ -168,6 +185,7 @@ case "$cmd" in
         ;;
     py)
         precisa_venv
+        levar_objetos "${1:-}"
         rodar_registrando py "$PY" "$@"
         ;;
     testes)

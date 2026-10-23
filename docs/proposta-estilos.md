@@ -596,3 +596,37 @@ Fase 6 (o desenho por estilo):
   nos três lápis.
 - **Painel:** a seção "O desenho" mostra `preview/objetos.png` (de `estilo previa`) no
   detalhe de cada estilo com lápis; o Papel explica que desenha tudo no kit dele.
+- **Desenho primeiro (depois da pergunta do Felipe: "você olha a biblioteca primeiro, faz
+  desenho novo de acordo com a transcrição?").** O fluxo estava escrito, mas nada cobrava.
+  Agora:
+  - **Regra.** Frase com objeto concreto vira desenho; cena de texto só para a frase sem
+    objeto, com o motivo escrito.
+  - **Plano e laudo.** O `PLANO_MOTION.md` ganhou a coluna Objeto, e a rubrica do Diretor
+    ganhou o **D0** (o plano), que reprova cena de texto no lugar de um objeto que a fala
+    nomeia. O D1 ganhou a versão para os lápis (a folha do objeto novo).
+  - **`compose.py --check`** conta as cenas com desenho.
+- **`./topclip objetos`.** Lista os objetos oficiais e os seus, lendo o código sem
+  executar. Confere cada objeto seu nos três lápis e diz o que estiver errado (papel
+  inválido, nome igual a um oficial, objeto vazio). Grava a folha
+  `minha-biblioteca/objetos.png`, que o painel mostra na Biblioteca.
+- **O objeto chega sozinho ao projeto.** Todo `./topclip py` de um script de projeto de
+  motion leva a versão atual de `minha-biblioteca/objetos.py`. Arquivo do usuário com erro
+  dá aviso e não derruba o render.
+- **Receitas mais presas à fala:**
+  - o conector `igual` para equivalência ("isso é o mesmo que"), que não é causa;
+  - `rotulos_em`, `titulo_em`, `subtitulo_em` e `total`, cada um na sua palavra;
+  - o processo distribui os objetos pela altura real deles e encolhe junto se faltar
+    espaço;
+  - o título do dado cabe numa linha antes de quebrar.
+- **A marca com cor neutra não vira acento.** A primária `#FFFFFF` (o formulário) apagava
+  o amarelo do Impacto, e a janela acesa sumia no desenho. O resolver recusa branco,
+  preto e cinza como acento, com aviso. O lápis também garante que o destaque nunca fique
+  igual à face.
+- **A prova: clip-005 no Impacto, do zero** (`projetos/aula-yt-teste/motion/clip-005-impacto`,
+  com plano e laudos D0 a D5).
+  - **O que mudou em relação ao Papel.** Faltava o apartamento na biblioteca, e ele foi
+    desenhado (`predio`, em `minha-biblioteca`). No plano do Papel deste clipe, a mesma
+    comparação tinha virado texto escrito numa tira: o buraco que o D0 agora pega.
+  - **O que os dois planos têm igual:** a conta "10 × 300 = 3 mil" e a decisão de deixar
+    gancho e payoff no rosto.
+

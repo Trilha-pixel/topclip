@@ -155,7 +155,8 @@ class TestObjetosDoUsuario(unittest.TestCase):
     def test_objetos_meus_entra_na_lista(self):
         molde = SKILL / "exemplo" / "objetos_usuario.py"
         with tempfile.TemporaryDirectory(prefix="topclip-objetos-") as d:
-            (Path(d) / "objetos_meus.py").write_text(molde.read_text(encoding="utf-8"), encoding="utf-8")
+            (Path(d) / "objetos_meus.py").write_text(
+                molde.read_text(encoding="utf-8") + '\nOBJETOS["xicara"] = xicara\n', encoding="utf-8")
             r = subprocess.run([sys.executable, "-c",
                                 "import sys; sys.path[:0] = [sys.argv[1], sys.argv[2]]\n"
                                 "import pecas\n"
@@ -170,15 +171,18 @@ class TestObjetosDoUsuario(unittest.TestCase):
             import objetos_usuario as U
         finally:
             sys.path.remove(str(SKILL / "exemplo"))
-        for nome, fn in U.OBJETOS.items():
+        self.assertEqual(U.OBJETOS, {})            # o exemplo nao entra sozinho na lista
+        for nome, fn in {"xicara": U.xicara}.items():
             formas, altura, _ = fn(p=1.0)
             for nome_estilo, lapis in LAPIS_DO.items():
                 lay = L.desenha(formas, 200, altura, _estilo(nome_estilo), lapis, 1.0)
                 self.assertIsNotNone(lay.getbbox(), f"{nome} no {lapis}")
 
-    def test_motion_novo_copia_os_objetos_do_usuario(self):
+    def test_motion_novo_e_cada_py_levam_os_objetos_do_usuario(self):
         txt = (RAIZ / "topclip").read_text(encoding="utf-8")
         self.assertIn('"$ROOT/minha-biblioteca/objetos.py" "$destino/objetos_meus.py"', txt)
+        self.assertIn('levar_objetos "${1:-}"', txt)
+        self.assertIn('cmp -s "$src" "$dir/objetos_meus.py" || cp "$src" "$dir/objetos_meus.py"', txt)
 
 
 class TestValidadorELapis(unittest.TestCase):
@@ -210,6 +214,144 @@ class TestValidadorELapis(unittest.TestCase):
         self.assertEqual(d["tokens"]["$extensions"]["topclip"]["lapis"], "impacto")
         M._aplica(d, "lapis", None)
         self.assertNotIn("lapis", d["tokens"]["$extensions"]["topclip"])
+
+
+class TestDestaqueNuncaSome(unittest.TestCase):
+    def test_acento_claro_demais_troca_a_face(self):
+        est = _estilo("impacto")
+        est.r = dict(est.r, cor=dict(est.r["cor"], acento="#FFFFF0"))
+        cor_original = est.cor
+        est.cor = lambda nome, *a: (255, 255, 240, 255) if nome == "acento" else cor_original(nome, *a)
+        cores = L._cores("impacto", est)
+        self.assertGreaterEqual(L._distancia(cores["destaque"], cores["face"]), 90)
+
+    def test_acento_normal_nao_mexe(self):
+        cores = L._cores("impacto", _estilo("impacto"))
+        self.assertEqual(cores["face"], (255, 255, 255, 255))
+
+
+class TestLayoutDasReceitas(unittest.TestCase):
+    def test_processo_cabe_com_qualquer_par_de_objetos(self):
+        nomes = [n for n in OBJETOS if n not in ("seta", "igual")]
+        for titulo in (None, "Titulo"):
+            for de in nomes:
+                for para in nomes:
+                    L_, y_de, rot_de, liga, y_pa, rot_pa = R._layout_processo(de, para, None, None, titulo)
+                    a_pa = OBJETOS[para](p=1.0)[1]
+                    self.assertLessEqual(rot_pa, R.FUNDO_SEGURO, (de, para))
+                    self.assertLess(y_de, rot_de, (de, para))
+                    # o conector (~200 px) cabe entre o rotulo do de e o topo do para
+                    self.assertGreaterEqual(y_pa - a_pa * L_ / 2 - (rot_de + 40), 200, (de, para, titulo))
+
+    def test_conector_igual_na_equivalencia(self):
+        est = _estilo("impacto")
+        com_seta = R.processo(60, 0, 110, est, "calendario", "predio" if "predio" in OBJETOS else "pessoas",
+                              seta_em=10)
+        com_igual = R.processo(60, 0, 110, est, "calendario", "predio" if "predio" in OBJETOS else "pessoas",
+                               seta_em=10, liga="igual")
+        self.assertNotEqual(com_seta.tobytes(), com_igual.tobytes())
+        formas, _, _ = OBJETOS["igual"](p=1.0)
+        self.assertEqual(len(formas), 2)
+
+    def test_titulo_do_dado_cabe_numa_linha_quando_da(self):
+        est = _estilo("impacto")
+        tam = R._cabe(est, "10 projetos", 150)
+        self.assertLess(tam, 150)
+        self.assertEqual(len(quebra(est.fonte("titulo", tam, 700), est.caixa("10 projetos"), 880)), 1)
+        self.assertEqual(R._cabe(est, "LTV", 150), 150)
+
+    def test_rotulo_trava_na_palavra(self):
+        est = _estilo("limpo")
+        antes = R.processo(30, 0, 110, est, "calendario", "pessoas", de_em=2, rotulos=("um", None),
+                           rotulos_em=(40, None))
+        depois = R.processo(50, 0, 110, est, "calendario", "pessoas", de_em=2, rotulos=("um", None),
+                            rotulos_em=(40, None))
+        sem = R.processo(50, 0, 110, est, "calendario", "pessoas", de_em=2)
+        crop = (0, 700, 1080, 1000)
+        self.assertEqual(antes.crop(crop).tobytes(), R.processo(30, 0, 110, est, "calendario", "pessoas",
+                                                                 de_em=2).crop(crop).tobytes())
+        self.assertNotEqual(depois.crop(crop).tobytes(), sem.crop(crop).tobytes())
+
+
+class TestCheckContaDesenho(unittest.TestCase):
+    def test_conta_cenas_com_desenho(self):
+        from pecas import estados
+        import io
+        from contextlib import redirect_stdout
+
+        def build_M1(frame, overlay_only=True):
+            return R.dado(frame, 0, 10, None)
+
+        def build_M2(frame, overlay_only=True):
+            return P.desfoque.quadro(frame, 0, 10, None, texto="x")
+
+        glb = {"M1_EVENTS": dict(a=(0, 5)), "M2_EVENTS": dict(a=(0, 5))}
+        out = io.StringIO()
+        with redirect_stdout(out):
+            ok = estados.check({"M1": (build_M1, {"END": 6}, None), "M2": (build_M2, {"END": 6}, None)}, glb)
+        self.assertTrue(ok)
+        self.assertIn("cenas com desenho: 1 de 2", out.getvalue())
+
+
+class TestComandoObjetos(unittest.TestCase):
+    def setUp(self):
+        sys.path.insert(0, str(SKILL / "lib"))
+        import meus_objetos
+        self.M = meus_objetos
+        self.tmp = tempfile.TemporaryDirectory(prefix="topclip-raiz-")
+        self.raiz = Path(self.tmp.name)
+        (self.raiz / "biblioteca").symlink_to(RAIZ / "biblioteca")
+        (self.raiz / "minha-biblioteca").mkdir()
+        self.arq = self.raiz / "minha-biblioteca" / "objetos.py"
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_lista_le_o_codigo_sem_executar(self):
+        self.arq.write_text('import os\nos.system("exit 1")\n\n\ndef bola(p=1.0):\n'
+                            '    """Bola de futebol. Gira."""\n\n\nOBJETOS = {"bola": bola}\n'
+                            'OBJETOS["trofeu"] = bola\n')
+        self.assertEqual([(o["nome"], o["descricao"]) for o in self.M.lista(self.arq)],
+                         [("bola", "Bola de futebol"), ("trofeu", "Bola de futebol")])
+        oficiais = [o["nome"] for o in self.M.lista(RAIZ / "biblioteca" / "pecas" / "objetos.py")]
+        self.assertEqual(oficiais, list(OBJETOS))
+        self.arq.write_text("def x(:\n")
+        with self.assertRaises(ValueError):
+            self.M.lista(self.arq)
+
+    def test_confere_e_grava_a_folha(self):
+        molde = (SKILL / "exemplo" / "objetos_usuario.py").read_text(encoding="utf-8")
+        self.arq.write_text(molde + '\n\ndef ruim(p=1.0):\n    """Ruim."""\n'
+                            '    return [dict(pts=[(0, 0), (1, 1)], fechada=False, papel="cor", esp=0.02,'
+                            ' duplo=False)], 1.0, {}\n\n\n'
+                            'OBJETOS.update(xicara=xicara)\nOBJETOS["xicara"] = xicara\n'
+                            'OBJETOS["ruim"] = ruim\nOBJETOS["relogio"] = xicara\n', encoding="utf-8")
+        oficiais, seus, erros, folha = self.M.conferir(self.raiz)
+        self.assertEqual(set(erros), {"ruim", "relogio"})
+        self.assertIn("papel 'cor'", erros["ruim"][0])
+        self.assertIn("oficial", erros["relogio"][0])
+        self.assertTrue(folha and folha.is_file())
+        from PIL import Image
+        with Image.open(folha) as im:
+            self.assertEqual(im.size[0], 3 * self.M.CEL)     # os tres lapis lado a lado
+            self.assertLess(im.size[1], 2 * self.M.CEL)      # uma linha: so a xicara passou
+
+    def test_sem_arquivo(self):
+        oficiais, seus, erros, folha = self.M.conferir(self.raiz)
+        self.assertEqual((seus, erros, folha), ([], {}, None))
+        self.assertIn("relogio", [o["nome"] for o in oficiais])
+
+
+class TestObjetosMeusComErro(unittest.TestCase):
+    def test_arquivo_quebrado_nao_derruba_o_render(self):
+        with tempfile.TemporaryDirectory(prefix="topclip-quebrado-") as d:
+            (Path(d) / "objetos_meus.py").write_text("def x(:\n")
+            r = subprocess.run([sys.executable, "-c",
+                                "import sys; sys.path[:0] = [sys.argv[1], sys.argv[2]]\n"
+                                "import pecas\nprint(len(pecas.objeto.OBJETOS))",
+                                d, str(RAIZ / "biblioteca")], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("AVISO", r.stderr)
 
 
 class TestQuebraEquilibrada(unittest.TestCase):

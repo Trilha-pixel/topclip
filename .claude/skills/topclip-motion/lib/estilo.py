@@ -190,6 +190,13 @@ def _lum(hexa):
     return 0.2126 * canal(r) + 0.7152 * canal(g) + 0.0722 * canal(b)
 
 
+def _neutra(hexa):
+    """Cor sem croma (branco, preto, cinza): max - min dos canais abaixo de 12%."""
+    h = hexa.lstrip("#")
+    rgb = [int(h[i:i + 2], 16) for i in (0, 2, 4)]
+    return max(rgb) - min(rgb) < 0.12 * 255
+
+
 def contraste(a, b):
     """Razao de contraste WCAG 2.x entre duas cores hex (1 a 21)."""
     la, lb = sorted((_lum(a), _lum(b)), reverse=True)
@@ -486,6 +493,12 @@ def resolver(pasta, variacao=None, marca=None):
             if caminho.startswith("cor."):
                 if not RE_HEX.match(str(valor)):
                     recusado.append({"slot": caminho, "motivo": f"'{valor}' nao e cor #RRGGBB"})
+                    continue
+                if caminho == "cor.acento" and _neutra(valor):
+                    # branco, preto ou cinza nao destacam nada: o estilo fica com o acento
+                    # dele (a mesma regra da paleta tirada dos posts)
+                    recusado.append({"slot": caminho, "motivo": f"'{valor}' e cor neutra (branco, "
+                                     "preto ou cinza) e nao serve de destaque"})
                     continue
                 if caminho == "cor.texto":
                     r = contraste(valor, token(tok, "cor.fundo"))

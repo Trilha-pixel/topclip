@@ -623,6 +623,20 @@ class MinhaBiblioteca(ComProjetosTemporarios):
         self.assertEqual(seus[0]["objeto"], "garrafa de vidro âmbar")
         self.assertTrue(any(a["dono"] == "oficial" for a in assets))
 
+    def test_objetos_dos_estilos_com_lapis(self):
+        o = S.biblioteca()["objetos"]
+        self.assertIn("relogio", [x["nome"] for x in o["oficiais"]])
+        self.assertEqual((o["seus"], o["folha"], o["erro"]), ([], None, None))
+        (S.MINHA / "objetos.py").write_text(
+            'def predio(p=1.0):\n    """Predio de apartamentos. Acende."""\n\n\nOBJETOS = {"predio": predio}\n',
+            encoding="utf-8")
+        (S.MINHA / "objetos.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+        o = S.biblioteca()["objetos"]
+        self.assertEqual(o["seus"][0]["descricao"], "Predio de apartamentos")
+        self.assertIn("objetos.png?v=", o["folha"])       # ?v=: a folha regerada nao fica no cache
+        (S.MINHA / "objetos.py").write_text("def x(:\n", encoding="utf-8")
+        self.assertIn("linha 1", S.biblioteca()["objetos"]["erro"])
+
     def test_midia_da_minha_biblioteca_e_permitida(self):
         self.assertTrue(S.dentro(S.MINHA / "assets" / "GARRAFA.png", S.PROJETOS, S.BIBLIOTECA, S.MINHA))
         self.assertFalse(S.dentro(S.MINHA / ".." / "README.md", S.PROJETOS, S.BIBLIOTECA, S.MINHA))

@@ -97,6 +97,21 @@ def _corta(pts, p):
 
 def _cores(lapis, estilo):
     """Papel da forma -> cor do estilo, por lapis. Tudo vem dos tokens: a marca entra."""
+    cores = _cores_do_lapis(lapis, estilo)
+    # o destaque nunca some na face (a janela acesa, o dia circulado): com um acento claro
+    # demais (marca), a face vira a cor do estilo mais longe dele
+    if _distancia(cores["destaque"], cores["face"]) < 90:
+        c = estilo.cor
+        cores["face"] = max((c("fundo"), c("texto"), c("apoio")),
+                            key=lambda x: _distancia(x, cores["destaque"]))
+    return cores
+
+
+def _distancia(a, b):
+    return sum(abs(x - y) for x, y in zip(a[:3], b[:3]))
+
+
+def _cores_do_lapis(lapis, estilo):
     c = estilo.cor
     # `vazado`: linha que precisa contrastar com a area de baixo (o check no disco do acento)
     if lapis == "limpo":

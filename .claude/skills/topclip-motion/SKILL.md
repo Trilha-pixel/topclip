@@ -75,7 +75,7 @@ Cada etapa tem uma trava. Não avance sem ela.
 | # | Etapa | Saída | Trava |
 | --- | --- | --- | --- |
 | 1 | **Ancorar** | tabela palavra → frame | transcript palavra-a-palavra existe |
-| 2 | **Escolher frases** | tabela entra/não-entra com motivo | cada corte tem justificativa escrita |
+| 2 | **Escolher frases** | `PLANO_MOTION.md`: tabela entra/não-entra com motivo, objeto de cada cena | laudo D0 aprovado: frase com objeto vira desenho |
 | 3 | **Assets** | PNG com alfa por objeto (Papel) ou objeto no lápis (os outros) | biblioteca primeiro; o que faltar, desenhado em `minha-biblioteca/desenho.py` (Papel) ou `minha-biblioteca/objetos.py` (lápis) |
 | 4 | **Recortar** | PNG com alfa | só para asset de gerador de imagem; laudo D1 aprovado |
 | 5 | **Compor** | 4 estados por cena + folha `<cena>_ESTADOS.png` | laudo D2/D3 aprovado |
@@ -83,7 +83,7 @@ Cada etapa tem uma trava. Não avance sem ela.
 | 7 | **Legenda** | sequência RGBA de duração total | `captions.check()` passa: nenhuma palavra dita fica de fora |
 | 8 | **Render + mux** | `RASCUNHO.mp4` na revisão, master uma vez no fim | duração, cadência, quadros e MD5 do áudio batem (conferido sozinho) |
 
-Leia `referencias/rubricas-diretor.md` antes da etapa 4 e aplique em 4, 5 e 7.
+Leia `referencias/rubricas-diretor.md` antes da etapa 2 e aplique em 2 (o D0 é o plano), 3, 4, 5 e 7.
 Escolha o registro de cada cena em `referencias/registros.md` **antes** de compor, e
 procure a receita dele em `referencias/receitas.md` — o `compose.py` já vem com uma
 cena-exemplo pronta por receita.
@@ -131,6 +131,12 @@ parado; acima de 50% o rosto some. Deixe pelo menos 1,5s de rosto entre cenas.
 
 **Escreva a tabela dos que ficaram de fora, com o motivo.** A decisão descartada é tão
 útil quanto a adotada, e evita refazer a discussão depois.
+
+**O plano** (`00_brief/PLANO_MOTION.md`) tem as duas tabelas. A das que entram traz, por
+cena: janela, âncoras (palavra@s), registro, **objeto** e o que a cena mostra. A coluna
+Objeto diz de onde ele vem — `relogio` (biblioteca), `xicara` (novo, desenhado agora) ou
+`—` (cena de texto, com o motivo: a frase não tem objeto). O Diretor confere o plano no
+**D0**, antes de desenhar qualquer coisa (`referencias/rubricas-diretor.md`).
 
 ## 3. Conseguir os assets
 
@@ -328,21 +334,37 @@ o objeto, travar cada evento na palavra, revisar com a rubrica, render. O que mu
 | Impacto | `impacto` | adesivo: contorno preto grosso, borda branca, sombra dura |
 | Luxo | `luxo` | gravura em latão que **se desenha** na entrada |
 
-**Objeto.** Escrito uma vez, sai nos três lápis. Os prontos estão em `pecas/objetos.py`
-(`relogio`, `grafico_barras`, `grafico_pizza`, `cedula`, `moedas`, `celular`,
-`calendario`, `etiqueta_preco`, `lampada`, `alvo`, `funil`, `pessoas`, `seta`, `marca`);
-a folha de cada estilo está em `biblioteca/estilos/<id>/preview/objetos.png`. Faltou o
-objeto que a fala pede: desenhe em `minha-biblioteca/objetos.py` — formas com **papel**
-(`corpo`, `face`, `detalhe`, `destaque`, `traco`, `vazado`), nunca cor:
+**Desenho primeiro.** Frase com objeto concreto vira **desenho** — objeto em destaque,
+processo ou dado —, nunca peça de texto só porque a peça está pronta. Cena de texto é
+para a frase que entrou sem objeto (a instrução, o payoff, a virada de argumento), e o
+plano diz o motivo na coluna Objeto. O Papel nunca teve esse risco porque nele tudo é
+desenho; nos outros estilos, as peças de texto estão a uma linha de distância.
 
-```bash
-mkdir -p minha-biblioteca && cp .claude/skills/topclip-motion/exemplo/objetos_usuario.py minha-biblioteca/objetos.py
-```
+**Objeto: a biblioteca primeiro, o desenho novo depois.** Para cada frase com objeto:
 
-O `motion novo` copia o arquivo para o projeto como `objetos_meus.py` (projeto já criado:
-copie à mão). Confira antes de usar: `./topclip py <projeto>/objetos_meus.py <projeto>`
-grava `11_qa/objetos_meus.png` com cada objeto seu nos três lápis. **Nunca** em
-`pecas/objetos.py` nem em `biblioteca/`: são do repositório.
+1. **Procure.** `./topclip objetos` lista os oficiais e os do usuário, com uma frase sobre
+   cada um. Use o que é **o objeto da fala**, não um parecido: "café" pede xícara, e um
+   relógio no lugar dela é enfeite.
+2. **Faltou: desenhe.** Em `minha-biblioteca/objetos.py` — formas com **papel** (`corpo`,
+   `face`, `detalhe`, `destaque`, `traco`, `vazado`), nunca cor; a primeira frase da
+   docstring é a descrição que aparece na lista e no painel. Na primeira vez, copie o
+   molde:
+
+   ```bash
+   mkdir -p minha-biblioteca && cp .claude/skills/topclip-motion/exemplo/objetos_usuario.py minha-biblioteca/objetos.py
+   ```
+
+3. **Confira.** `./topclip objetos` desenha cada objeto seu nos três lápis, diz o que
+   estiver errado e grava a folha em `minha-biblioteca/objetos.png`, que o painel mostra
+   na Biblioteca. **Olhe a folha** antes de compor: o objeto se reconhece em 1 segundo,
+   nos três?
+4. **Use.** O objeto chega sozinho ao projeto: todo `./topclip py` de um script do
+   projeto leva a versão atual do arquivo (`objetos_meus.py`). Fica para os próximos
+   vídeos também.
+
+**Nunca** em `pecas/objetos.py` nem em `biblioteca/`: são do repositório. Objeto só vira
+oficial quando quem mantém o repositório pede. Os oficiais, desenhados em cada lápis,
+estão em `biblioteca/estilos/<id>/preview/objetos.png`.
 
 **Cena.** As receitas de `pecas/receitas.py` montam a cena do registro, já travada nas
 palavras:
@@ -361,7 +383,8 @@ o vídeo), `lottie`, `moldura`, `brilho`. Objeto solto, sem receita:
 segue a fala, não a curva do estilo: a barra chega na palavra em qualquer estilo.
 
 As regras do Papel continuam valendo: **nunca repita o registro em cenas vizinhas**,
-número estimado não vira gráfico limpo, densidade de 30–40%. O `compose.py` do projeto
+número estimado não vira gráfico limpo, densidade de 30–40%. O `compose.py --check`
+conta quantas cenas desenham objeto: confira com o plano. O `compose.py` do projeto
 já vem com uma cena-exemplo por registro (M1 a M3) e por peça (M4 em diante).
 
 **Tudo vem do estilo.** Toda peça e todo objeto vestem o `estilo/resolvido.json`: cor,

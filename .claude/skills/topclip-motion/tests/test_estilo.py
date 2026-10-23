@@ -209,6 +209,17 @@ class TestResolucao(_ComPacote):
         self.assertEqual(r["marca"]["logo"], "estilo/marca/logo.png")
         self.assertIn("cor.acento", r["marca"]["aplicado"])
 
+    def test_marca_neutra_nao_vira_acento(self):
+        """Branco, preto ou cinza na primaria: o estilo fica com o acento dele (o branco do
+        formulario apagava o amarelo do Impacto e a janela acesa sumia no desenho)."""
+        for neutra in ("#FFFFFF", "#000000", "#808080", "#F4F4F2"):
+            self.poe_marca(cores={"primaria": neutra}, logo="logo.png")
+            r = E.resolver(self.p, "a", self.marca)
+            self.assertEqual(r["cor"]["acento"], "#DBD653", neutra)
+            self.assertEqual([x["slot"] for x in r["marca"]["recusado"]], ["cor.acento"], neutra)
+        self.poe_marca(cores={"primaria": "#E04A10"}, logo="logo.png")
+        self.assertEqual(E.resolver(self.p, "a", self.marca)["cor"]["acento"], "#E04A10")
+
     def test_sem_slots_marca_nao_entra(self):
         self.mexe("estilo.json", slots_da_marca=[])
         self.poe_marca(cores={"primaria": "#FF0000"}, logo="logo.png")

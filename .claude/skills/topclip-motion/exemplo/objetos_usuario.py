@@ -1,10 +1,11 @@
 """
 Os seus objetos desenhados — molde de `minha-biblioteca/objetos.py` (copie daqui).
 
-Quando a fala pede um objeto que a biblioteca nao tem (uma xicara, um carro, um troféu),
-o Claude desenha ele AQUI, uma vez, e ele passa a sair nos tres lapis (Limpo, Impacto,
-Luxo e os remixes deles). O `./topclip motion novo` copia este arquivo para cada projeto
-como `objetos_meus.py`; a peca `objeto` encontra os nomes de OBJETOS sozinha.
+Quando a fala pede um objeto que a biblioteca nao tem (`./topclip objetos` lista o que
+ja existe), o Claude desenha ele AQUI, uma vez, e ele passa a sair nos tres lapis (Limpo,
+Impacto, Luxo e os remixes deles). Todo `./topclip py` de um projeto de motion leva este
+arquivo para o projeto como `objetos_meus.py`; a peca `objeto` encontra os nomes de
+OBJETOS sozinha. Nome igual ao de um oficial nao entra.
 
 Como desenhar (o mesmo de `biblioteca/pecas/objetos.py`):
   - a caixa tem largura 1; a altura e sua (devolva-a);
@@ -15,12 +16,11 @@ Como desenhar (o mesmo de `biblioteca/pecas/objetos.py`):
     objeto esta pronto;
   - sinal, nao retrato: a anatomia que se reconhece em 1 segundo.
 
-Confira na folha antes de usar: `./topclip py <projeto>/objetos_meus.py <projeto>`
-grava <projeto>/11_qa/objetos_meus.png com cada objeto seu nos tres lapis.
+Confira antes de usar: `./topclip objetos` desenha cada objeto seu nos tres lapis, diz o
+que estiver errado e grava a folha em minha-biblioteca/objetos.png (o painel mostra).
+A primeira frase da docstring e a descricao que aparece na lista e no painel.
 """
 import math
-import sys
-from pathlib import Path
 
 from pecas.lapis import arco, circulo, elipse, linha, poli, ret  # noqa: F401
 
@@ -40,25 +40,7 @@ def xicara(p=1.0):
     return f, 0.96, {"rotulos": [(0.46, 0.93)]}
 
 
-OBJETOS = {"xicara": xicara}
+# Registre aqui cada objeto seu: o nome e o que a cena pede em P.objeto.quadro(..., "nome").
+# A xicara acima e o exemplo: registre se for usar (OBJETOS = {"xicara": xicara}), ou apague.
+OBJETOS = {}
 
-
-if __name__ == "__main__":
-    # a folha de conferencia: cada objeto seu nos tres lapis, no estilo do projeto
-    raiz = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
-    sys.path.insert(0, str(raiz))
-    import pecas as P
-    from PIL import Image
-
-    estilo = P.carregar(raiz)
-    folhas = [P.objeto.folha(estilo, list(OBJETOS), lapis=l, cols=max(1, len(OBJETOS)))
-              for l in ("limpo", "impacto", "luxo")]
-    out = Image.new("RGBA", (max(x.width for x in folhas), sum(x.height for x in folhas)))
-    y = 0
-    for x in folhas:
-        out.alpha_composite(x, (0, y))
-        y += x.height
-    destino = raiz / "11_qa" / "objetos_meus.png"
-    destino.parent.mkdir(parents=True, exist_ok=True)
-    out.convert("RGB").save(destino)
-    print(destino)

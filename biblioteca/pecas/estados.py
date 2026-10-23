@@ -13,6 +13,18 @@ from PIL import Image
 
 # eventos continuos nao contam como "ultimo evento" no --check
 CONTINUOS = ("fundo", "cinema", "saida", "camera", "deriva")
+# o que conta como cena com desenho no --check: as receitas por registro e a peca objeto
+DESENHO = ("objeto_em_destaque(", ".processo(", ".dado(", "objeto.quadro(")
+
+
+def _desenha(fn):
+    """A cena desenha objeto? Lido do codigo da build (None se nao der para ler)."""
+    import inspect
+    try:
+        src = inspect.getsource(fn)
+    except (OSError, TypeError):
+        return None
+    return any(m in src for m in DESENHO)
 
 
 def _plate(nome, st, fr, glb):
@@ -51,13 +63,20 @@ def render(cenas, SCENES, glb, tag=""):
 def check(SCENES, glb):
     """END tem que cair DEPOIS do ultimo evento, senao o estado mostra a peca pela metade."""
     ok = True
-    for sc, (_, st, _) in SCENES.items():
+    desenho = 0
+    for sc, (fn, st, _) in SCENES.items():
         ev = glb[sc + "_EVENTS"]
         ultimo = max(b for k, (a, b) in ev.items() if k not in CONTINUOS)
         bom = st["END"] >= ultimo
         ok &= bom
+        d = _desenha(fn)
+        desenho += bool(d)
+        tipo = {True: "desenho", False: "texto", None: ""}[d]
         print(f"  {sc}: ultimo evento {ultimo:3d}  END {st['END']:3d}  "
-              f"{'OK' if bom else 'END ANTES DO FIM <<<'}")
+              f"{'OK' if bom else 'END ANTES DO FIM <<<'}  {tipo}")
+    # o D0 cobra: frase com objeto vira desenho. A contagem e para conferir com o plano.
+    print(f"  cenas com desenho: {desenho} de {len(SCENES)} "
+          "(confira com a coluna Objeto do PLANO_MOTION.md)")
     return ok
 
 

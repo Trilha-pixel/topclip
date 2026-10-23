@@ -475,7 +475,20 @@ def biblioteca() -> dict:
         for p in sorted((base / "assets").glob("*.png")):
             itens.append({"arquivo": p.name, "url": url_midia(p), "dono": dono,
                           **linhas.get(p.name, {})})
-    return {"assets": itens}
+    return {"assets": itens, "objetos": objetos_dos_estilos()}
+
+
+def objetos_dos_estilos() -> dict:
+    """Os objetos dos estilos com lápis (Limpo, Impacto, Luxo): os oficiais e os do usuário,
+    lidos do código sem executar (lib/meus_objetos.py), e a folha dos seus, que o
+    `./topclip objetos` grava."""
+    mod = modulo_meus_objetos()
+    try:
+        seus, erro = mod.lista(MINHA / "objetos.py"), None
+    except ValueError as e:
+        seus, erro = [], str(e)
+    return {"oficiais": mod.lista(BIBLIOTECA / "pecas" / "objetos.py"), "seus": seus, "erro": erro,
+            "folha": _url_se_existe(MINHA / "objetos.png") if seus else None}
 
 
 # ------------------------------------------------------------------ estilos, marca e preferências
@@ -785,6 +798,14 @@ def salvar_marca(dados: dict) -> dict:
 # o painel só chama, apontando para a minha-biblioteca dele (que os testes trocam).
 # Criar e ajustar um estilo é conversa com o Claude (skill topclip-estilo), não formulário.
 IMPORTAR_MAX = 25 * 1024 * 1024     # o mesmo teto do pacote; em base64 o pedido chega ~1/3 maior
+
+
+def modulo_meus_objetos():
+    lib = str(ESTILO_PY.parent)
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    import meus_objetos
+    return meus_objetos
 
 
 def modulo_meu_estilo():

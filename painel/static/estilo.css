@@ -553,6 +553,10 @@ main { max-width: 1180px; margin: 0 auto; padding: 40px clamp(16px, 4vw, 48px) 1
 .variacao-cartao.padrao .variacao-capa { border-color: var(--amarelo); }
 .variacao-cartao figcaption { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; margin-top: 13px; }
 .variacao-cartao figcaption b { margin-right: auto; font: 700 19px/1 var(--display); text-transform: uppercase; }
+/* a folha dos seus objetos: uma linha por objeto, os três estilos lado a lado, no tamanho dela */
+.objetos-folha { display: block; max-width: 100%; height: auto; border-radius: 3px; box-shadow: 0 1px 0 var(--papel-borda); }
+.objetos-seus { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 6px; }
+.objetos-seus b { margin-right: 8px; }
 .estilo-objetos { display: block; width: min(720px, 100%); height: auto; border-radius: 3px; box-shadow: 0 1px 0 var(--papel-borda); }
 .estilo-demo { width: min(260px, 100%); aspect-ratio: 9 / 16; margin-top: 28px; border-radius: 3px; background: var(--tinta); }
 
