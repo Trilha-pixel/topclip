@@ -195,6 +195,7 @@ Criado por **Felipe Top**. Tutoriais, bastidores e novidades do TopClip no Insta
 
 ## Licença
 
-Código sob [MIT](LICENSE). As fontes em `.claude/skills/topclip-motion/fontes/` são de
-licença livre (OFL / Apache 2.0) e trazem os próprios arquivos de licença. O modelo
+Código sob [MIT](LICENSE). As fontes em `.claude/skills/topclip-motion/fontes/` e
+`.claude/skills/topclip-post/fontes/` são de licença livre (OFL / Apache 2.0) e trazem os
+próprios arquivos de licença. O modelo
 YuNet de detecção de rosto vem do [OpenCV Zoo](https://github.com/opencv/opencv_zoo) (MIT).

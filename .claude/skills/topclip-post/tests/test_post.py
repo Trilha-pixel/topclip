@@ -92,6 +92,20 @@ class Conferir(unittest.TestCase):
         with self.assertRaises(F.ErroFrases):
             F.conferir({"frases": [frase(), frase()]})
 
+    def test_legenda_e_carrossel(self):
+        _, avisos = F.conferir({"frases": [frase()]})
+        self.assertTrue(any("sem legenda" in a for a in avisos))
+        _, avisos = F.conferir({"frases": [frase(legenda="Texto. " + " ".join(f"#t{k}" for k in range(7)))],
+                                "carrossel": {"capa": "5 verdades sobre **preço**", "legenda": "Arrasta."}})
+        self.assertTrue(any("7 hashtags" in a for a in avisos))
+        self.assertFalse(any("sem legenda" in a for a in avisos))
+        with self.assertRaises(F.ErroFrases):
+            F.conferir({"frases": [frase(legenda=["não é texto"])]})
+        with self.assertRaises(F.ErroFrases):
+            F.conferir({"frases": [frase()], "carrossel": {"capa": "**aberto"}})
+        self.assertEqual(F.carrossel({"carrossel": {"capa": "  Título   **forte** ", "legenda": " "}}),
+                         {"capa": "Título **forte**"})
+
 
 def quadro(caminho: Path, w=1920, h=1080, cor=(120, 110, 100)):
     img = Image.new("RGB", (w, h), cor)
@@ -150,6 +164,28 @@ class Arte(unittest.TestCase):
 
     def test_fontes_do_kit_disponiveis(self):
         self.assertIn("inter", A.fontes_disponiveis())
+
+    def test_pb_tira_a_cor_da_foto_e_nao_do_destaque(self):
+        quadro(self.img, cor=(200, 40, 40))
+        A._cache_img.clear()
+        cor = np.asarray(A.montar([self.painel("")] * 2).convert("RGB")).astype(int)
+        pb = np.asarray(A.montar([self.painel(""), self.painel("**DESTAQUE**")], pb=True, destaque="#FFD43B")).astype(int)
+        saturacao = lambda a: (a.max(axis=2) - a.min(axis=2))
+        self.assertGreater(saturacao(cor[:300]).mean(), 60)
+        self.assertLess(saturacao(pb[:300]).mean(), 3)           # a foto ficou cinza
+        self.assertGreater(saturacao(pb[675:]).max(), 100)        # o destaque amarelo continua
+
+    def test_assinatura_no_pe_do_ultimo_print(self):
+        sem = np.asarray(A.montar([self.painel("Uma parte."), self.painel("Outra parte.")]).convert("L")).astype(int)
+        com = np.asarray(A.montar([self.painel("Uma parte."), self.painel("Outra parte.")], assinatura="@perfil").convert("L")).astype(int)
+        self.assertEqual(np.abs(sem[:675] - com[:675]).max(), 0)  # o primeiro print não muda
+        self.assertGreater(np.abs(sem[675:] - com[675:]).max(), 60)
+
+    def test_capa_tem_um_print_so(self):
+        img = A.montar([self.painel("5 verdades sobre **cobrar caro**")], capa=True)
+        self.assertEqual(img.size, (1080, 1350))
+        with self.assertRaises(ValueError):
+            A.montar([self.painel()] * 2, capa=True)
 
 
 class EscolherPrints(unittest.TestCase):
@@ -218,6 +254,101 @@ class Estado(unittest.TestCase):
         PJ.salvar_estado(self.proj, {"edicoes": {"frase-001": None}})
         m = PJ.montagem(self.proj, PJ.achar_frase(self.proj, "frase-001"), PJ.ler_estado(self.proj))
         self.assertEqual(m["prints"], ["p-0001", "p-0002"])
+
+    def test_carrossel_so_no_feed(self):
+        e = PJ.salvar_estado(self.proj, {"formato": "stories"})
+        e = PJ.salvar_estado(self.proj, {"modo": "carrossel"})
+        self.assertEqual((e["modo"], e["formato"]), ("carrossel", "feed"))
+        e = PJ.salvar_estado(self.proj, {"formato": "stories"})
+        self.assertEqual((e["modo"], e["formato"]), ("unico", "stories"))
+        for ruim in ({"modo": "carrossel", "formato": "stories"}, {"modo": "slides"}, {"pb": "sim"}):
+            with self.assertRaises(ValueError):
+                PJ.salvar_estado(self.proj, ruim)
+
+    def test_pb_e_assinatura_chegam_na_montagem(self):
+        orig = PJ.arroba
+        try:
+            PJ.arroba = lambda: None
+            with self.assertRaises(ValueError):               # sem @ na marca não liga a assinatura
+                PJ.salvar_estado(self.proj, {"assinatura": True})
+            PJ.arroba = lambda: "@perfil"
+            e = PJ.salvar_estado(self.proj, {"assinatura": True, "pb": True})
+            m = PJ.montagem(self.proj, PJ.achar_frase(self.proj, "frase-001", e), e)
+            self.assertEqual((m["pb"], m["assinatura"]), (True, "@perfil"))
+        finally:
+            PJ.arroba = orig
+
+    def test_arroba_da_marca(self):
+        orig = PJ.MARCA
+        try:
+            PJ.MARCA = self.proj / "marca"
+            PJ.MARCA.mkdir()
+            for digitado, esperado in (("realfelipetop", "@realfelipetop"), ("@realfelipetop", "@realfelipetop"),
+                                       ("https://instagram.com/real.felipe_top/", "@real.felipe_top"), ("", None), ("não é @", None)):
+                (PJ.MARCA / "marca.json").write_text(json.dumps({"arroba": digitado}))
+                self.assertEqual(PJ.arroba(), esperado, digitado)
+        finally:
+            PJ.MARCA = orig
+
+    def test_legenda_do_claude_ou_a_editada(self):
+        doc = {"frases": [frase(legenda="A do Claude.")], "carrossel": {"capa": "Título **forte**", "legenda": "A do carrossel."}}
+        (self.proj / "posts" / "frases.json").write_text(json.dumps(doc, ensure_ascii=False))
+        e = PJ.ler_estado(self.proj)
+        f = PJ.achar_frase(self.proj, "frase-001", e)
+        self.assertEqual(PJ.legenda_da_frase(f, e), "A do Claude.")
+        e = PJ.salvar_estado(self.proj, {"edicoes": {"frase-001": {"legenda": "Minha.\r\n\nCom linhas."}}})
+        self.assertEqual(PJ.legenda_da_frase(f, e), "Minha.\n\nCom linhas.")
+        e = PJ.salvar_estado(self.proj, {"edicoes": {"frase-001": {"legenda": None}}})
+        self.assertEqual(PJ.legenda_da_frase(f, e), "A do Claude.")
+        with self.assertRaises(ValueError):
+            PJ.salvar_estado(self.proj, {"legenda_carrossel": "x" * 2201})
+        c = PJ.carrossel_do_projeto(self.proj, e)
+        self.assertEqual((c["usar"], c["texto"], c["legenda"], c["print"]), (True, "Título **forte**", "A do carrossel.", "p-0002"))
+        e = PJ.salvar_estado(self.proj, {"capa": {"usar": False, "texto": "Outro"}, "legenda_carrossel": "Minha do carrossel."})
+        c = PJ.carrossel_do_projeto(self.proj, e)
+        self.assertEqual((c["usar"], c["texto"], c["legenda"]), (False, "Outro", "Minha do carrossel."))
+
+    def test_exporta_o_carrossel_na_ordem_com_capa_e_legenda(self):
+        doc = {"frases": [frase(), frase(id="frase-002", partes={"2": ["Segunda **frase** aqui,", "com duas partes."]})],
+               "carrossel": {"capa": "Duas **verdades**", "legenda": "Legenda do carrossel."}}
+        (self.proj / "posts" / "frases.json").write_text(json.dumps(doc, ensure_ascii=False))
+        e = PJ.salvar_estado(self.proj, {"modo": "carrossel", "escolhidas": ["frase-002", "frase-001"]})
+        feitos = PJ.exportar_carrossel(self.proj, estado=e)
+        self.assertEqual([p.name[:3] for p in feitos], ["01-", "02-", "03-"])
+        self.assertEqual(feitos[0].name, "01-capa.png")
+        self.assertTrue(feitos[1].name.startswith("02-segunda-frase"))
+        self.assertEqual((feitos[0].parent / "legenda.txt").read_text(encoding="utf-8").strip(), "Legenda do carrossel.")
+        for f in feitos:
+            with Image.open(f) as img:
+                self.assertEqual(img.size, (1080, 1350))
+        # a ordem mudou e a capa saiu: os números velhos não ficam para trás
+        e = PJ.salvar_estado(self.proj, {"capa": {"usar": False}, "escolhidas": ["frase-001"]})
+        feitos = PJ.exportar_carrossel(self.proj, estado=e)
+        self.assertEqual(sorted(p.name for p in feitos[0].parent.glob("*.png")), [feitos[0].name])
+        self.assertTrue(feitos[0].name.startswith("01-voce-nao-esta"))
+
+    def test_foto_propria_vira_print_e_sai(self):
+        pasta = self.proj / "posts"
+        pid = P.adicionar_foto(pasta, Image.new("RGB", (900, 1200), (90, 120, 150)))
+        self.assertEqual(pid, "f-0001")
+        doc = P.ler(pasta)
+        self.assertEqual(doc["proprias"], ["f-0001"])
+        self.assertTrue((pasta / "prints" / "f-0001.jpg").is_file() and (pasta / "prints" / "mini" / "f-0001.jpg").is_file())
+        self.assertTrue(doc["quadros"]["f-0001"]["propria"])
+        self.assertIn("p-0001", doc["quadros"])                 # os prints do vídeo continuam
+        e = PJ.salvar_estado(self.proj, {"edicoes": {"frase-001": {"prints": {"2": ["f-0001", "p-0002"]}}}})
+        m = PJ.montagem(self.proj, PJ.achar_frase(self.proj, "frase-001", e), e)
+        self.assertEqual(m["prints"], ["f-0001", "p-0002"])
+        self.assertEqual(PJ.renderizar(self.proj, PJ.achar_frase(self.proj, "frase-001", e), e).size, (1080, 1350))
+        self.assertEqual(P.adicionar_foto(pasta, Image.new("RGB", (640, 480))), "f-0002")
+        P.remover_foto(pasta, "f-0001")
+        self.assertFalse((pasta / "prints" / "f-0001.jpg").exists())
+        m = PJ.montagem(self.proj, PJ.achar_frase(self.proj, "frase-001", e), e)
+        self.assertEqual(m["prints"], ["p-0001", "p-0002"])      # o post volta ao automático
+        with self.assertRaises(P.ErroPrints):
+            P.remover_foto(pasta, "p-0001")                       # print do vídeo não se apaga por aqui
+        with self.assertRaises(P.ErroPrints):
+            P.adicionar_foto(pasta, Image.new("RGB", (120, 90)))
 
     def test_frase_da_pessoa_usa_o_banco_e_renderiza(self):
         e = PJ.salvar_estado(self.proj, {"minhas": [{"id": "minha-1", "partes": {"1": ["O Senhor é o meu pastor; nada me faltará."]}}],

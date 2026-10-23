@@ -16,6 +16,9 @@ foi dita, e os quadros do mesmo post precisam ser diferentes entre si. O `banco`
 melhores rostos do vídeo inteiro — os prints da frase que a pessoa escreveu (um salmo,
 uma frase dela) e a reserva da frase sem rosto por perto.
 
+As fotos que a pessoa sobe pelo painel também viram prints (`f-0001`, em `proprias`):
+o rosto é detectado do mesmo jeito, e o `./topclip post prints` nunca as apaga.
+
 Grava em projetos/<nome>/posts/: prints.json e prints/<id>.jpg (+ prints/mini/).
 """
 from __future__ import annotations
@@ -248,10 +251,11 @@ def gerar(video: Path, pasta_posts: Path, frases: list[dict], *, refazer=False, 
     med = medir(video)
     pasta = pasta_posts / "prints"
     pasta.mkdir(parents=True, exist_ok=True)
-    doc = {} if refazer else ler(pasta_posts)
+    anterior = ler(pasta_posts)
+    doc = {} if refazer else anterior
     if doc.get("video") and doc["video"] != str(video):
         doc = {}                                  # outro vídeo: começa do zero
-    quadros = doc.get("quadros") or {}
+    quadros = {**(doc.get("quadros") or {}), **_proprias(anterior)}   # as fotos da pessoa ficam
     por_frase = doc.get("frases") or {}
     ids_frases = {f["id"] for f in frases}
     por_frase = {k: v for k, v in por_frase.items() if k in ids_frases}
@@ -259,7 +263,7 @@ def gerar(video: Path, pasta_posts: Path, frases: list[dict], *, refazer=False, 
     fazer_banco = banco and (refazer or not doc.get("banco"))
     total = len(faltam) + (1 if fazer_banco else 0)
     feitos = [0]
-    contador = [max([int(k[2:]) for k in quadros if k[2:].isdigit()] or [0])]
+    contador = [max([int(k[2:]) for k in quadros if k.startswith("p-") and k[2:].isdigit()] or [0])]
 
     def novo_id():
         contador[0] += 1
@@ -355,15 +359,73 @@ def gerar(video: Path, pasta_posts: Path, frases: list[dict], *, refazer=False, 
                 usados += escolher(extra or banco_int, [], n - len(usados))
             info["auto"][str(n)] = [c["id"] for c in usados]
 
-    usados = {p for v in por_frase.values() for p in v["candidatos"]} | set(doc.get("banco", []))
+    # uma foto subida (ou apagada) pelo painel enquanto isto rodava: vale o que está no disco agora
+    agora = ler(pasta_posts)
+    quadros = {k: v for k, v in quadros.items() if not k.startswith("f-")}
+    quadros.update(_proprias(agora))
+    doc["proprias"] = [p for p in agora.get("proprias") or [] if p in quadros]
+    usados = {p for v in por_frase.values() for p in v["candidatos"]} | set(doc.get("banco", [])) | set(doc["proprias"])
     for pid in [p for p in quadros if p not in usados]:
         quadros.pop(pid)
         for arq in (pasta / f"{pid}.jpg", pasta / "mini" / f"{pid}.jpg"):
             arq.unlink(missing_ok=True)
     doc.update({"versao": 1, "video": str(video), "largura": med["largura"], "altura": med["altura"],
                 "gerado": datetime.now().isoformat(timespec="seconds"), "quadros": quadros, "frases": por_frase})
-    (pasta_posts / "prints.json").write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
+    _gravar(pasta_posts, doc)
     return doc
+
+
+# ------------------------------------------------------------------ as fotos da pessoa
+def _proprias(doc: dict) -> dict:
+    quadros = doc.get("quadros") or {}
+    return {p: quadros[p] for p in doc.get("proprias") or [] if p in quadros}
+
+
+def _gravar(pasta_posts: Path, doc: dict) -> None:
+    pasta_posts.mkdir(parents=True, exist_ok=True)
+    tmp = pasta_posts / "prints.json.tmp"
+    tmp.write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding="utf-8")
+    tmp.replace(pasta_posts / "prints.json")
+
+
+def adicionar_foto(pasta_posts: Path, img) -> str:
+    """Uma foto da pessoa (Image do Pillow) vira print: JPG em prints/, miniatura e o rosto
+    detectado como nos quadros do vídeo. Devolve o id (f-0001, f-0002…)."""
+    from PIL import Image, ImageOps
+    img = ImageOps.exif_transpose(img).convert("RGB")
+    if max(img.size) > LARGURA_MAX:
+        img.thumbnail((LARGURA_MAX, LARGURA_MAX), Image.LANCZOS)
+    if min(img.size) < 200:
+        raise ErroPrints("A foto é pequena demais (menos de 200 pixels). Use uma foto maior.")
+    bgr = cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
+    try:
+        r = avaliador()(bgr)
+    except ErroPrints:
+        r = None                                 # sem o detector: entra sem rosto (o recorte centraliza)
+    doc = ler(pasta_posts)
+    quadros = doc.setdefault("quadros", {})
+    n = max([int(k[2:]) for k in quadros if k.startswith("f-") and k[2:].isdigit()] or [0]) + 1
+    pid = f"f-{n:04d}"
+    _salvar(pasta_posts / "prints", pid, bgr)
+    quadros[pid] = {"t": None, "arquivo": f"prints/{pid}.jpg", "mini": f"prints/mini/{pid}.jpg",
+                    "rosto": r["rosto"] if r else None, "nota": None, "sorrindo": bool(r and r["sorrindo"]),
+                    "olhos": r["olhos"] if r else 0, "rostos": r["rostos"] if r else 0, "propria": True,
+                    "adicionada": datetime.now().isoformat(timespec="seconds")}
+    doc["proprias"] = [*(doc.get("proprias") or []), pid]
+    _gravar(pasta_posts, doc)
+    return pid
+
+
+def remover_foto(pasta_posts: Path, pid: str) -> None:
+    """Tira uma foto da pessoa dos prints (o post que usava volta ao print automático)."""
+    doc = ler(pasta_posts)
+    if pid not in (doc.get("proprias") or []):
+        raise ErroPrints("Essa foto não é uma das suas.")
+    doc["proprias"] = [p for p in doc["proprias"] if p != pid]
+    (doc.get("quadros") or {}).pop(pid, None)
+    _gravar(pasta_posts, doc)
+    for arq in (pasta_posts / "prints" / f"{pid}.jpg", pasta_posts / "prints" / "mini" / f"{pid}.jpg"):
+        arq.unlink(missing_ok=True)
 
 
 def do_banco(doc: dict, n: int, deslocamento: int = 0) -> list[str]:

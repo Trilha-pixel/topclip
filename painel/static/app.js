@@ -1104,6 +1104,7 @@ function acompanharAtividade(slug, etapa, ativa) {
 // frases (posts/frases.json) e o `./topclip post prints` escolhe os quadros; daqui para a frente é
 // tudo no painel e na hora: escolher, editar, trocar print e fonte, baixar. Cada mudança é salva em
 // posts/posts.json e a prévia é refeita pelo servidor (a mesma arte que sai no PNG).
+const LEGENDA_MAX = 2200;         // o limite do Instagram
 const DESTAQUES = [
   { cor: null, nome: "Só negrito" },
   { cor: "#FFD43B", nome: "Amarelo" },
@@ -1112,7 +1113,7 @@ const DESTAQUES = [
 let posts = null;                 // o que o servidor mandou da última vez
 let postsSlug = null;
 let postsVersao = Date.now();     // vai na URL da prévia: muda, a imagem recarrega
-let trocandoPrint = null;         // {fid, i}: a faixa de prints aberta
+let trocandoPrint = null;         // {fid, i}: a faixa de prints aberta ({fid: "capa"}: a da capa)
 let pediuPrintsEm = 0;            // o comando leva um instante para aparecer no diário
 const salvarDepois = {};          // fid -> timer da edição esperando para salvar
 const fontesPost = new Set();
@@ -1178,10 +1179,11 @@ function desenharPosts() {
 
 function blocoPosts() {
   const d = posts, e = d.estado, n = nPrints();
+  const carrossel = e.modo === "carrossel";
   const claude = d.frases.filter((f) => !f.minha);
   const escolhidas = e.escolhidas.map((id) => d.frases.find((f) => f.id === id)).filter(Boolean);
   const pedido = `faz os posts virais de projetos/${postsSlug}`;
-  const seg = (atual, valor, rotulo, attr) => `<button type="button" class="seg ${atual === valor ? "ativo" : ""}" data-${attr}="${esc(valor)}" aria-pressed="${atual === valor}">${rotulo}</button>`;
+  const seg = (atual, valor, rotulo, attr, extra = "") => `<button type="button" class="seg ${atual === valor ? "ativo" : ""}" data-${attr}="${esc(valor)}" aria-pressed="${atual === valor}" ${extra}>${rotulo}</button>`;
   const icone = (k) => `<svg viewBox="0 0 16 20" aria-hidden="true">${Array.from({ length: k }, (_, i) =>
     `<rect x="1" y="${1 + i * (18 / k)}" width="14" height="${18 / k - 1.5}" rx="1.2"/>`).join("")}</svg>`;
   const destaques = [...DESTAQUES, ...(d.cor_da_marca ? [{ cor: d.cor_da_marca, nome: "Cor da marca" }] : [])];
@@ -1208,15 +1210,24 @@ function blocoPosts() {
   </div></div>
 
   <div class="posts-ajustes">
+    <div class="ajuste"><span class="ajuste-rotulo">Tipo</span>
+      <div class="segmentado tipo">${Object.entries(d.modos).map(([k, nome]) => seg(e.modo, k, `${ICONE_MODO[k] || ""}<span>${esc(nome)}</span>`, "modo")).join("")}</div></div>
     <div class="ajuste"><span class="ajuste-rotulo">Formato</span>
-      <div class="segmentado">${Object.entries(d.formatos).map(([k, f]) => seg(e.formato, k, `${esc(f.nome)}<small>${f.largura}×${f.altura}</small>`, "formato")).join("")}</div></div>
+      <div class="segmentado">${Object.entries(d.formatos).map(([k, f]) => seg(e.formato, k, `${esc(f.nome)}<small>${f.largura}×${f.altura}</small>`, "formato",
+        carrossel && k === "stories" ? 'title="O carrossel é só no feed: escolher os stories volta para o post único."' : "")).join("")}</div></div>
     <div class="ajuste"><span class="ajuste-rotulo">Prints</span>
       <div class="segmentado prints">${[1, 2, 3].map((k) => seg(n, k, `${icone(k)}<span>${k}</span>`, "prints")).join("")}</div></div>
     <div class="ajuste larga"><span class="ajuste-rotulo">Fonte</span>
       <div class="chips-post">${d.fontes.map((f) => `<button type="button" class="chip fonte ${e.fonte === f.id ? "ativo" : ""}" data-fonte="${esc(f.id)}" style="font-family:'post-${esc(f.id)}',var(--texto)"><span class="aa">Aa</span>${esc(f.nome)}${f.marca ? `<small>da sua marca</small>` : ""}</button>`).join("")}</div></div>
     <div class="ajuste"><span class="ajuste-rotulo">Palavras em destaque</span>
       <div class="chips-post">${destaques.map((x) => `<button type="button" class="chip ${(e.destaque || null) === x.cor ? "ativo" : ""}" data-destaque="${esc(x.cor || "")}"><span class="bolinha" style="background:${x.cor || "#fff"}"></span>${esc(x.nome)}</button>`).join("")}</div></div>
+    <div class="ajuste"><span class="ajuste-rotulo">Fotos</span>
+      <div class="segmentado">${seg(e.pb ? "pb" : "cor", "cor", "Coloridas", "pb")}${seg(e.pb ? "pb" : "cor", "pb", "P&amp;B", "pb")}</div></div>
+    <div class="ajuste"><span class="ajuste-rotulo">Assinatura</span>
+      <div class="segmentado assinatura">${seg(e.assinatura && d.arroba ? "sim" : "nao", "nao", "Sem", "assinatura")}${seg(e.assinatura && d.arroba ? "sim" : "nao", "sim", esc(d.arroba || "seu @"), "assinatura", d.arroba ? "" : "disabled")}</div>
+      ${d.arroba ? "" : `<a class="link dica-arroba" href="#/biblioteca/marca">cadastrar o seu @ na sua marca</a>`}</div>
   </div>
+  ${carrossel ? `<p class="explica dica-ajuste">No carrossel, cada frase vira um slide do feed (1080×1350), na ordem de “Seu carrossel”. O Instagram aceita até ${d.slides_max} slides.</p>` : ""}
   ${e.formato === "feed" && n === 3 ? `<p class="explica dica-ajuste">3 prints no feed ficam baixinhos (1080×450): funciona melhor com o rosto bem de perto.</p>` : ""}
   ${e.formato === "stories" ? `<p class="explica dica-ajuste">Nos stories, o texto do último print sobe sozinho para não ficar embaixo da caixa de resposta.</p>` : ""}
 
@@ -1224,7 +1235,7 @@ function blocoPosts() {
 
   <div class="posts-passo">
     <h3 class="subtitulo"><span class="passo-num">1</span> Escolha as frases ${claude.length ? `<span class="mudo">(${claude.length} do vídeo)</span>` : ""}</h3>
-    ${claude.length ? `<p class="explica">O Claude separou as frases que funcionam sozinhas, já divididas em ${n} ${n === 1 ? "parte" : "partes"}. Marque as que viram post.</p>` : ""}
+    ${claude.length ? `<p class="explica">O Claude separou as frases que funcionam sozinhas, já divididas em ${n} ${n === 1 ? "parte" : "partes"}. Marque as que viram ${carrossel ? "slide" : "post"}.</p>` : ""}
   </div>
   ${!claude.length && !d.erro_frases ? `<div class="posts-vazio">
       <p class="explica">${d.tem_transcricao ? "A transcrição já existe: falta o Claude escolher as frases." : "O Claude transcreve o vídeo e escolhe as frases mais fortes."} Peça a ele:</p>
@@ -1236,12 +1247,21 @@ function blocoPosts() {
   </div>
 
   <div class="posts-passo" id="seus-posts">
-    <h3 class="subtitulo"><span class="passo-num">2</span> Seus posts ${escolhidas.length ? `<span class="mudo">(${escolhidas.length})</span>` : ""}</h3>
-    ${escolhidas.length ? `<p class="explica">Clique numa palavra para pôr ou tirar o negrito. Arraste a foto da prévia para reposicionar; troque o print clicando na miniatura.</p>`
-      : `<p class="explica">Marque uma frase acima e o post aparece aqui.</p>`}
+    <h3 class="subtitulo"><span class="passo-num">2</span> ${carrossel ? "Seu carrossel" : "Seus posts"} ${escolhidas.length ? `<span class="mudo">(${escolhidas.length})</span>` : ""}</h3>
+    ${escolhidas.length ? `<p class="explica">Clique numa palavra para pôr ou tirar o negrito. Arraste a foto da prévia para reposicionar; troque o print — ou suba uma foto sua — clicando na miniatura. As setas mudam a ordem.</p>`
+      : `<p class="explica">Marque uma frase acima e o ${carrossel ? "slide" : "post"} aparece aqui.</p>`}
   </div>
+  ${carrossel && escolhidas.length ? blocoCarrossel(escolhidas) : ""}
   <div class="posts-lista">${escolhidas.map(editorPost).join("")}</div>`;
 }
+
+const ICONE_MODO = {
+  unico: `<svg viewBox="0 0 16 20" aria-hidden="true"><rect x="2" y="1" width="12" height="18" rx="1.5"/></svg>`,
+  carrossel: `<svg viewBox="0 0 24 20" aria-hidden="true"><rect x="1" y="1" width="12" height="18" rx="1.5"/><rect x="15" y="3.5" width="3.4" height="13" rx="1"/><rect x="20" y="6" width="2.6" height="8" rx="1"/></svg>`,
+};
+
+const palavrasHTML = (t) => tokensDe(t).map(([w, b], k) => `<button type="button" class="palavra ${b ? "negrito" : ""}" data-w="${k}">${esc(w)}</button>`).join("");
+const contaLegenda = (t) => `${String(t || "").length}/${LEGENDA_MAX}`;
 
 function cartaoFrase(f) {
   const sim = posts.estado.escolhidas.includes(f.id);
@@ -1258,9 +1278,23 @@ function cartaoFrase(f) {
   </article>`;
 }
 
+// o número do post (ou do slide: a capa é o 1) na ordem em que vai sair
+function posicao(fid) {
+  const e = posts.estado, k = e.escolhidas.indexOf(fid) + 1;
+  return e.modo === "carrossel" && posts.carrossel.usar ? k + 1 : k;
+}
+
+function setasOrdem(fid) {
+  const lista = posts.estado.escolhidas, k = lista.indexOf(fid);
+  return `<button type="button" class="ordem-btn" data-mover="-1" ${k <= 0 ? "disabled" : ""} title="mover para antes" aria-label="mover para antes">↑</button>
+    <button type="button" class="ordem-btn" data-mover="1" ${k >= lista.length - 1 ? "disabled" : ""} title="mover para depois" aria-label="mover para depois">↓</button>`;
+}
+
 function editorPost(f) {
   const d = posts, e = d.estado, fmt = d.formatos[e.formato];
+  const carrossel = e.modo === "carrossel";
   const q = (pid) => d.quadros[pid];
+  const legendaEditada = e.edicoes[f.id]?.legenda != null;
   return `
   <article class="post-editor" data-post="${esc(f.id)}">
     <div class="post-previa" style="aspect-ratio:${fmt.largura}/${fmt.altura}" title="arraste para reposicionar a foto">
@@ -1268,7 +1302,8 @@ function editorPost(f) {
     </div>
     <div class="post-campos">
       <div class="post-cabeca">
-        <div>${f.minha ? `<span class="tag forte">sua frase</span>` : f.tipo_nome ? `<span class="tag forte">${esc(f.tipo_nome)}</span>` : ""} ${f.inicio ? `<span class="tempo">${esc(f.inicio)}</span>` : ""}</div>
+        <div class="post-ordem"><span class="ordem-num">${carrossel ? "slide" : "post"} ${posicao(f.id)}</span>${setasOrdem(f.id)}
+          ${f.minha ? `<span class="tag forte">sua frase</span>` : f.tipo_nome ? `<span class="tag forte">${esc(f.tipo_nome)}</span>` : ""} ${f.inicio ? `<span class="tempo">${esc(f.inicio)}</span>` : ""}</div>
         <button class="botao pequeno" data-baixar="${esc(f.id)}">Baixar PNG</button>
       </div>
       ${f.partes.map((t, i) => `
@@ -1278,44 +1313,120 @@ function editorPost(f) {
         <div class="post-texto">
           <label class="ajuste-rotulo" for="t-${esc(f.id)}-${i}">Print ${i + 1}</label>
           <input id="t-${esc(f.id)}-${i}" type="text" value="${esc(semNegrito(t))}" data-texto="${i}" autocomplete="off" spellcheck="true">
-          <div class="palavras" data-palavras="${i}">${tokensDe(t).map(([w, b], k) => `<button type="button" class="palavra ${b ? "negrito" : ""}" data-w="${k}">${esc(w)}</button>`).join("")}</div>
+          <div class="palavras" data-palavras="${i}">${palavrasHTML(t)}</div>
         </div>
         <div class="post-zoom" role="group" aria-label="Zoom do print ${i + 1}">
           <button type="button" data-zoom="1" data-i="${i}" title="aproximar">+</button>
           <button type="button" data-zoom="-1" data-i="${i}" title="afastar">−</button>
         </div>
       </div>
-      ${trocandoPrint && trocandoPrint.fid === f.id && trocandoPrint.i === i ? faixaPrints(f, i) : ""}`).join("")}
+      ${trocandoPrint && trocandoPrint.fid === f.id && trocandoPrint.i === i ? faixaPrints(f.prints[i], f.candidatos) : ""}`).join("")}
       <div class="campo post-ref">
         <label for="r-${esc(f.id)}">Referência <small class="mudo">(opcional — aparece pequena no último print)</small></label>
         <input id="r-${esc(f.id)}" type="text" value="${esc(f.referencia)}" data-referencia placeholder="ex.: Salmos 23:1" maxlength="80">
       </div>
+      ${carrossel ? "" : `
+      <div class="campo post-legenda">
+        <div class="legenda-topo"><label for="l-${esc(f.id)}">Legenda do post <small class="mudo">(para colar no Instagram)</small></label>
+          <button type="button" class="botao pequeno claro" data-copiar-legenda>Copiar legenda</button></div>
+        <textarea id="l-${esc(f.id)}" rows="5" maxlength="${LEGENDA_MAX}" data-legenda placeholder="Escreva a legenda que vai junto do post no Instagram.">${esc(f.legenda)}</textarea>
+        <div class="legenda-pe"><span class="mudo" data-conta>${contaLegenda(f.legenda)}</span>${legendaEditada && f.legenda_claude ? `<button type="button" class="link" data-legenda-claude>voltar à legenda do Claude</button>` : ""}</div>
+      </div>`}
       <div class="post-rodape">
         ${f.editada ? `<button class="link" data-restaurar>voltar ao ${f.minha ? "texto que você escreveu" : "texto do Claude"}</button>` : "<span></span>"}
-        ${f.minha ? `<button class="link apagar" data-apagar-minha>apagar esta frase</button>` : `<button class="link" data-tirar>tirar dos posts</button>`}
+        ${f.minha ? `<button class="link apagar" data-apagar-minha>apagar esta frase</button>` : `<button class="link" data-tirar>tirar ${carrossel ? "do carrossel" : "dos posts"}</button>`}
       </div>
     </div>
   </article>`;
 }
 
-function faixaPrints(f, i) {
+// O carrossel: a fita com os slides na ordem, a capa e a legenda (uma só para o carrossel).
+function blocoCarrossel(escolhidas) {
+  const c = posts.carrossel;
+  const slide = (f, k) => `
+    <div class="slide" data-slide="${esc(f.id)}">
+      <button type="button" class="slide-ir" data-ir="${esc(f.id)}" title="editar este slide"><img src="${urlPosts(`/previa/${f.id}.jpg?v=${postsVersao}`)}" alt="Slide ${k}" loading="lazy"></button>
+      <div class="slide-pe"><button type="button" data-mover-slide="-1" data-fid="${esc(f.id)}" ${k === (c.usar ? 2 : 1) ? "disabled" : ""} aria-label="mover para antes">‹</button><b>${k}</b><button type="button" data-mover-slide="1" data-fid="${esc(f.id)}" ${f.id === escolhidas[escolhidas.length - 1].id ? "disabled" : ""} aria-label="mover para depois">›</button></div>
+    </div>`;
+  const legendaEditada = posts.estado.legenda_carrossel != null;
+  return `
+  <div class="carrossel-caixa">
+    <div class="carrossel-fita">
+      ${c.usar ? `<div class="slide capa"><button type="button" class="slide-ir" data-ir="capa" title="editar a capa"><img src="${urlPosts(`/capa.jpg?v=${postsVersao}`)}" alt="Capa"></button><div class="slide-pe"><b>1 · capa</b></div></div>` : ""}
+      ${escolhidas.map((f, k) => slide(f, k + 1 + (c.usar ? 1 : 0))).join("")}
+    </div>
+    <div class="campo post-legenda legenda-carrossel">
+      <div class="legenda-topo"><label for="legenda-carrossel">Legenda do carrossel <small class="mudo">(uma só para todos os slides)</small></label>
+        <button type="button" class="botao pequeno claro" data-copiar-legenda>Copiar legenda</button></div>
+      <textarea id="legenda-carrossel" rows="6" maxlength="${LEGENDA_MAX}" data-legenda-carrossel placeholder="Escreva a legenda que vai junto do carrossel no Instagram.">${esc(c.legenda)}</textarea>
+      <div class="legenda-pe"><span class="mudo" data-conta>${contaLegenda(c.legenda)}</span>${legendaEditada && c.legenda_claude ? `<button type="button" class="link" data-legenda-carrossel-claude>voltar à legenda do Claude</button>` : ""}</div>
+    </div>
+  </div>
+  ${editorCapa()}`;
+}
+
+function editorCapa() {
+  const d = posts, c = d.carrossel;
+  if (!c.usar) {
+    return `<div class="capa-desligada" data-capa><div><b>Sem capa.</b> <span class="mudo">O carrossel começa direto na primeira frase.</span></div>
+      <button type="button" class="botao pequeno" data-capa-usar="1">Pôr uma capa</button></div>`;
+  }
+  const q = d.quadros[c.print];
+  const aberto = trocandoPrint && trocandoPrint.fid === "capa";
+  return `
+  <article class="post-editor capa-editor" data-capa>
+    <div class="post-previa" style="aspect-ratio:1080/1350" title="arraste para reposicionar a foto">
+      <img src="${urlPosts(`/capa.jpg?v=${postsVersao}`)}" alt="Prévia da capa" draggable="false">
+    </div>
+    <div class="post-campos">
+      <div class="post-cabeca">
+        <div class="post-ordem"><span class="ordem-num">slide 1</span><span class="tag forte">capa</span></div>
+        <button type="button" class="link" data-capa-usar="0">tirar a capa</button>
+      </div>
+      <p class="explica capa-explica">A capa abre o carrossel: um print só, o título grande e “arraste para o lado”.</p>
+      <div class="post-parte">
+        <button type="button" class="post-mini ${aberto ? "aberto" : ""}" data-trocar-capa title="trocar o print">
+          ${q ? `<img src="${q.mini}" alt="">` : `<span>sem print</span>`}<small>trocar</small></button>
+        <div class="post-texto">
+          <label class="ajuste-rotulo" for="capa-texto">Título da capa</label>
+          <input id="capa-texto" type="text" maxlength="160" value="${esc(semNegrito(c.texto))}" data-capa-texto placeholder="ex.: 5 verdades sobre cobrar caro" autocomplete="off" spellcheck="true">
+          <div class="palavras" data-capa-palavras>${palavrasHTML(c.texto)}</div>
+        </div>
+        <div class="post-zoom" role="group" aria-label="Zoom da capa">
+          <button type="button" data-capa-zoom="1" title="aproximar">+</button>
+          <button type="button" data-capa-zoom="-1" title="afastar">−</button>
+        </div>
+      </div>
+      ${aberto ? faixaPrints(c.print, []) : ""}
+      ${c.capa_claude && d.estado.capa.texto != null && d.estado.capa.texto !== c.capa_claude
+        ? `<div class="post-rodape"><button type="button" class="link" data-capa-claude>voltar ao título do Claude</button><span></span></div>` : ""}
+    </div>
+  </article>`;
+}
+
+function faixaPrints(usado, candidatos) {
   const d = posts;
-  const usado = f.prints[i];
   const mini = (pid) => d.quadros[pid] ? `<button type="button" class="faixa-print ${pid === usado ? "ativo" : ""}" data-usar="${esc(pid)}" title="${esc(d.quadros[pid].t)}${d.quadros[pid].sorrindo ? " · sorrindo" : ""}"><img src="${d.quadros[pid].mini}" alt="" loading="lazy"><small>${esc(d.quadros[pid].t)}</small></button>` : "";
-  const perto = f.candidatos.filter((p) => d.quadros[p]);
-  const banco = d.banco.filter((p) => !perto.includes(p));
+  const perto = candidatos.filter((p) => d.quadros[p]);
+  const banco = d.banco.filter((p) => !perto.includes(p) && d.quadros[p]);
+  const proprias = d.proprias.filter((p) => d.quadros[p]);
   return `
   <div class="faixa" data-faixa>
     ${perto.length ? `<div class="faixa-rotulo">perto da frase</div><div class="faixa-linha">${perto.map(mini).join("")}</div>` : ""}
     ${banco.length ? `<div class="faixa-rotulo">do vídeo todo</div><div class="faixa-linha">${banco.map(mini).join("")}</div>` : ""}
-    ${!perto.length && !banco.length ? `<p class="explica">Ainda não há prints. Use “Escolher os prints agora” lá em cima.</p>` : ""}
+    <div class="faixa-rotulo">suas fotos</div>
+    <div class="faixa-linha">
+      <label class="faixa-print subir" title="subir uma foto sua (JPG ou PNG)"><input type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" data-subir-foto hidden><span class="mais">+</span><small>subir foto</small></label>
+      ${proprias.map((p) => `<div class="faixa-item">${mini(p)}<button type="button" class="faixa-tirar" data-tirar-foto="${esc(p)}" title="tirar esta foto" aria-label="tirar esta foto">×</button></div>`).join("")}
+    </div>
   </div>`;
 }
 
 // a edição de uma frase como o servidor guarda: só o que a pessoa mudou
 function edicaoDe(fid) {
   const ed = posts.estado.edicoes[fid];
-  return { partes: { ...(ed?.partes || {}) }, prints: { ...(ed?.prints || {}) }, ajustes: { ...(ed?.ajustes || {}) }, referencia: ed?.referencia ?? null };
+  return { partes: { ...(ed?.partes || {}) }, prints: { ...(ed?.prints || {}) }, ajustes: { ...(ed?.ajustes || {}) },
+           referencia: ed?.referencia ?? null, legenda: ed?.legenda ?? null };
 }
 
 async function salvarPosts(dados, redesenhar = true) {
@@ -1343,8 +1454,9 @@ function salvarEdicao(fid, ed, imediato = false) {
     const el = app.querySelector(`[data-post="${CSS.escape(fid)}"]`);
     const f = posts.frases.find((x) => x.id === fid);
     if (!el || !f) return;
-    const img = el.querySelector(".post-previa img");
-    img.src = urlPosts(`/previa/${fid}.jpg?v=${postsVersao}`);
+    const src = urlPosts(`/previa/${fid}.jpg?v=${postsVersao}`);
+    el.querySelector(".post-previa > img").src = src;
+    app.querySelectorAll(`[data-slide="${CSS.escape(fid)}"] img`).forEach((img) => (img.src = src));
     el.querySelector(".post-rodape").outerHTML = editorPost(f).match(/<div class="post-rodape">[\s\S]*?<\/div>/)[0];
     ligarRodape(el, f);
     const cartao = app.querySelector(`[data-frase="${CSS.escape(fid)}"]`);
@@ -1354,13 +1466,43 @@ function salvarEdicao(fid, ed, imediato = false) {
   salvarDepois[fid] = setTimeout(enviar, 450);
 }
 
+// a capa e a legenda do carrossel também esperam a pessoa parar de digitar
+const pendente = { capa: null, capaDados: {}, legenda: null };
+
+function salvarCapa(mudanca, imediato = false) {
+  clearTimeout(pendente.capa);
+  Object.assign(pendente.capaDados, mudanca);
+  Object.assign(posts.estado.capa, mudanca);
+  const enviar = async () => {
+    pendente.capa = null;
+    const dados = pendente.capaDados;
+    pendente.capaDados = {};
+    if (!(await salvarPosts({ capa: dados }, false))) return;
+    const src = urlPosts(`/capa.jpg?v=${postsVersao}`);
+    app.querySelectorAll("[data-capa] .post-previa > img, .slide.capa img").forEach((img) => (img.src = src));
+  };
+  if (imediato) return enviar();
+  pendente.capa = setTimeout(enviar, 450);
+}
+
+function salvarLegendaCarrossel(texto, imediato = false) {
+  clearTimeout(pendente.legenda);
+  posts.estado.legenda_carrossel = texto;
+  const enviar = () => { pendente.legenda = null; return salvarPosts({ legenda_carrossel: texto }, false); };
+  if (imediato) return enviar();
+  pendente.legenda = setTimeout(enviar, 600);
+}
+
 async function terminarSalvamentos() {
-  const pendentes = Object.keys(salvarDepois);
-  for (const fid of pendentes) {
+  for (const fid of Object.keys(salvarDepois)) {
     clearTimeout(salvarDepois[fid]);
     await salvarEdicao(fid, posts.estado.edicoes[fid], true);
   }
+  if (pendente.capa) await salvarCapa({}, true);
+  if (pendente.legenda) await salvarLegendaCarrossel(posts.estado.legenda_carrossel, true);
 }
+
+const salvando = () => Object.keys(salvarDepois).length || pendente.capa || pendente.legenda;
 
 function ligarCartoes() {
   app.querySelectorAll("[data-frase]").forEach((c) => {
@@ -1369,7 +1511,7 @@ function ligarCartoes() {
       const i = lista.indexOf(c.dataset.frase);
       if (i >= 0) lista.splice(i, 1); else lista.push(c.dataset.frase);
       salvarPosts({ escolhidas: lista }).then((ok) => {
-        if (ok && i < 0) aviso(`<b>Post criado.</b> Ajuste lá embaixo, em “Seus posts”.`, 2200);
+        if (ok && i < 0) aviso(posts.estado.modo === "carrossel" ? `<b>Slide criado.</b> Ajuste lá embaixo, em “Seu carrossel”.` : `<b>Post criado.</b> Ajuste lá embaixo, em “Seus posts”.`, 2200);
       });
     };
     c.onclick = (ev) => { if (!ev.target.closest("details, a")) alternar(); };
@@ -1378,7 +1520,11 @@ function ligarCartoes() {
 }
 
 function ligarRodape(el, f) {
-  el.querySelector("[data-restaurar]")?.addEventListener("click", () => salvarPosts({ edicoes: { [f.id]: null } }));
+  // voltar ao texto do Claude não apaga a legenda que a pessoa escreveu
+  el.querySelector("[data-restaurar]")?.addEventListener("click", () => {
+    const leg = posts.estado.edicoes[f.id]?.legenda;
+    salvarPosts({ edicoes: { [f.id]: leg != null ? { legenda: leg } : null } });
+  });
   el.querySelector("[data-tirar]")?.addEventListener("click", () => salvarPosts({ escolhidas: posts.estado.escolhidas.filter((x) => x !== f.id) }));
   el.querySelector("[data-apagar-minha]")?.addEventListener("click", () => {
     if (!confirm("Apagar esta frase sua?")) return;
@@ -1387,12 +1533,84 @@ function ligarRodape(el, f) {
   });
 }
 
+async function moverPost(fid, passo) {
+  await terminarSalvamentos();
+  const lista = [...posts.estado.escolhidas];
+  const i = lista.indexOf(fid), j = i + passo;
+  if (i < 0 || j < 0 || j >= lista.length) return;
+  [lista[i], lista[j]] = [lista[j], lista[i]];
+  if (await salvarPosts({ escolhidas: lista })) app.querySelector(`[data-post="${CSS.escape(fid)}"]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+// a foto que a pessoa sobe: o navegador reduz (até 2560 px) e manda em JPG, já em pé
+async function fotoParaJpeg(arq) {
+  try {
+    const bmp = await createImageBitmap(arq, { imageOrientation: "from-image" });
+    const k = Math.min(1, 2560 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement("canvas");
+    c.width = Math.round(bmp.width * k);
+    c.height = Math.round(bmp.height * k);
+    c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+    return c.toDataURL("image/jpeg", 0.92);
+  } catch {
+    // o navegador não abre (HEIC fora do Safari): vai como veio e o servidor diz se dá
+    return new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(r.result); r.onerror = erro; r.readAsDataURL(arq); });
+  }
+}
+
+async function subirFoto(arq) {
+  try {
+    const r = await api(urlPosts("/foto"), { method: "POST", body: { conteudo: await fotoParaJpeg(arq) } });
+    posts = r;
+    aviso(r.quadros[r.nova]?.sem_rosto
+      ? "<b>Foto adicionada.</b> Não achei um rosto nela: arraste a prévia para enquadrar."
+      : "<b>Foto adicionada.</b> Ela fica em “suas fotos” para os outros posts também.", 3600);
+    return r.nova;
+  } catch (err) {
+    aviso(`<b>A foto não subiu:</b> ${esc(err.message)}`, 5200);
+    return null;
+  }
+}
+
+// a faixa de prints (de uma parte ou da capa): escolher, subir uma foto, tirar uma foto sua
+function ligarFaixa(caixa, usar) {
+  const faixa = caixa.querySelector("[data-faixa]");
+  if (!faixa) return;
+  faixa.querySelectorAll("[data-usar]").forEach((b) => (b.onclick = () => usar(b.dataset.usar)));
+  faixa.querySelector("[data-subir-foto]")?.addEventListener("change", async (ev) => {
+    const arq = ev.target.files[0];
+    if (!arq) return;
+    const rotulo = ev.target.closest("label");
+    rotulo.classList.add("subindo");
+    rotulo.querySelector("small").textContent = "subindo…";
+    const pid = await subirFoto(arq);
+    if (pid) usar(pid);
+    else desenharPosts();
+  });
+  faixa.querySelectorAll("[data-tirar-foto]").forEach((b) => (b.onclick = async () => {
+    if (!confirm("Tirar esta foto dos prints? A original continua no seu computador.")) return;
+    try {
+      posts = await api(urlPosts("/foto/apagar"), { method: "POST", body: { id: b.dataset.tirarFoto } });
+      postsVersao = Date.now();
+      desenharPosts();
+    } catch (err) { aviso(`<b>Não deu:</b> ${esc(err.message)}`); }
+  }));
+}
+
 function ligarPosts(caixa) {
   const e = posts.estado;
-  caixa.querySelectorAll("[data-formato]").forEach((b) => (b.onclick = () => b.dataset.formato !== e.formato && salvarPosts({ formato: b.dataset.formato })));
+  caixa.querySelectorAll("[data-modo]").forEach((b) => (b.onclick = () => b.dataset.modo !== e.modo && salvarPosts({ modo: b.dataset.modo })));
+  caixa.querySelectorAll("[data-formato]").forEach((b) => (b.onclick = () => {
+    if (b.dataset.formato === e.formato) return;
+    salvarPosts({ formato: b.dataset.formato }).then((ok) => {
+      if (ok && e.modo === "carrossel" && b.dataset.formato === "stories") aviso("<b>Stories não têm carrossel:</b> voltou para o post único.", 3600);
+    });
+  }));
   caixa.querySelectorAll("[data-prints]").forEach((b) => (b.onclick = () => Number(b.dataset.prints) !== nPrints() && salvarPosts({ prints: { [e.formato]: Number(b.dataset.prints) } })));
   caixa.querySelectorAll("[data-fonte]").forEach((b) => (b.onclick = () => b.dataset.fonte !== e.fonte && salvarPosts({ fonte: b.dataset.fonte })));
   caixa.querySelectorAll("[data-destaque]").forEach((b) => (b.onclick = () => salvarPosts({ destaque: b.dataset.destaque || null })));
+  caixa.querySelectorAll("[data-pb]").forEach((b) => (b.onclick = () => (b.dataset.pb === "pb") !== e.pb && salvarPosts({ pb: b.dataset.pb === "pb" })));
+  caixa.querySelectorAll("[data-assinatura]").forEach((b) => (b.onclick = () => (b.dataset.assinatura === "sim") !== e.assinatura && salvarPosts({ assinatura: b.dataset.assinatura === "sim" })));
   caixa.querySelector("[data-gerar-prints]")?.addEventListener("click", async (ev) => {
     ev.target.disabled = true;
     ev.target.textContent = "Começando…";
@@ -1409,6 +1627,7 @@ function ligarPosts(caixa) {
   });
   caixa.querySelector("[data-nova-frase]")?.addEventListener("click", abrirNovaFrase);
   ligarCartoes();
+  ligarCarrossel(caixa);
 
   caixa.querySelectorAll("[data-post]").forEach((el) => {
     const fid = el.dataset.post;
@@ -1423,7 +1642,7 @@ function ligarPosts(caixa) {
       f().partes = partes;
       const ed = edicaoDe(fid);
       ed.partes[String(n)] = partes;
-      el.querySelector(`[data-palavras="${i}"]`).innerHTML = tokensDe(partes[i]).map(([w, b], k) => `<button type="button" class="palavra ${b ? "negrito" : ""}" data-w="${k}">${esc(w)}</button>`).join("");
+      el.querySelector(`[data-palavras="${i}"]`).innerHTML = palavrasHTML(partes[i]);
       salvarEdicao(fid, ed);
     }));
     el.querySelectorAll("[data-palavras]").forEach((box) => box.addEventListener("click", (ev) => {
@@ -1446,6 +1665,25 @@ function ligarPosts(caixa) {
       f().referencia = ev.target.value;
       salvarEdicao(fid, ed);
     });
+    el.querySelector("[data-legenda]")?.addEventListener("input", (ev) => {
+      const ed = edicaoDe(fid);
+      ed.legenda = ev.target.value;
+      f().legenda = ev.target.value;
+      el.querySelector(".post-legenda [data-conta]").textContent = contaLegenda(ev.target.value);
+      salvarEdicao(fid, ed);
+    });
+    el.querySelector(".post-legenda [data-copiar-legenda]")?.addEventListener("click", (ev) => {
+      const t = el.querySelector("[data-legenda]").value.trim();
+      if (!t) return aviso("A legenda está vazia.");
+      copiar(t, ev.currentTarget);
+    });
+    el.querySelector("[data-legenda-claude]")?.addEventListener("click", () => {
+      const ed = edicaoDe(fid);
+      ed.legenda = null;
+      posts.estado.edicoes[fid] = ed;
+      salvarPosts({ edicoes: { [fid]: { ...ed, referencia: ed.referencia ?? f().referencia ?? "" } } });
+    });
+    el.querySelectorAll("[data-mover]").forEach((b) => (b.onclick = () => moverPost(fid, Number(b.dataset.mover))));
     el.querySelectorAll("[data-zoom]").forEach((b) => (b.onclick = () => {
       const i = Number(b.dataset.i);
       const ed = edicaoDe(fid);
@@ -1461,28 +1699,94 @@ function ligarPosts(caixa) {
       desenharPosts();
       app.querySelector(`[data-post="${CSS.escape(fid)}"] [data-faixa]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }));
-    el.querySelectorAll("[data-usar]").forEach((b) => (b.onclick = async () => {
+    ligarFaixa(el, async (pid) => {
       const i = trocandoPrint.i;
       const ed = edicaoDe(fid);
       const pr = [...f().prints];
-      pr[i] = b.dataset.usar;
+      pr[i] = pid;
       ed.prints[String(n)] = pr;
       // print novo: o zoom e a posição do antigo não servem mais
       if (ed.ajustes[chaveAj]) { ed.ajustes[chaveAj] = ed.ajustes[chaveAj].map((a, k) => (k === i ? { zoom: 1, x: 0, y: 0 } : a)); }
       posts.estado.edicoes[fid] = ed;
       await salvarPosts({ edicoes: { [fid]: { ...ed, referencia: ed.referencia ?? f().referencia ?? "" } } });
-    }));
+    });
     el.querySelector("[data-baixar]").onclick = async () => {
       await terminarSalvamentos();
       location.href = urlPosts(`/baixar/${fid}.png`);
     };
     ligarRodape(el, f());
-    ligarArrastar(el, fid, chaveAj, n, f);
+    ligarArrastar(el, n, () => (edicaoDe(fid).ajustes[chaveAj] || f().ajustes), (aj) => {
+      const ed = edicaoDe(fid);
+      ed.ajustes[chaveAj] = aj;
+      f().ajustes = aj;
+      return salvarEdicao(fid, ed, true);
+    });
+  });
+}
+
+function ligarCarrossel(caixa) {
+  caixa.querySelectorAll("[data-ir]").forEach((b) => (b.onclick = () => {
+    const alvo = b.dataset.ir === "capa" ? caixa.querySelector("[data-capa]") : caixa.querySelector(`[data-post="${CSS.escape(b.dataset.ir)}"]`);
+    alvo?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }));
+  caixa.querySelectorAll("[data-mover-slide]").forEach((b) => (b.onclick = () => moverPost(b.dataset.fid, Number(b.dataset.moverSlide))));
+  const leg = caixa.querySelector("[data-legenda-carrossel]");
+  if (leg) {
+    const caixaLeg = leg.closest(".post-legenda");
+    leg.addEventListener("input", () => {
+      caixaLeg.querySelector("[data-conta]").textContent = contaLegenda(leg.value);
+      salvarLegendaCarrossel(leg.value);
+    });
+    caixaLeg.querySelector("[data-copiar-legenda]").onclick = (ev) => {
+      if (!leg.value.trim()) return aviso("A legenda está vazia.");
+      copiar(leg.value.trim(), ev.currentTarget);
+    };
+    caixaLeg.querySelector("[data-legenda-carrossel-claude]")?.addEventListener("click", () => salvarPosts({ legenda_carrossel: null }));
+  }
+
+  const el = caixa.querySelector("[data-capa]");
+  if (!el) return;
+  el.querySelectorAll("[data-capa-usar]").forEach((b) => (b.onclick = () => salvarPosts({ capa: { usar: b.dataset.capaUsar === "1" } })));
+  if (!el.matches(".capa-editor")) return;
+  const texto = () => posts.carrossel.texto || "";
+  const mudarTexto = (t) => {
+    posts.carrossel.texto = t;
+    salvarCapa({ texto: t });
+  };
+  el.querySelector("[data-capa-texto]").addEventListener("input", (ev) => {
+    const t = retokenizar(texto(), ev.target.value);
+    el.querySelector("[data-capa-palavras]").innerHTML = palavrasHTML(t);
+    mudarTexto(t);
+  });
+  el.querySelector("[data-capa-palavras]").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-w]");
+    if (!b) return;
+    const toks = tokensDe(texto());
+    toks[Number(b.dataset.w)][1] = !toks[Number(b.dataset.w)][1];
+    b.classList.toggle("negrito", toks[Number(b.dataset.w)][1]);
+    mudarTexto(marcarTokens(toks));
+  });
+  el.querySelector("[data-capa-claude]")?.addEventListener("click", () => salvarPosts({ capa: { texto: null } }));
+  el.querySelectorAll("[data-capa-zoom]").forEach((b) => (b.onclick = () => {
+    const aj = { ...posts.carrossel.ajuste };
+    aj.zoom = Math.max(0.6, Math.min(2.5, Math.round((aj.zoom * (Number(b.dataset.capaZoom) > 0 ? 1.12 : 1 / 1.12)) * 100) / 100));
+    posts.carrossel.ajuste = aj;
+    salvarCapa({ ajuste: aj }, true);
+  }));
+  el.querySelector("[data-trocar-capa]").onclick = () => {
+    trocandoPrint = trocandoPrint && trocandoPrint.fid === "capa" ? null : { fid: "capa", i: 0 };
+    desenharPosts();
+    app.querySelector("[data-capa] [data-faixa]")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  };
+  ligarFaixa(el, (pid) => salvarPosts({ capa: { print: pid } }));
+  ligarArrastar(el, 1, () => [posts.carrossel.ajuste], (aj) => {
+    posts.carrossel.ajuste = aj[0];
+    return salvarCapa({ ajuste: aj[0] }, true);
   });
 }
 
 // arrastar a foto na prévia: o print sob o mouse anda junto (a prévia é refeita ao soltar)
-function ligarArrastar(el, fid, chaveAj, n, f) {
+function ligarArrastar(el, n, lerAjustes, gravar) {
   const caixa = el.querySelector(".post-previa");
   const img = caixa.querySelector("img");
   let ini = null;
@@ -1512,16 +1816,13 @@ function ligarArrastar(el, fid, chaveAj, n, f) {
     ini = null;
     caixa.classList.remove("arrastando");
     if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) { janela.remove(); return; }
-    const ed = edicaoDe(fid);
-    const aj = (ed.ajustes[chaveAj] || f().ajustes).map((a) => ({ ...a }));
+    const aj = lerAjustes().map((a) => ({ ...a }));
     // a foto anda com o mouse: o recorte anda ao contrário
     aj[i].x = Math.max(-0.8, Math.min(0.8, aj[i].x - dx));
     aj[i].y = Math.max(-0.8, Math.min(0.8, aj[i].y - dy));
-    ed.ajustes[chaveAj] = aj;
-    f().ajustes = aj;
     img.addEventListener("load", () => janela.remove(), { once: true });
     setTimeout(() => janela.remove(), 4000);
-    salvarEdicao(fid, ed, true);
+    gravar(aj);
   };
   caixa.addEventListener("pointerup", soltar);
   caixa.addEventListener("pointercancel", soltar);
@@ -1529,16 +1830,26 @@ function ligarArrastar(el, fid, chaveAj, n, f) {
 
 function barraPosts() {
   esconderBarra();
-  const n = posts.estado.escolhidas.length;
+  const e = posts.estado, n = e.escolhidas.length;
   if (!n) return;
+  const carrossel = e.modo === "carrossel";
+  const slides = n + (carrossel && posts.carrossel.usar ? 1 : 0);
   const barra = document.createElement("div");
   barra.className = "barra-acao visivel";
-  barra.innerHTML = `<span class="conta"><b>${n}</b> ${n === 1 ? "post" : "posts"} · ${esc(posts.formatos[posts.estado.formato].nome)}</span>
-    <button class="botao pequeno" data-zip>Baixar ${n === 1 ? "o post" : `os ${n}`} (PNG)</button>`;
+  barra.innerHTML = carrossel
+    ? `<span class="conta"><b>${slides}</b> ${slides === 1 ? "slide" : "slides"} · Carrossel${slides > posts.slides_max ? `<span class="alerta">O Instagram aceita até ${posts.slides_max} slides: tire ${slides - posts.slides_max}.</span>` : ""}</span>
+      <button class="botao pequeno" data-zip>Baixar o carrossel (ZIP)</button>`
+    : `<span class="conta"><b>${n}</b> ${n === 1 ? "post" : "posts"} · ${esc(posts.formatos[e.formato].nome)}</span>
+      <button class="botao pequeno" data-zip>Baixar ${n === 1 ? "o post" : `os ${n}`} (PNG)</button>`;
   document.body.appendChild(barra);
   barra.querySelector("[data-zip]").onclick = async () => {
     await terminarSalvamentos();
-    location.href = n === 1 ? urlPosts(`/baixar/${posts.estado.escolhidas[0]}.png`) : urlPosts("/baixar.zip");
+    if (carrossel) {
+      location.href = urlPosts("/baixar.zip");
+      aviso(`<b>Baixando o carrossel.</b> Os slides vêm numerados na ordem, com a legenda junto. Ficam também em <span class="mono">projetos/${esc(postsSlug)}/posts/prontos/carrossel/</span>.`, 5200);
+      return;
+    }
+    location.href = n === 1 ? urlPosts(`/baixar/${e.escolhidas[0]}.png`) : urlPosts("/baixar.zip");
     aviso(`<b>Baixando.</b> Os PNG também ficam em <span class="mono">projetos/${esc(postsSlug)}/posts/prontos/</span>.`, 4200);
   };
 }
@@ -1586,7 +1897,8 @@ function abrirNovaFrase() {
 // A tela acompanha sozinha o que chega de fora: os prints sendo escolhidos (pelo botão ou pelo
 // Claude no terminal) e as frases novas que o Claude grava. Redesenha só quando muda o que se
 // vê — e nunca no meio de uma edição.
-const assinaturaPosts = (d) => JSON.stringify([d.frases.map((f) => f.id), d.tem_prints, d.faltam_prints, !!d.gerando, d.banco.length, d.erro_frases]);
+const assinaturaPosts = (d) => JSON.stringify([d.frases.map((f) => [f.id, f.legenda_claude]), d.tem_prints, d.faltam_prints, !!d.gerando,
+  d.banco.length, d.proprias.length, d.erro_frases, d.arroba, d.carrossel.capa_claude, d.carrossel.legenda_claude]);
 
 function acompanharPrints() {
   clearInterval(relogio);
@@ -1595,7 +1907,7 @@ function acompanharPrints() {
     const r = await api(urlPosts()).catch(() => null);
     if (!r || !posts) return;
     if (!r.gerando && posts.gerando && Date.now() - pediuPrintsEm < 8000 && (!r.tem_prints || r.faltam_prints.length)) r.gerando = posts.gerando;
-    const editando = Object.keys(salvarDepois).length || document.activeElement?.closest?.("#posts input, #posts textarea");
+    const editando = salvando() || document.activeElement?.closest?.("#posts input, #posts textarea");
     if (assinaturaPosts(r) !== assinaturaPosts(posts)) {
       if (editando) return;                          // espera a pessoa sair do campo
       const terminou = posts.gerando && !r.gerando;
@@ -1983,9 +2295,10 @@ async function telaMarca() {
   const opcoes = (atual) => (atual && !kit.includes(atual) ? `<option value="${esc(atual)}" selected>${esc(atual.split("/").pop())} (sua)</option>` : "")
     + kit.map((n) => `<option value="${esc(n)}" ${n === atual ? "selected" : ""}>${esc(n)}</option>`).join("");
   let logoNovo = null, tirarLogo = false;
+  const veioDoProjeto = rotaAnterior && rotaAnterior.startsWith("#/projeto/");   // ex.: o @ da assinatura dos posts
 
   app.innerHTML = `
-  <a class="voltar" href="#/biblioteca">← biblioteca</a>
+  <a class="voltar" href="${veioDoProjeto ? esc(rotaAnterior) : "#/biblioteca"}">← ${veioDoProjeto ? "voltar ao projeto" : "biblioteca"}</a>
   <div class="cabeca-projeto"><div>
     <h1 class="titulo">Minha <span class="marca">marca</span></h1>
     <p class="lead">Suas cores, fontes e logo. Cada estilo diz onde a marca pode entrar: assim ela aparece sem estragar o estilo.</p>

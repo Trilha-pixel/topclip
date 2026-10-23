@@ -1015,6 +1015,7 @@ def para_lixeira(p: Path) -> None:
 # troca o print e a fonte, e a arte sai na hora (lib/projeto.py e lib/arte.py da skill).
 POST_LIB = RAIZ / ".claude" / "skills" / "topclip-post" / "lib"
 POST_FONTES = POST_LIB.parent / "fontes"
+FOTO_MAX = 20_000_000               # bytes da foto que a pessoa sobe (o painel já reduz antes de mandar)
 _arte = threading.Lock()            # a FreeType não é segura entre threads: uma arte por vez
 
 
@@ -1053,6 +1054,7 @@ def posts_do_projeto(proj: Path) -> dict:
         m = PJ.montagem(proj, f, estado, doc)
         ed = estado["edicoes"].get(f["id"]) or {}
         lista.append({
+            "legenda": m["legenda"], "legenda_claude": str(f.get("legenda") or "").strip(),
             "id": f["id"], "minha": bool(f.get("minha")), "tipo": f.get("tipo"),
             "tipo_nome": PJ.F.TIPOS.get(f.get("tipo"), f.get("tipo") or ""),
             "original": f.get("original", ""), "porque": f.get("porque", ""),
@@ -1065,11 +1067,16 @@ def posts_do_projeto(proj: Path) -> dict:
         })
     pasta = PJ.pasta(proj)
     video = PJ.video_do_projeto(proj)
+    car = PJ.carrossel_do_projeto(proj, estado, doc)
     return {
         "estado": estado, "frases": lista, "erro_frases": erro, "avisos": avisos,
-        "quadros": {pid: {"mini": url_midia(pasta / q["mini"]), "t": mmss(q.get("t")), "sorrindo": q.get("sorrindo", False)}
+        "quadros": {pid: {"mini": url_midia(pasta / q["mini"]), "t": mmss(q["t"]) if q.get("t") is not None else "sua foto",
+                          "sorrindo": q.get("sorrindo", False), "propria": bool(q.get("propria")),
+                          "sem_rosto": not q.get("rosto")}
                     for pid, q in quadros.items() if (pasta / q.get("mini", "-")).is_file()},
         "banco": [p for p in doc.get("banco") or [] if p in quadros],
+        "proprias": [p for p in doc.get("proprias") or [] if p in quadros],
+        "carrossel": car, "modos": PJ.MODOS, "slides_max": PJ.SLIDES_MAX, "arroba": PJ.arroba(),
         "tem_prints": bool(doc), "faltam_prints": [f["id"] for f in frases if f["id"] not in (doc.get("frases") or {})],
         "tem_transcricao": bool(PJ.achar_transcricao(proj)), "tem_video": bool(video and video.is_file()),
         "gerando": _gerando_prints(proj),
@@ -1112,10 +1119,22 @@ def previa_post(proj: Path, fid: str) -> bytes:
     return buf.getvalue()
 
 
+def previa_capa(proj: Path) -> bytes:
+    import io
+    PJ = modulo_posts()
+    with _arte:
+        img = PJ.renderizar_capa(proj, PJ.ler_estado(proj), escala=0.5)
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=86)
+    return buf.getvalue()
+
+
 def png_post(proj: Path, fid: str) -> tuple[str, bytes]:
     """O PNG final (1080 de largura), gravado também em posts/prontos/."""
     PJ, estado, f = _frase(proj, fid)
     ordem = estado["escolhidas"].index(fid) + 1 if fid in estado["escolhidas"] else None
+    if ordem and estado["modo"] == "carrossel" and PJ.carrossel_do_projeto(proj, estado)["usar"]:
+        ordem += 1                                   # o número do slide: a capa é o 1
     destino = PJ.pasta(proj) / "prontos" / PJ.nome_do_arquivo(f, estado, ordem)
     destino.parent.mkdir(parents=True, exist_ok=True)
     with _arte:
@@ -1130,13 +1149,60 @@ def zip_posts(proj: Path) -> tuple[str, bytes]:
     estado = PJ.ler_estado(proj)
     if not estado["escolhidas"]:
         raise ValueError("Escolha pelo menos uma frase.")
+    carrossel = estado["modo"] == "carrossel"
     with _arte:
-        arquivos = PJ.exportar(proj, estado["escolhidas"], estado)
+        if carrossel:          # os slides numerados na ordem e a legenda do carrossel
+            arquivos = PJ.exportar_carrossel(proj, estado["escolhidas"], estado)
+        else:
+            arquivos = PJ.exportar(proj, estado["escolhidas"], estado)
+    legenda = arquivos[0].parent / ("legenda.txt" if carrossel else "legendas.txt")
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:     # PNG já é comprimido
         for a in arquivos:
             z.write(a, a.name)
+        if legenda.is_file():
+            z.write(legenda, legenda.name)
+    if carrossel:
+        return f"carrossel-{proj.name}.zip", buf.getvalue()
     return f"posts-{proj.name}-{estado['formato']}.zip", buf.getvalue()
+
+
+def subir_foto(proj: Path, dados: dict) -> dict:
+    """A foto da pessoa vira um print do projeto (posts/prints/f-0001.jpg), com o rosto
+    detectado como os do vídeo. Chega em base64 (JPG ou PNG)."""
+    import base64
+    import io
+    from PIL import Image, UnidentifiedImageError
+    PJ = modulo_posts()
+    try:
+        bruto = base64.b64decode(str(dados.get("conteudo") or "").split(",", 1)[-1], validate=True)
+    except ValueError:
+        raise ValueError("Não consegui ler a foto. Envie um JPG ou PNG.")
+    if not bruto:
+        raise ValueError("Escolha uma foto.")
+    if len(bruto) > FOTO_MAX:
+        raise ValueError("A foto passou de 20 MB. Use uma menor.")
+    try:
+        img = Image.open(io.BytesIO(bruto))
+        img.load()
+    except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+        raise ValueError("Esse arquivo não abriu como foto. Use JPG ou PNG (foto de iPhone em HEIC: exporte como JPG).")
+    try:
+        pid = PJ.P.adicionar_foto(PJ.pasta(proj), img)
+    except PJ.P.ErroPrints as e:
+        raise ValueError(str(e))
+    return {**posts_do_projeto(proj), "nova": pid}
+
+
+def apagar_foto(proj: Path, pid: str) -> dict:
+    PJ = modulo_posts()
+    if not PJ.RE_PRINT.fullmatch(str(pid or "")):
+        raise ValueError("Foto inválida.")
+    try:
+        PJ.P.remover_foto(PJ.pasta(proj), pid)
+    except PJ.P.ErroPrints as e:
+        raise ValueError(str(e))
+    return posts_do_projeto(proj)
 
 
 def gerar_prints(proj: Path) -> dict:
@@ -1638,12 +1704,14 @@ class Painel(BaseHTTPRequestHandler):
             lista = [resumo(p) for p in PROJETOS.iterdir() if p.is_dir() and not p.name.startswith(".")]
             lista.sort(key=lambda r: r.get("criado") or "", reverse=True)
             return self._json({"projetos": lista})
-        m = re.fullmatch(r"/api/projetos/([^/]+)/posts(?:/(previa|baixar)/([a-z0-9-]+)\.(jpg|png)|/(baixar\.zip))?", rota)
+        m = re.fullmatch(r"/api/projetos/([^/]+)/posts(?:/(previa|baixar)/([a-z0-9-]+)\.(jpg|png)|/(baixar\.zip)|/(capa\.jpg))?", rota)
         if m:
             p = self._projeto(m.group(1))
             if not p:
                 return self._erro("projeto não encontrado", HTTPStatus.NOT_FOUND)
             try:
+                if m.group(6):
+                    return self._bytes(previa_capa(p), "image/jpeg")
                 if m.group(5):
                     nome, dados = zip_posts(p)
                     return self._bytes(dados, "application/zip", nome)
@@ -1704,6 +1772,8 @@ class Painel(BaseHTTPRequestHandler):
             # o logo da marca chega em base64 dentro do JSON: o servidor é só biblioteca padrão
             limite = {"/api/marca": LOGO_MAX * 4 // 3 + 100_000,
                       "/api/estilos/importar": IMPORTAR_MAX * 4 // 3 + 100_000}.get(rota, 1_000_000)
+            if re.fullmatch(r"/api/projetos/[^/]+/posts/foto", rota):
+                limite = FOTO_MAX * 4 // 3 + 100_000
             corpo = self._corpo(limite)
             if rota == "/api/marca":
                 return self._json(salvar_marca(corpo))
@@ -1737,12 +1807,14 @@ class Painel(BaseHTTPRequestHandler):
                 if not p:
                     return self._erro("projeto não encontrado", HTTPStatus.NOT_FOUND)
                 return self._json(salvar_escolhas(p, corpo))
-            m = re.fullmatch(r"/api/projetos/([^/]+)/posts(/gerar-prints)?", rota)
+            m = re.fullmatch(r"/api/projetos/([^/]+)/posts(/gerar-prints|/foto|/foto/apagar)?", rota)
             if m:
                 p = self._projeto(m.group(1))
                 if not p:
                     return self._erro("projeto não encontrado", HTTPStatus.NOT_FOUND)
-                return self._json(gerar_prints(p) if m.group(2) else salvar_posts(p, corpo))
+                acao = {"/gerar-prints": lambda: gerar_prints(p), "/foto": lambda: subir_foto(p, corpo),
+                        "/foto/apagar": lambda: apagar_foto(p, corpo.get("id"))}.get(m.group(2))
+                return self._json(acao() if acao else salvar_posts(p, corpo))
             m = re.fullmatch(r"/api/projetos/([^/]+)/apagar", rota)
             if m:
                 p = self._projeto(m.group(1))

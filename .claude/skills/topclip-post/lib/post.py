@@ -11,8 +11,11 @@ Posts virais — frase + prints do vídeo, para o feed (4:5) e os stories (9:16)
     ./topclip post prints projetos/<nome> [--refazer] [--sem-banco]
         escolhe os prints de cada frase e o banco de rostos do vídeo
     ./topclip post render projetos/<nome> [--frase <id> ...] [--formato feed|stories]
-                          [--prints 1|2|3] [--fonte <id>]
-        grava os PNG em posts/prontos/ (sem --frase: as escolhidas no painel, senão todas)
+                          [--prints 1|2|3] [--fonte <id>] [--pb | --cor]
+                          [--assinatura | --sem-assinatura] [--carrossel | --unico]
+                          [--capa "título com **negrito**" | --sem-capa]
+        grava os PNG em posts/prontos/ (sem --frase: as escolhidas no painel, senão todas);
+        o carrossel sai em posts/prontos/carrossel/, um slide por frase, na ordem pedida
     ./topclip post minha projetos/<nome> "a frase" [--referencia "Salmos 23:1"]
         uma frase da pessoa (fora da transcrição), já escolhida para virar post
     ./topclip post fontes
@@ -191,15 +194,34 @@ def cmd_render(a) -> int:
     if a.formato:
         muda["formato"] = a.formato
     if a.prints:
-        muda["prints"] = {a.formato or estado["formato"]: a.prints}
+        alvo = a.formato or ("feed" if a.modo == "carrossel" else estado["formato"])   # carrossel é só no feed
+        muda["prints"] = {alvo: a.prints}
     if a.fonte:
         muda["fonte"] = a.fonte
+    if a.pb is not None:
+        muda["pb"] = a.pb
+    if a.assinatura is not None:
+        if a.assinatura and not PJ.arroba():
+            raise SystemExit("ERRO: a marca não tem @. Cadastre no painel: Biblioteca → Minha marca → Seu @")
+        muda["assinatura"] = a.assinatura
+    if a.modo:
+        muda["modo"] = a.modo
+    if a.capa is not None or a.sem_capa:
+        muda["capa"] = {"usar": False} if a.sem_capa else {"usar": True, "texto": a.capa or None}
     try:
         estado = PJ._validar(muda, estado)
     except ValueError as e:
         raise SystemExit(f"ERRO: {e}")
     ids = a.frase or estado["escolhidas"] or [f["id"] for f in PJ.todas_as_frases(proj, estado)]
-    feitos = PJ.exportar(proj, ids, estado)
+    try:
+        if estado["modo"] == "carrossel":
+            feitos = PJ.exportar_carrossel(proj, ids, estado)
+            if len(feitos) > PJ.SLIDES_MAX:
+                print(f"aviso  {len(feitos)} slides: o Instagram aceita até {PJ.SLIDES_MAX} por carrossel", file=sys.stderr)
+        else:
+            feitos = PJ.exportar(proj, ids, estado)
+    except ValueError as e:
+        raise SystemExit(f"ERRO: {e}")
     for p in feitos:
         print(p)
     if not feitos:
@@ -248,6 +270,14 @@ def main(argv=None) -> int:
     s.add_argument("projeto"); s.add_argument("--frase", action="append")
     s.add_argument("--formato", choices=["feed", "stories"]); s.add_argument("--prints", type=int, choices=[1, 2, 3])
     s.add_argument("--fonte")
+    s.add_argument("--pb", dest="pb", action="store_true", default=None, help="fotos em preto e branco")
+    s.add_argument("--cor", dest="pb", action="store_false", help="fotos coloridas")
+    s.add_argument("--assinatura", dest="assinatura", action="store_true", default=None, help="o @ da marca no último print")
+    s.add_argument("--sem-assinatura", dest="assinatura", action="store_false")
+    s.add_argument("--carrossel", dest="modo", action="store_const", const="carrossel", help="um slide por frase, na ordem")
+    s.add_argument("--unico", dest="modo", action="store_const", const="unico", help="um post por frase")
+    s.add_argument("--capa", help='o título da capa do carrossel ("" usa o do frases.json)')
+    s.add_argument("--sem-capa", action="store_true", help="carrossel sem slide de capa")
     s = sub.add_parser("minha", help="uma frase da pessoa, fora da transcrição")
     s.add_argument("projeto"); s.add_argument("texto"); s.add_argument("--referencia")
     sub.add_parser("fontes", help="as fontes disponíveis")

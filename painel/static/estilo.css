@@ -773,7 +773,8 @@ form.remixar .explica { grid-column: 1 / -1; margin: 0; }
 .post-previa.arrastando { cursor: grabbing; }
 .post-arraste { position: absolute; left: 0; right: 0; overflow: hidden; outline: 2px solid var(--amarelo); outline-offset: -2px; background: #1d1d20; }
 .post-arraste img { position: absolute; left: 0; width: 100%; max-width: none; object-fit: cover; will-change: transform; }
-.post-campos { display: grid; gap: 14px; align-content: start; min-width: 0; }
+/* a coluna presa: sem isso a faixa de prints (uma fita longa) alarga o editor até a largura dela */
+.post-campos { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-content: start; min-width: 0; }
 .post-cabeca { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .post-cabeca .tempo { padding: 5px 7px; font-size: 11.5px; }
 .post-parte { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 14px; align-items: start; padding: 12px; border: 1.5px solid var(--papel-borda); border-radius: 3px; background: var(--papel-claro); }
@@ -792,7 +793,7 @@ form.remixar .explica { grid-column: 1 / -1; margin: 0; }
 .post-zoom { display: grid; gap: 6px; }
 .post-zoom button { width: 34px; height: 30px; border: 1.5px solid var(--tinta); border-radius: 2px; background: #fff; cursor: pointer; font: 700 18px/1 var(--texto); }
 .post-zoom button:hover { background: var(--amarelo); }
-.faixa { margin-top: -6px; padding: 12px; border: 1.5px solid var(--tinta); border-top: 0; border-radius: 0 0 3px 3px; background: var(--papel); }
+.faixa { min-width: 0; margin-top: -6px; padding: 12px; border: 1.5px solid var(--tinta); border-top: 0; border-radius: 0 0 3px 3px; background: var(--papel); }
 .faixa-rotulo { margin: 2px 0 6px; font: 500 11px/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--tinta-3); }
 .faixa-linha { display: flex; gap: 8px; overflow-x: auto; padding: 2px 2px 8px; }
 .faixa-print { position: relative; flex: none; width: 120px; padding: 0; border: 1.5px solid var(--papel-borda); border-radius: 2px; overflow: hidden; background: #000; cursor: pointer; }
@@ -806,9 +807,55 @@ form.remixar .explica { grid-column: 1 / -1; margin: 0; }
 .campo textarea { font: 400 16px/1.4 var(--texto); padding: 12px 14px; border: 1.5px solid var(--tinta); border-radius: 2px; background: #fff; color: var(--tinta); resize: vertical; }
 .campo textarea:focus { outline: none; box-shadow: 3px 3px 0 var(--amarelo); }
 
+/* fase 2: tipo (único ou carrossel), P&B, assinatura, ordem, legenda, capa, foto própria */
+.segmentado.tipo svg { width: 18px; height: 19px; fill: currentColor; }
+.seg:disabled { cursor: not-allowed; opacity: 0.45; background: transparent; color: var(--tinta-3); }
+.segmentado.assinatura .seg:last-child { text-transform: none; letter-spacing: 0; font: 600 14px/1 var(--texto); }
+.dica-arroba { font-size: 12.5px; justify-self: start; }
+.post-ordem { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.ordem-num { font: 700 15px/1 var(--display); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 2px; }
+.ordem-btn { width: 28px; height: 28px; padding: 0; border: 1.5px solid var(--tinta); border-radius: 2px; background: #fff; cursor: pointer; font: 700 15px/1 var(--texto); }
+.ordem-btn:hover { background: var(--amarelo); }
+.ordem-btn:disabled { opacity: 0.3; cursor: default; background: #fff; }
+.post-legenda { margin-top: 0; display: grid; gap: 7px; }
+.post-legenda textarea { width: 100%; min-height: 110px; font-size: 14.5px; }
+.legenda-topo { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.legenda-topo label small { font: 400 12px var(--texto); text-transform: none; letter-spacing: 0; }
+.legenda-pe { display: flex; justify-content: space-between; gap: 10px; font-size: 12px; }
+.legenda-pe .mudo { font: 500 11px/1.6 var(--mono); }
+.legenda-pe .link { font-size: 13px; }
+
+.carrossel-caixa { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 420px); gap: 22px; align-items: start; margin: 0 0 22px; padding: 18px 20px; border: 1.5px dashed var(--papel-borda); border-radius: 3px; background: var(--papel); }
+.carrossel-fita { display: flex; gap: 12px; overflow-x: auto; padding: 4px 4px 10px; min-width: 0; }
+.slide { flex: none; width: 118px; display: grid; gap: 6px; }
+.slide-ir { display: block; width: 100%; aspect-ratio: 1080 / 1350; padding: 0; border: 1.5px solid var(--tinta); border-radius: 2px; overflow: hidden; background: #1d1d20; cursor: pointer; box-shadow: 3px 3px 0 var(--papel-borda); }
+.slide-ir:hover { box-shadow: 3px 3px 0 var(--amarelo); }
+.slide-ir img { width: 100%; height: 100%; object-fit: cover; }
+.slide.capa .slide-ir { box-shadow: 3px 3px 0 var(--amarelo); }
+.slide-pe { display: flex; align-items: center; justify-content: center; gap: 6px; }
+.slide-pe b { font: 700 14px/1 var(--display); text-transform: uppercase; letter-spacing: 0.03em; min-width: 18px; text-align: center; }
+.slide-pe button { width: 26px; height: 24px; padding: 0; border: 1.5px solid var(--tinta); border-radius: 2px; background: #fff; cursor: pointer; font: 700 16px/1 var(--texto); }
+.slide-pe button:hover { background: var(--amarelo); }
+.slide-pe button:disabled { opacity: 0.25; cursor: default; background: #fff; }
+.capa-editor { margin: 0 0 22px; border-style: dashed; }
+.capa-explica { margin: -4px 0 0; font-size: 13.5px; }
+.capa-desligada { display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin: 0 0 22px; padding: 14px 16px; border: 1.5px dashed var(--tinta-3); border-radius: 3px; background: var(--papel-claro); }
+.capa-desligada .mudo { font-size: 13.5px; }
+
+.faixa-print.subir { display: grid; place-content: center; justify-items: center; gap: 2px; height: calc(120px * 9 / 16 + 3px); background: var(--papel-claro); border: 1.5px dashed var(--tinta-3); color: var(--tinta-2); }
+.faixa-print.subir:hover { border-color: var(--tinta); color: var(--tinta); background: #fff; }
+.faixa-print.subir .mais { font: 400 24px/1 var(--logo); }
+.faixa-print.subir small { position: static; padding: 0; background: none; color: inherit; font: 600 11.5px/1.2 var(--texto); }
+.faixa-print.subir:focus-within { outline: 2px solid var(--azul); outline-offset: 2px; }
+.faixa-print.subindo { pointer-events: none; opacity: 0.6; }
+.faixa-item { position: relative; flex: none; }
+.faixa-tirar { position: absolute; top: 3px; right: 3px; width: 22px; height: 22px; padding: 0; border: 1.5px solid var(--tinta); border-radius: 50%; background: #fff; cursor: pointer; font: 700 14px/1 var(--texto); color: var(--tinta); }
+.faixa-tirar:hover { background: var(--vermelho); border-color: var(--vermelho); color: #fff; }
+
 @media (max-width: 860px) {
   .post-editor { grid-template-columns: minmax(0, 1fr); }
   .post-previa { max-width: 380px; width: 100%; justify-self: center; }
+  .carrossel-caixa { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 640px) {
   .segmentado { max-width: 100%; }

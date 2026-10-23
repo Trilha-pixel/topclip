@@ -1039,6 +1039,79 @@ class PostsVirais(ComProjetosTemporarios):
         self.assertEqual(status, 400)                           # projeto sem vídeo
         self.assertIn("vídeo", json.loads(corpo)["erro"])
 
+    def test_carrossel_com_capa_e_legenda_no_zip(self):
+        import io
+        import zipfile
+        pasta = self.proj / "posts"
+        doc = json.loads((pasta / "frases.json").read_text(encoding="utf-8"))
+        doc["frases"][0]["legenda"] = "A legenda do post."
+        doc["frases"].append({"id": "frase-002", "inicio": 20, "fim": 25, "original": "o outro",
+                              "partes": {"2": ["Segunda **frase**", "em duas partes."]}})
+        doc["carrossel"] = {"capa": "Duas **verdades**", "legenda": "A legenda do carrossel."}
+        (pasta / "frases.json").write_text(json.dumps(doc, ensure_ascii=False), encoding="utf-8")
+        status, _, corpo = self.postar("/api/projetos/posts/posts", {"modo": "carrossel", "escolhidas": ["frase-002", "frase-001"]})
+        self.assertEqual(status, 200, corpo)
+        d = json.loads(corpo)
+        self.assertEqual((d["estado"]["modo"], d["carrossel"]["usar"], d["carrossel"]["texto"]), ("carrossel", True, "Duas **verdades**"))
+        self.assertEqual(d["frases"][0]["legenda"], "A legenda do post.")
+        status, cab, img = self.pedir("/api/projetos/posts/posts/capa.jpg")
+        self.assertEqual((status, cab["Content-Type"], img[:2]), (200, "image/jpeg", b"\xff\xd8"))
+        status, cab, z = self.pedir("/api/projetos/posts/posts/baixar.zip")
+        self.assertEqual(status, 200)
+        self.assertIn("carrossel-posts.zip", cab["Content-Disposition"])
+        nomes = zipfile.ZipFile(io.BytesIO(z)).namelist()
+        self.assertEqual(nomes[0], "01-capa.png")
+        self.assertTrue(nomes[1].startswith("02-segunda-frase") and nomes[2].startswith("03-voce-nao-esta"), nomes)
+        self.assertIn("legenda.txt", nomes)
+        # o post único leva as legendas de cada PNG
+        self.postar("/api/projetos/posts/posts", {"modo": "unico"})
+        status, cab, z = self.pedir("/api/projetos/posts/posts/baixar.zip")
+        arq = zipfile.ZipFile(io.BytesIO(z))
+        self.assertIn("legendas.txt", arq.namelist())
+        self.assertIn("A legenda do post.", arq.read("legendas.txt").decode())
+
+    def test_sobe_e_tira_foto_propria(self):
+        import base64
+        import io
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new("RGB", (800, 1000), (140, 120, 100)).save(buf, "JPEG")
+        status, _, corpo = self.postar("/api/projetos/posts/posts/foto",
+                                       {"conteudo": "data:image/jpeg;base64," + base64.b64encode(buf.getvalue()).decode()})
+        self.assertEqual(status, 200, corpo)
+        d = json.loads(corpo)
+        self.assertEqual((d["nova"], d["proprias"]), ("f-0001", ["f-0001"]))
+        self.assertTrue(d["quadros"]["f-0001"]["propria"])
+        self.assertEqual(d["quadros"]["f-0001"]["t"], "sua foto")
+        self.assertTrue((self.proj / "posts" / "prints" / "f-0001.jpg").is_file())
+        status, _, corpo = self.postar("/api/projetos/posts/posts", {"edicoes": {"frase-001": {"prints": {"2": ["f-0001", "p-0002"]}}}})
+        self.assertEqual(json.loads(corpo)["frases"][0]["prints"], ["f-0001", "p-0002"])
+        self.assertEqual(self.pedir("/api/projetos/posts/posts/previa/frase-001.jpg")[0], 200)
+        status, _, corpo = self.postar("/api/projetos/posts/posts/foto/apagar", {"id": "f-0001"})
+        self.assertEqual(status, 200, corpo)
+        self.assertEqual(json.loads(corpo)["frases"][0]["prints"], ["p-0001", "p-0002"])
+        self.assertFalse((self.proj / "posts" / "prints" / "f-0001.jpg").exists())
+        for ruim in ({"conteudo": "isso não é base64"}, {"conteudo": base64.b64encode(b"texto qualquer").decode()}, {}):
+            status, _, corpo = self.postar("/api/projetos/posts/posts/foto", ruim)
+            self.assertEqual(status, 400, ruim)
+        self.assertEqual(self.postar("/api/projetos/posts/posts/foto/apagar", {"id": "p-0001"})[0], 400)
+
+    def test_assinatura_precisa_do_arroba_da_marca(self):
+        PJ = S.modulo_posts()
+        orig = PJ.MARCA
+        PJ.MARCA = self.tmp / "marca"
+        PJ.MARCA.mkdir()
+        try:
+            status, _, corpo = self.postar("/api/projetos/posts/posts", {"assinatura": True})
+            self.assertEqual(status, 400)
+            self.assertIn("Minha marca", json.loads(corpo)["erro"])
+            (PJ.MARCA / "marca.json").write_text(json.dumps({"arroba": "@perfil"}))
+            status, _, corpo = self.postar("/api/projetos/posts/posts", {"assinatura": True, "pb": True})
+            d = json.loads(corpo)
+            self.assertEqual((status, d["arroba"], d["estado"]["assinatura"], d["estado"]["pb"]), (200, "@perfil", True, True))
+        finally:
+            PJ.MARCA = orig
+
     def test_posts_correm_por_fora_das_etapas(self):
         c = S.ATV.classificar(["post", "prints", "projetos/posts"])
         self.assertEqual((c["sub"], c["etapa"]), ("post:prints", "posts"))

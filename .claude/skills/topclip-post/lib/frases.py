@@ -10,7 +10,12 @@ escreve no frases.json e que o painel grava quando a pessoa clica numa palavra.
      "inicio": 612.4, "fim": 619.8,
      "partes": {"2": ["**Seja obcecado** pelo processo.", "O resultado **vira consequência.**"],
                 "3": ["**Seja obcecado**", "pelo processo.", "O resultado **vira consequência.**"]},
-     "porque": "contraste processo × resultado; fecha sozinha"}
+     "porque": "contraste processo × resultado; fecha sozinha",
+     "legenda": "A legenda pronta do post no Instagram (com até 5 hashtags no fim)."}
+
+O frases.json ainda pode trazer o `carrossel`: o título da capa e a legenda do carrossel
+(as frases escolhidas, uma por slide) — `{"capa": "5 verdades sobre **cobrar caro**",
+"legenda": "…"}`.
 
 Falta a divisão de um número de prints (a pessoa escolheu 3 e a frase só tem a de 2, ou
 a frase é dela): `partes_para` divide de novo, pela pontuação e pelo tamanho.
@@ -34,6 +39,10 @@ PRINTS = (1, 2, 3)
 LIMITE_PARTE = {1: 120, 2: 64, 3: 46}
 RE_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,47}")
 PONTUACAO = (",", ".", ";", ":", "!", "?", "—", "…")
+LEGENDA_MAX = 2200            # o limite do Instagram
+HASHTAGS_MAX = 5              # o Instagram passou a limitar as hashtags por post
+CAPA_MAX = 90
+RE_HASHTAG = re.compile(r"(?<![\w#])#\w+")
 
 
 class ErroFrases(ValueError):
@@ -132,6 +141,33 @@ def tempos_para(frase: dict, n: int) -> list[float]:
     return saida
 
 
+# ------------------------------------------------------------------ legenda e carrossel
+def _avisos_legenda(onde: str, legenda) -> list[str]:
+    if not isinstance(legenda, str) or not legenda.strip():
+        return []
+    avisos = []
+    if len(legenda) > LEGENDA_MAX:
+        avisos.append(f"{onde}: a legenda passa de {LEGENDA_MAX} letras (o Instagram corta)")
+    n = len(RE_HASHTAG.findall(legenda))
+    if n > HASHTAGS_MAX:
+        avisos.append(f"{onde}: {n} hashtags na legenda — use até {HASHTAGS_MAX}")
+    return avisos
+
+
+def carrossel(doc) -> dict:
+    """O `carrossel` do frases.json: {"capa": título com **negrito**, "legenda": texto}, só
+    com o que veio (texto vazio fica de fora)."""
+    c = doc.get("carrossel") if isinstance(doc, dict) else None
+    if not isinstance(c, dict):
+        return {}
+    saida = {}
+    if isinstance(c.get("capa"), str) and c["capa"].strip():
+        saida["capa"] = " ".join(c["capa"].split())
+    if isinstance(c.get("legenda"), str) and c["legenda"].strip():
+        saida["legenda"] = c["legenda"].strip()
+    return saida
+
+
 # ------------------------------------------------------------------ conferir o frases.json
 def conferir(doc) -> tuple[list[dict], list[str]]:
     """Confere o frases.json do Claude. Devolve (frases, avisos); erro de formato levanta
@@ -178,7 +214,24 @@ def conferir(doc) -> tuple[list[dict], list[str]]:
             avisos.append(f"{onde}: tipo {f['tipo']!r} fora da lista ({', '.join(TIPOS)})")
         if not str(f.get("original") or "").strip():
             avisos.append(f"{onde}: sem o trecho original da transcrição")
+        leg = f.get("legenda")
+        if leg is not None and not isinstance(leg, str):
+            erros.append(f"{onde}: a legenda precisa ser um texto")
+        elif not str(leg or "").strip():
+            avisos.append(f"{onde}: sem legenda — o painel mostra a caixa vazia para a pessoa escrever")
+        avisos += _avisos_legenda(onde, leg)
         frases.append(f)
+    c = doc.get("carrossel")
+    if c is not None:
+        if not isinstance(c, dict) or any(k in c and not isinstance(c[k], str) for k in ("capa", "legenda")):
+            erros.append('carrossel: precisa ser {"capa": "título", "legenda": "texto"}')
+        else:
+            capa = c.get("capa") or ""
+            if capa.count("**") % 2:
+                erros.append(f"carrossel: negrito sem fechar na capa {capa!r}")
+            elif len(limpo(capa)) > CAPA_MAX:
+                avisos.append(f"carrossel: o título da capa é longo (mais de {CAPA_MAX} letras)")
+            avisos += _avisos_legenda("carrossel", c.get("legenda"))
     if erros:
         raise ErroFrases("\n  ".join(["o frases.json tem problemas:", *erros]))
     return frases, avisos

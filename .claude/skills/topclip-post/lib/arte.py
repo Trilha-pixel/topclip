@@ -11,6 +11,10 @@ O visual é o dos posts de frase que viralizam: branco, centralizado, peso norma
 palavras-chave em negrito, sobre um degradê escuro no pé de cada print. O degradê fica
 mais forte quando o fundo atrás do texto é claro (parede branca, camisa clara).
 
+Opções: `pb=True` deixa as fotos em preto e branco (o texto e o destaque continuam);
+`assinatura="@perfil"` escreve o @ pequeno embaixo do texto do último print; `capa=True`
+faz o slide de capa do carrossel (um print só, o título maior e "arraste para o lado").
+
 Tamanhos (1080 de largura):
   feed 4:5    1080×1350 — 2 prints de 1080×675 (quase o quadro inteiro do vídeo) ou 3 de 1080×450
   stories     1080×1920 — 3 prints de 1080×556 ou 2 de 1080×835, acima de uma faixa escura de
@@ -23,7 +27,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageStat
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps, ImageStat
 
 from frases import tokens
 
@@ -34,7 +38,8 @@ FORMATOS = {
     "feed": {"nome": "Feed 4:5", "tamanho": (1080, 1350)},
     "stories": {"nome": "Stories 9:16", "tamanho": (1080, 1920)},
 }
-PADRAO = {"formato": "feed", "prints": {"feed": 2, "stories": 3}, "fonte": "inter"}
+# DM Sans é a mais parecida com a dos posts de frase que viralizam (geométrica, compacta)
+PADRAO = {"formato": "feed", "prints": {"feed": 2, "stories": 3}, "fonte": "dmsans"}
 
 # Cada família: o arquivo e os eixos do peso normal e do negrito. As que faltarem no disco
 # somem da lista (as da pasta fontes/ desta skill são opcionais).
@@ -46,7 +51,7 @@ FONTES = {
     "montserrat": {"nome": "Montserrat", "arquivo": "Montserrat[wght].ttf",
                    "regular": {"wght": 400}, "negrito": {"wght": 700}},
     "dmsans": {"nome": "DM Sans", "arquivo": "DMSans[opsz,wght].ttf",
-               "regular": {"opsz": 14, "wght": 400}, "negrito": {"opsz": 14, "wght": 700}},
+               "regular": {"opsz": 32, "wght": 400}, "negrito": {"opsz": 32, "wght": 700}},
     "archivo": {"nome": "Archivo Narrow", "arquivo": "ArchivoNarrow[wght].ttf",
                 "regular": {"wght": 400}, "negrito": {"wght": 700}, "escala": 1.12},
     "fraunces": {"nome": "Fraunces", "arquivo": "Fraunces[SOFT,WONK,opsz,wght].ttf",
@@ -60,6 +65,8 @@ EIXOS = {b"Weight": "wght", b"Optical size": "opsz", b"Optical Size": "opsz", b"
 # o tamanho do texto e a altura do rosto (fração do print) por formato e número de prints
 TEXTO = {("feed", 1): 60, ("feed", 2): 54, ("feed", 3): 46,
          ("stories", 1): 64, ("stories", 2): 60, ("stories", 3): 54}
+TEXTO_CAPA = 78                # o título da capa do carrossel
+DICA_CAPA = "arraste para o lado"
 MARGEM_LADO = 72
 RESPIRO_STORIES = 250          # px no pé dos stories: a caixa de resposta cobre essa faixa
 BRANCO = (255, 255, 255)
@@ -254,6 +261,22 @@ def _hex(c, padrao=None):
 
 
 # ------------------------------------------------------------------ o post
+def preto_e_branco(img: Image.Image) -> Image.Image:
+    """P&B com um pouco mais de contraste (o cinza puro do quadro de vídeo fica lavado)."""
+    cinza = ImageOps.grayscale(img)
+    forte = ImageOps.autocontrast(cinza, cutoff=(0.5, 0.5))
+    return Image.blend(cinza, forte, 0.6).convert("RGB")
+
+
+def _seta(d, x, y, tam, cor):
+    """Uma seta → desenhada (nem toda fonte tem o caractere); `y` é a linha de base do texto."""
+    meio = y - tam * 0.34
+    w = max(1, round(tam * 0.09))
+    d.line([(x, meio), (x + tam * 0.9, meio)], fill=cor, width=w)
+    d.line([(x + tam * 0.9 - tam * 0.3, meio - tam * 0.26), (x + tam * 0.9, meio), (x + tam * 0.9 - tam * 0.3, meio + tam * 0.26)],
+           fill=cor, width=w, joint="curve")
+
+
 def alturas_dos_prints(n: int, H: int) -> list[int]:
     alt = [H // n] * n
     alt[-1] += H - sum(alt)
@@ -261,7 +284,7 @@ def alturas_dos_prints(n: int, H: int) -> list[int]:
 
 
 def montar(paineis: list[dict], *, formato="feed", fonte="inter", destaque=None, referencia="",
-           escala=1.0) -> Image.Image:
+           escala=1.0, pb=False, assinatura="", capa=False) -> Image.Image:
     """O post inteiro. Cada painel: {"imagem": caminho ou Image, "rosto": [x, y, w, h] ou None,
     "texto": "com **negrito**", "zoom": 1.0, "x": 0.0, "y": 0.0}. `escala` 0.5 é a prévia."""
     if formato not in FORMATOS:
@@ -269,6 +292,8 @@ def montar(paineis: list[dict], *, formato="feed", fonte="inter", destaque=None,
     n = len(paineis)
     if n not in (1, 2, 3):
         raise ValueError("o post tem 1, 2 ou 3 prints")
+    if capa and n != 1:
+        raise ValueError("a capa do carrossel tem um print só")
     W, H = (round(v * escala) for v in FORMATOS[formato]["tamanho"])
     s = W / 1080
     fam = familia(fonte)
@@ -278,19 +303,24 @@ def montar(paineis: list[dict], *, formato="feed", fonte="inter", destaque=None,
     # faixa de baixo é o fim escuro do degradê do último print (o texto nunca cai ali)
     rodape = round(RESPIRO_STORIES * s) if formato == "stories" else 0
     y_tela = 0
+    tam_base = TEXTO_CAPA if capa else TEXTO[(formato, n)]
     for i, (pn, ph) in enumerate(zip(paineis, alturas_dos_prints(n, H - rodape))):
         ultimo = i == n - 1
         # o texto primeiro: onde ele fica decide até onde o rosto pode descer
-        bloco = compor_texto(pn.get("texto", ""), fam, round(TEXTO[(formato, n)] * s), W - 2 * MARGEM_LADO * s)
-        ref = str(referencia or "").strip() if ultimo else ""
+        bloco = compor_texto(pn.get("texto", ""), fam, round(tam_base * s), W - 2 * MARGEM_LADO * s)
+        ref = (DICA_CAPA if capa else str(referencia or "").strip()) if ultimo else ""
+        sig = str(assinatura or "").strip() if ultimo else ""
         respiro = ph * 0.085
-        tam = bloco["tamanho"] if bloco else round(TEXTO[(formato, n)] * s)
-        alt_ref = tam * 0.52 * 1.9 if ref else 0
+        tam = bloco["tamanho"] if bloco else round(tam_base * s)
+        tam_ref = round(tam * (0.42 if capa else 0.52))
+        tam_sig = max(round(15 * s), round(min(tam, 54 * s) * 0.42))
+        alt_ref = tam_ref * 1.9 if ref else 0
+        alt_sig = tam_sig * 1.75 if sig else 0
         desc = tam * 0.28                                      # o que desce abaixo da linha de base
-        base = ph - respiro - desc - alt_ref
+        base = ph - respiro - desc - alt_ref - alt_sig
         n_l = len(bloco["linhas"]) if bloco else 0
         topo = base - tam * 0.95 - max(0, n_l - 1) * tam * 1.2
-        livre = max(0.3, topo / ph - 0.03) if (bloco or ref) else 0.9
+        livre = max(0.3, topo / ph - 0.03) if (bloco or ref or sig) else 0.9
 
         if pn.get("imagem") is not None:
             img = abrir(pn["imagem"])
@@ -298,12 +328,14 @@ def montar(paineis: list[dict], *, formato="feed", fonte="inter", destaque=None,
                             pn.get("zoom", 1.0), pn.get("x", 0.0), pn.get("y", 0.0), livre=livre)
             painel = img.resize((W, ph), Image.LANCZOS, box=caixa)
             painel = painel.filter(ImageFilter.UnsharpMask(radius=max(0.6, 1.3 * s), percent=50, threshold=3))
+            if pb:
+                painel = preto_e_branco(painel)
         else:
             painel = Image.new("RGB", (W, ph), (36, 36, 40))
         painel = painel.convert("RGBA")
 
-        if bloco or ref:
-            fr_ref = par_de_fontes(fam, round(tam * 0.52))[0] if ref else None
+        if bloco or ref or sig:
+            fr_ref = par_de_fontes(fam, tam_ref)[0] if ref else None
             # degradê: nasce acima do texto e chega à força total na altura dele; mais forte
             # quando o fundo atrás do texto é claro (parede branca, camisa clara)
             faixa = painel.crop((0, max(0, int(topo)), W, ph)).convert("L")
@@ -328,9 +360,19 @@ def montar(paineis: list[dict], *, formato="feed", fonte="inter", destaque=None,
             camada = Image.new("RGBA", (W, ph), (0, 0, 0, 0))
             if bloco:
                 desenhar_texto(camada, bloco, base, W, BRANCO, cor_destaque)
+            d = ImageDraw.Draw(camada)
             if ref:
-                d = ImageDraw.Draw(camada)
-                d.text((W / 2, base + desc + alt_ref * 0.62), ref, font=fr_ref, fill=(255, 255, 255, 215), anchor="ms")
+                y_ref = base + desc + alt_ref * 0.62
+                if capa:                       # "arraste para o lado →", com a seta desenhada
+                    w_seta = tam_ref * 1.25
+                    x_ref = W / 2 - w_seta / 2
+                    d.text((x_ref, y_ref), ref, font=fr_ref, fill=(255, 255, 255, 215), anchor="ms")
+                    _seta(d, x_ref + fr_ref.getlength(ref) / 2 + tam_ref * 0.35, y_ref, tam_ref, (255, 255, 255, 215))
+                else:
+                    d.text((W / 2, y_ref), ref, font=fr_ref, fill=(255, 255, 255, 215), anchor="ms")
+            if sig:
+                fr_sig = par_de_fontes(fam, tam_sig)[0]
+                d.text((W / 2, base + desc + alt_ref + alt_sig * 0.66), sig, font=fr_sig, fill=(255, 255, 255, 180), anchor="ms")
             # sombra macia do texto: segura a leitura quando o fundo é claro
             sombra = Image.new("RGBA", (W, ph), (0, 0, 0, 0))
             sombra.putalpha(camada.getchannel("A").filter(ImageFilter.GaussianBlur(max(2, 7 * s))).point(lambda a: int(a * 0.5)))
