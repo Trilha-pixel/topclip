@@ -16,7 +16,8 @@ trabalhando, e em que ponto de cada etapa. Quatro fontes escrevem aqui:
     recente de cada comando vale. Use `Progresso` para isso.
 
 Toda linha pode levar `etapa` (momentos, cortes, vertical, motion, entrega). Sem ela, o
-painel herda a etapa da notícia anterior.
+painel herda a etapa da notícia anterior. Os posts virais (`./topclip post …`) correm por
+fora da fila de etapas: a linha deles leva `etapa` "posts" e não puxa as outras.
 
 Uso pelo lançador (não precisa chamar à mão):
     atividade.py registrar <projeto> <tipo> [--etapa X] <mensagem...>
@@ -39,7 +40,7 @@ from pathlib import Path
 RAIZ = Path(__file__).resolve().parent.parent
 PROJETOS = RAIZ / "projetos"
 ARQUIVO = "atividade.jsonl"
-ETAPAS = ("momentos", "cortes", "vertical", "motion", "entrega")
+ETAPAS = ("momentos", "cortes", "vertical", "motion", "entrega", "posts")
 ENV_ID = "TOPCLIP_ATIVIDADE"      # o lançador exporta o id do comando: o progresso casa com ele
 
 # O que cada subcomando significa, em português de gente, e a etapa do painel em que cai.
@@ -68,6 +69,14 @@ COMANDOS = {
     "compose.py": ("compondo as cenas do motion", "motion"),
     "render.py": ("montando o vídeo com motion", "motion"),
 }
+# ./topclip post <sub>: os posts virais, que correm por fora das etapas dos clipes
+POSTS = {
+    "texto": "lendo a transcrição para achar as frases dos posts",
+    "transcrever": "transcrevendo o vídeo para os posts",
+    "conferir": "conferindo as frases dos posts",
+    "prints": "escolhendo os prints dos posts",
+    "render": "gravando os posts prontos",
+}
 
 
 def classificar(comando: list[str]) -> dict:
@@ -76,6 +85,9 @@ def classificar(comando: list[str]) -> dict:
     Devolve {"sub": "prepare", "msg": "preparando…", "etapa": "momentos", "clipe": None}.
     `clipe` é o clipe do motion (`.../motion/clip-005/render.py`), quando houver.
     """
+    if comando and comando[0] == "post":
+        nome = comando[1] if len(comando) > 1 else ""
+        return {"sub": f"post:{nome}", "msg": POSTS.get(nome, "posts virais"), "etapa": "posts", "clipe": None}
     sub = msg = etapa = None
     for parte in comando:
         nome = Path(parte).name if parte.endswith(".py") else parte

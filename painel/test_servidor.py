@@ -949,3 +949,105 @@ class EstiloDaPessoa(ComProjetosTemporarios):
         self.assertEqual(status, 400)
         status, _, _ = self.pedir("/api/estilos/limpo/exportar", {"Host": "site-malicioso.com"})
         self.assertEqual(status, 403)
+
+
+class PostsVirais(ComProjetosTemporarios):
+    """A aba Posts virais: ler, salvar, a prévia ao vivo e os downloads, sem vídeo de verdade."""
+
+    pedir = Http.pedir
+
+    def setUp(self):
+        super().setUp()
+        from PIL import Image
+        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), S.Painel)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.base = f"http://127.0.0.1:{self.srv.server_address[1]}"
+        self._orig_atv = S.ATV.PROJETOS
+        S.ATV.PROJETOS = S.PROJETOS
+        S.criar_projeto("Posts", "")
+        self.proj = S.PROJETOS / "posts"
+        pasta = self.proj / "posts"
+        (pasta / "prints" / "mini").mkdir(parents=True)
+        for k, cor in ((1, (120, 110, 100)), (2, (60, 60, 70))):
+            Image.new("RGB", (1920, 1080), cor).save(pasta / "prints" / f"p-000{k}.jpg")
+            Image.new("RGB", (360, 202), cor).save(pasta / "prints" / "mini" / f"p-000{k}.jpg")
+        frase = {"id": "frase-001", "tipo": "contraste", "inicio": 10, "fim": 16, "original": "o trecho",
+                 "partes": {"2": ["Você não está **vendendo um site.**", "Está vendendo **confiança.**"]}}
+        (pasta / "frases.json").write_text(json.dumps({"frases": [frase]}, ensure_ascii=False), encoding="utf-8")
+        q = lambda k, t: {"t": t, "arquivo": f"prints/p-000{k}.jpg", "mini": f"prints/mini/p-000{k}.jpg",
+                          "rosto": [820, 300, 280, 360], "nota": 0.9}
+        (pasta / "prints.json").write_text(json.dumps({
+            "quadros": {"p-0001": q(1, 11), "p-0002": q(2, 15)}, "banco": ["p-0001", "p-0002"],
+            "frases": {"frase-001": {"candidatos": ["p-0001", "p-0002"], "auto": {"2": ["p-0001", "p-0002"]}}}}))
+
+    def tearDown(self):
+        S.ATV.PROJETOS = self._orig_atv
+        self.srv.shutdown()
+        self.srv.server_close()
+        super().tearDown()
+
+    def postar(self, caminho, dados):
+        return self.pedir(caminho, {"Content-Type": "application/json"}, dados)
+
+    def test_le_salva_e_mostra_a_previa(self):
+        status, _, corpo = self.pedir("/api/projetos/posts/posts")
+        self.assertEqual(status, 200)
+        d = json.loads(corpo)
+        self.assertEqual((d["estado"]["formato"], d["estado"]["prints"]["feed"]), ("feed", 2))
+        self.assertEqual(d["frases"][0]["prints"], ["p-0001", "p-0002"])
+        self.assertTrue(d["frases"][0]["tem_prints"])
+        self.assertIn("p-0001", d["quadros"])
+
+        status, _, corpo = self.postar("/api/projetos/posts/posts", {
+            "escolhidas": ["frase-001"], "edicoes": {"frase-001": {"partes": {"2": ["**Outro** texto", "aqui"]}}}})
+        self.assertEqual(status, 200, corpo)
+        self.assertEqual(json.loads(corpo)["frases"][0]["partes"], ["**Outro** texto", "aqui"])
+        status, cab, img = self.pedir("/api/projetos/posts/posts/previa/frase-001.jpg")
+        self.assertEqual((status, cab["Content-Type"]), (200, "image/jpeg"))
+        self.assertEqual(img[:2], b"\xff\xd8")
+
+    def test_baixa_o_png_e_o_zip(self):
+        self.postar("/api/projetos/posts/posts", {"escolhidas": ["frase-001"]})
+        status, cab, png = self.pedir("/api/projetos/posts/posts/baixar/frase-001.png")
+        self.assertEqual(status, 200)
+        self.assertIn("attachment", cab["Content-Disposition"])
+        self.assertEqual(png[:4], b"\x89PNG")
+        self.assertTrue(list((self.proj / "posts" / "prontos").glob("01-*-feed.png")))
+        status, cab, z = self.pedir("/api/projetos/posts/posts/baixar.zip")
+        self.assertEqual((status, z[:2]), (200, b"PK"))
+
+    def test_frase_da_pessoa_sem_frases_do_claude(self):
+        (self.proj / "posts" / "frases.json").unlink()
+        status, _, corpo = self.postar("/api/projetos/posts/posts", {
+            "minhas": [{"id": "minha-1", "partes": {"1": ["O Senhor é o meu pastor; nada me faltará."]}}],
+            "escolhidas": ["minha-1"]})
+        self.assertEqual(status, 200, corpo)
+        f = json.loads(corpo)["frases"][0]
+        self.assertEqual((f["id"], f["minha"], len(f["prints"])), ("minha-1", True, 2))
+        status, _, _ = self.pedir("/api/projetos/posts/posts/previa/minha-1.jpg")
+        self.assertEqual(status, 200)
+
+    def test_recusa_o_que_nao_pode(self):
+        status, _, _ = self.postar("/api/projetos/posts/posts", {"formato": "tiktok"})
+        self.assertEqual(status, 400)
+        status, _, _ = self.pedir("/api/projetos/posts/posts/previa/frase-999.jpg")
+        self.assertEqual(status, 400)
+        status, _, _ = self.pedir("/api/projetos/posts/posts", {"Origin": "https://site-malicioso.com",
+                                                               "Content-Type": "application/json"}, {"formato": "stories"})
+        self.assertEqual(status, 403)
+        status, _, corpo = self.postar("/api/projetos/posts/posts/gerar-prints", {})
+        self.assertEqual(status, 400)                           # projeto sem vídeo
+        self.assertIn("vídeo", json.loads(corpo)["erro"])
+
+    def test_posts_correm_por_fora_das_etapas(self):
+        c = S.ATV.classificar(["post", "prints", "projetos/posts"])
+        self.assertEqual((c["sub"], c["etapa"]), ("post:prints", "posts"))
+        S.ATV.registrar(self.proj, "momentos prontos", tipo="info", etapa="momentos")
+        S.ATV.registrar(self.proj, "prints dos posts prontos", tipo="info", etapa="posts")
+        S.ATV.registrar(self.proj, "sem etapa: herda a dos clipes", tipo="info")
+        a = S.atividade(self.proj)
+        ev = {e["msg"]: e["etapa"] for e in a["eventos"]}
+        self.assertNotIn("prints dos posts prontos", ev)        # a caixa dos clipes não fala dos posts
+        self.assertEqual(ev["sem etapa: herda a dos clipes"], "momentos")
+        S.ATV.registrar(self.proj, "post baixado", tipo="info", etapa="posts")
+        self.assertEqual(S.atividade(self.proj)["eventos"][0]["msg"], "sem etapa: herda a dos clipes")

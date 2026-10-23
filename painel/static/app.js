@@ -461,7 +461,36 @@ function trilhaEtapas(p, ativa) {
   </div>`;
 }
 
+// Clipes (o vídeo cortado, etapa por etapa) ou posts virais (frase + prints): o mesmo vídeo, dois produtos.
+const ICONE_CLIPES = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M10.5 9 L14.5 12 L10.5 15 Z" fill="currentColor"/></svg>`;
+const ICONE_POSTS = `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="2.5" width="16" height="19" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M4 12 H20" stroke="currentColor" stroke-width="2"/><path d="M8 9 H16 M8 18.5 H16" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`;
+
+function cabecaProjeto(p, modo) {
+  return `
+  <a class="voltar" href="#/">← todos os projetos</a>
+  <div class="cabeca-projeto">
+    <div>
+      <h1 class="titulo">${esc(p.nome)}</h1>
+      <div class="caminho">${p.video ? `🎬 ${esc(p.video)}` : p.link ? `🔗 baixando de ${esc(p.link)}` : "sem vídeo definido"}${p.run && modo === "clipes" ? ` · run ${esc(p.run)}` : ""}</div>
+    </div>
+    <div class="cabeca-acoes">
+      <button class="link apagar" data-acao="apagar">apagar projeto</button>
+      <button class="botao claro pequeno" data-acao="abrir">Abrir pasta</button>
+    </div>
+  </div>
+  <nav class="modos" aria-label="O que fazer com este vídeo">
+    <a class="modo ${modo === "clipes" ? "ativo" : ""}" href="#/projeto/${esc(p.slug)}" ${modo === "clipes" ? 'aria-current="page"' : ""}>${ICONE_CLIPES}<span><b>Clipes</b><small>vídeos 9:16 com motion</small></span></a>
+    <a class="modo ${modo === "posts" ? "ativo" : ""}" href="#/projeto/${esc(p.slug)}/posts" ${modo === "posts" ? 'aria-current="page"' : ""}>${ICONE_POSTS}<span><b>Posts virais</b><small>frase + prints do vídeo</small></span></a>
+  </nav>`;
+}
+
+function ligarCabeca(p) {
+  app.querySelector('[data-acao="abrir"]').onclick = () => api(`/api/projetos/${p.slug}/abrir`, { method: "POST" }).catch((e) => aviso(esc(e.message)));
+  app.querySelector('[data-acao="apagar"]').onclick = () => abrirApagarProjeto(p);
+}
+
 async function telaProjeto(slug, etapa) {
+  if (etapa === "posts") return telaPosts(slug);
   const p = await api(`/api/projetos/${encodeURIComponent(slug)}`);
   const ativa = ETAPAS.some((e) => e.id === etapa) ? etapa : p.etapa_atual;
   // o que já saiu (ou está saindo) não volta para a escolha: marcar de novo refaria o trabalho
@@ -475,24 +504,13 @@ async function telaProjeto(slug, etapa) {
   const corpo = { momentos: blocoMomentos, cortes: blocoCortes, vertical: blocoVertical, motion: blocoMotion, entrega: blocoEntrega }[ativa](p, estilos);
 
   app.innerHTML = `
-  <a class="voltar" href="#/">← todos os projetos</a>
-  <div class="cabeca-projeto">
-    <div>
-      <h1 class="titulo">${esc(p.nome)}</h1>
-      <div class="caminho">${p.video ? `🎬 ${esc(p.video)}` : p.link ? `🔗 baixando de ${esc(p.link)}` : "sem vídeo definido"}${p.run ? ` · run ${esc(p.run)}` : ""}</div>
-    </div>
-    <div class="cabeca-acoes">
-      <button class="link apagar" data-acao="apagar">apagar projeto</button>
-      <button class="botao claro pequeno" data-acao="abrir">Abrir pasta</button>
-    </div>
-  </div>
+  ${cabecaProjeto(p, "clipes")}
   ${trilhaEtapas(p, ativa)}
   <section class="atividade papel" id="atividade"><div class="mudo mono">carregando a atividade…</div></section>
   <section class="painel-etapa papel">${corpo}</section>`;
 
   app.querySelectorAll("[data-etapa]").forEach((b) => (b.onclick = () => (location.hash = `#/projeto/${slug}/${b.dataset.etapa}`)));
-  app.querySelector('[data-acao="abrir"]').onclick = () => api(`/api/projetos/${slug}/abrir`, { method: "POST" }).catch((e) => aviso(esc(e.message)));
-  app.querySelector('[data-acao="apagar"]').onclick = () => abrirApagarProjeto(p);
+  ligarCabeca(p);
   ligarEscolhas(p, ativa);
   ligarPaginas();
   ligarMotion();
@@ -1079,6 +1097,524 @@ function acompanharAtividade(slug, etapa, ativa) {
   };
   passo();
   relogio = setInterval(passo, 3000);
+}
+
+// ------------------------------------------------------------------ posts virais
+// A frase dividida em prints do rosto, para o feed (4:5) ou os stories (9:16). O Claude acha as
+// frases (posts/frases.json) e o `./topclip post prints` escolhe os quadros; daqui para a frente é
+// tudo no painel e na hora: escolher, editar, trocar print e fonte, baixar. Cada mudança é salva em
+// posts/posts.json e a prévia é refeita pelo servidor (a mesma arte que sai no PNG).
+const DESTAQUES = [
+  { cor: null, nome: "Só negrito" },
+  { cor: "#FFD43B", nome: "Amarelo" },
+  { cor: "#7DF29B", nome: "Verde" },
+];
+let posts = null;                 // o que o servidor mandou da última vez
+let postsSlug = null;
+let postsVersao = Date.now();     // vai na URL da prévia: muda, a imagem recarrega
+let trocandoPrint = null;         // {fid, i}: a faixa de prints aberta
+let pediuPrintsEm = 0;            // o comando leva um instante para aparecer no diário
+const salvarDepois = {};          // fid -> timer da edição esperando para salvar
+const fontesPost = new Set();
+
+const urlPosts = (resto = "") => `/api/projetos/${encodeURIComponent(postsSlug)}/posts${resto}`;
+const nPrints = () => posts.estado.prints[posts.estado.formato];
+const negritoHTML = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+const tokensDe = (t) => {
+  const saida = [];
+  String(t || "").split("**").forEach((pedaco, i) => pedaco.split(/\s+/).filter(Boolean).forEach((w) => saida.push([w, i % 2 === 1])));
+  return saida;
+};
+const marcarTokens = (toks) => {
+  const partes = [];
+  for (let i = 0; i < toks.length;) {
+    if (toks[i][1]) {
+      let j = i;
+      while (j < toks.length && toks[j][1]) j++;
+      partes.push(`**${toks.slice(i, j).map((t) => t[0]).join(" ")}**`);
+      i = j;
+    } else { partes.push(toks[i][0]); i++; }
+  }
+  return partes.join(" ");
+};
+const semNegrito = (t) => tokensDe(t).map((x) => x[0]).join(" ");
+
+// texto novo digitado: as palavras que continuam no lugar (ou que já estavam em negrito) mantêm o negrito
+function retokenizar(antigo, digitado) {
+  const velhos = tokensDe(antigo);
+  const negritas = new Set(velhos.filter((t) => t[1]).map((t) => t[0]));
+  return marcarTokens(digitado.split(/\s+/).filter(Boolean).map((w, i) =>
+    [w, velhos[i] && velhos[i][0] === w ? velhos[i][1] : negritas.has(w)]));
+}
+
+function carregarFontesPost(lista) {
+  const novas = lista.filter((f) => f.url && !fontesPost.has(f.id));
+  if (!novas.length) return;
+  const css = novas.map((f) => `@font-face{font-family:"post-${f.id}";src:url("${f.url}") format("truetype");font-weight:100 900;font-display:swap}`).join("");
+  const el = document.createElement("style");
+  el.textContent = css;
+  document.head.appendChild(el);
+  novas.forEach((f) => fontesPost.add(f.id));
+}
+
+async function telaPosts(slug) {
+  postsSlug = slug;
+  const [p, dados] = await Promise.all([api(`/api/projetos/${encodeURIComponent(slug)}`), api(`/api/projetos/${encodeURIComponent(slug)}/posts`)]);
+  posts = dados;
+  carregarFontesPost(posts.fontes);
+  app.innerHTML = `${cabecaProjeto(p, "posts")}<section class="painel-etapa papel posts-tela" id="posts"></section>`;
+  ligarCabeca(p);
+  desenharPosts();
+  acompanharPrints();
+}
+
+function desenharPosts() {
+  const caixa = document.getElementById("posts");
+  if (!caixa) return;
+  caixa.innerHTML = blocoPosts();
+  ligarPosts(caixa);
+  barraPosts();
+}
+
+function blocoPosts() {
+  const d = posts, e = d.estado, n = nPrints();
+  const claude = d.frases.filter((f) => !f.minha);
+  const escolhidas = e.escolhidas.map((id) => d.frases.find((f) => f.id === id)).filter(Boolean);
+  const pedido = `faz os posts virais de projetos/${postsSlug}`;
+  const seg = (atual, valor, rotulo, attr) => `<button type="button" class="seg ${atual === valor ? "ativo" : ""}" data-${attr}="${esc(valor)}" aria-pressed="${atual === valor}">${rotulo}</button>`;
+  const icone = (k) => `<svg viewBox="0 0 16 20" aria-hidden="true">${Array.from({ length: k }, (_, i) =>
+    `<rect x="1" y="${1 + i * (18 / k)}" width="14" height="${18 / k - 1.5}" rx="1.2"/>`).join("")}</svg>`;
+  const destaques = [...DESTAQUES, ...(d.cor_da_marca ? [{ cor: d.cor_da_marca, nome: "Cor da marca" }] : [])];
+
+  const status = [];
+  if (d.erro_frases) status.push(`<div class="posts-aviso erro"><b>As frases do Claude têm um problema.</b> ${esc(d.erro_frases)}</div>`);
+  if (d.gerando) {
+    status.push(`<div class="posts-aviso andando"><span class="giro"></span><div><b>Escolhendo os melhores prints do vídeo…</b>
+      <span class="mudo">${esc(d.gerando.msg || "")}</span>${barraPct(d.gerando.pct || 0)}</div></div>`);
+  } else if (d.tem_video && (!d.tem_prints || d.faltam_prints.length)) {
+    const txt = !d.tem_prints
+      ? (claude.length ? "As frases estão prontas, mas os prints ainda não foram escolhidos." : "Para escrever as suas frases, o painel precisa antes escolher os melhores rostos do vídeo.")
+      : `${d.faltam_prints.length} ${d.faltam_prints.length === 1 ? "frase nova ainda não tem prints" : "frases novas ainda não têm prints"}.`;
+    status.push(`<div class="posts-aviso"><div><b>${esc(txt)}</b> <span class="mudo">Leva cerca de meio minuto num vídeo de meia hora.</span></div>
+      <button class="botao pequeno" data-gerar-prints>Escolher os prints agora</button></div>`);
+  } else if (!d.tem_video) {
+    status.push(`<div class="posts-aviso"><b>Não achei o vídeo deste projeto.</b> <span class="mudo">Sem ele não dá para tirar os prints — confira o caminho em projeto.json ou espere o download terminar.</span></div>`);
+  }
+
+  return `
+  <div class="secao-topo"><div>
+    <h2 class="subtitulo">Posts virais</h2>
+    <p class="explica">A frase dividida em prints do rosto, como os posts de frase que viralizam. Escolha as frases, ajuste o texto e baixe — tudo aqui, na hora.</p>
+  </div></div>
+
+  <div class="posts-ajustes">
+    <div class="ajuste"><span class="ajuste-rotulo">Formato</span>
+      <div class="segmentado">${Object.entries(d.formatos).map(([k, f]) => seg(e.formato, k, `${esc(f.nome)}<small>${f.largura}×${f.altura}</small>`, "formato")).join("")}</div></div>
+    <div class="ajuste"><span class="ajuste-rotulo">Prints</span>
+      <div class="segmentado prints">${[1, 2, 3].map((k) => seg(n, k, `${icone(k)}<span>${k}</span>`, "prints")).join("")}</div></div>
+    <div class="ajuste larga"><span class="ajuste-rotulo">Fonte</span>
+      <div class="chips-post">${d.fontes.map((f) => `<button type="button" class="chip fonte ${e.fonte === f.id ? "ativo" : ""}" data-fonte="${esc(f.id)}" style="font-family:'post-${esc(f.id)}',var(--texto)"><span class="aa">Aa</span>${esc(f.nome)}${f.marca ? `<small>da sua marca</small>` : ""}</button>`).join("")}</div></div>
+    <div class="ajuste"><span class="ajuste-rotulo">Palavras em destaque</span>
+      <div class="chips-post">${destaques.map((x) => `<button type="button" class="chip ${(e.destaque || null) === x.cor ? "ativo" : ""}" data-destaque="${esc(x.cor || "")}"><span class="bolinha" style="background:${x.cor || "#fff"}"></span>${esc(x.nome)}</button>`).join("")}</div></div>
+  </div>
+  ${e.formato === "feed" && n === 3 ? `<p class="explica dica-ajuste">3 prints no feed ficam baixinhos (1080×450): funciona melhor com o rosto bem de perto.</p>` : ""}
+  ${e.formato === "stories" ? `<p class="explica dica-ajuste">Nos stories, o texto do último print sobe sozinho para não ficar embaixo da caixa de resposta.</p>` : ""}
+
+  ${status.join("")}
+
+  <div class="posts-passo">
+    <h3 class="subtitulo"><span class="passo-num">1</span> Escolha as frases ${claude.length ? `<span class="mudo">(${claude.length} do vídeo)</span>` : ""}</h3>
+    ${claude.length ? `<p class="explica">O Claude separou as frases que funcionam sozinhas, já divididas em ${n} ${n === 1 ? "parte" : "partes"}. Marque as que viram post.</p>` : ""}
+  </div>
+  ${!claude.length && !d.erro_frases ? `<div class="posts-vazio">
+      <p class="explica">${d.tem_transcricao ? "A transcrição já existe: falta o Claude escolher as frases." : "O Claude transcreve o vídeo e escolhe as frases mais fortes."} Peça a ele:</p>
+      ${comando(pedido)}
+      <p class="explica">Ou escreva a sua frase agora — um salmo, uma frase sua — e use os prints do vídeo.</p></div>` : ""}
+  <div class="frases-grade">
+    ${d.frases.map(cartaoFrase).join("")}
+    <button type="button" class="frase-nova" data-nova-frase><span class="mais">+</span><b>Escrever minha frase</b><span class="mudo">um salmo, uma frase sua, uma citação</span></button>
+  </div>
+
+  <div class="posts-passo" id="seus-posts">
+    <h3 class="subtitulo"><span class="passo-num">2</span> Seus posts ${escolhidas.length ? `<span class="mudo">(${escolhidas.length})</span>` : ""}</h3>
+    ${escolhidas.length ? `<p class="explica">Clique numa palavra para pôr ou tirar o negrito. Arraste a foto da prévia para reposicionar; troque o print clicando na miniatura.</p>`
+      : `<p class="explica">Marque uma frase acima e o post aparece aqui.</p>`}
+  </div>
+  <div class="posts-lista">${escolhidas.map(editorPost).join("")}</div>`;
+}
+
+function cartaoFrase(f) {
+  const sim = posts.estado.escolhidas.includes(f.id);
+  return `
+  <article class="frase-cartao ${sim ? "escolhida" : ""} ${f.minha ? "minha" : ""}" data-frase="${esc(f.id)}" role="checkbox" aria-checked="${sim}" tabindex="0">
+    <div class="frase-topo">
+      ${f.minha ? `<span class="tag forte">sua frase</span>` : f.tipo_nome ? `<span class="tag forte">${esc(f.tipo_nome)}</span>` : ""}
+      ${f.inicio ? `<span class="tempo">${esc(f.inicio)}</span>` : ""}
+      ${f.editada ? `<span class="tag">editada</span>` : ""}
+      <span class="marcar">${VISTO}</span>
+    </div>
+    <ol class="frase-partes">${f.partes.map((t) => `<li><span>${negritoHTML(t)}</span></li>`).join("")}</ol>
+    ${f.original && !f.minha ? `<details class="detalhe"><summary>o que foi dito</summary><p>${esc(f.original)}</p>${f.porque ? `<p class="mudo">por que funciona: ${esc(f.porque)}</p>` : ""}</details>` : ""}
+  </article>`;
+}
+
+function editorPost(f) {
+  const d = posts, e = d.estado, fmt = d.formatos[e.formato];
+  const q = (pid) => d.quadros[pid];
+  return `
+  <article class="post-editor" data-post="${esc(f.id)}">
+    <div class="post-previa" style="aspect-ratio:${fmt.largura}/${fmt.altura}" title="arraste para reposicionar a foto">
+      <img src="${urlPosts(`/previa/${f.id}.jpg?v=${postsVersao}`)}" alt="Prévia do post" draggable="false">
+    </div>
+    <div class="post-campos">
+      <div class="post-cabeca">
+        <div>${f.minha ? `<span class="tag forte">sua frase</span>` : f.tipo_nome ? `<span class="tag forte">${esc(f.tipo_nome)}</span>` : ""} ${f.inicio ? `<span class="tempo">${esc(f.inicio)}</span>` : ""}</div>
+        <button class="botao pequeno" data-baixar="${esc(f.id)}">Baixar PNG</button>
+      </div>
+      ${f.partes.map((t, i) => `
+      <div class="post-parte" data-parte="${i}">
+        <button type="button" class="post-mini ${trocandoPrint && trocandoPrint.fid === f.id && trocandoPrint.i === i ? "aberto" : ""}" data-trocar="${i}" title="trocar o print">
+          ${q(f.prints[i]) ? `<img src="${q(f.prints[i]).mini}" alt="">` : `<span>sem print</span>`}<small>trocar</small></button>
+        <div class="post-texto">
+          <label class="ajuste-rotulo" for="t-${esc(f.id)}-${i}">Print ${i + 1}</label>
+          <input id="t-${esc(f.id)}-${i}" type="text" value="${esc(semNegrito(t))}" data-texto="${i}" autocomplete="off" spellcheck="true">
+          <div class="palavras" data-palavras="${i}">${tokensDe(t).map(([w, b], k) => `<button type="button" class="palavra ${b ? "negrito" : ""}" data-w="${k}">${esc(w)}</button>`).join("")}</div>
+        </div>
+        <div class="post-zoom" role="group" aria-label="Zoom do print ${i + 1}">
+          <button type="button" data-zoom="1" data-i="${i}" title="aproximar">+</button>
+          <button type="button" data-zoom="-1" data-i="${i}" title="afastar">−</button>
+        </div>
+      </div>
+      ${trocandoPrint && trocandoPrint.fid === f.id && trocandoPrint.i === i ? faixaPrints(f, i) : ""}`).join("")}
+      <div class="campo post-ref">
+        <label for="r-${esc(f.id)}">Referência <small class="mudo">(opcional — aparece pequena no último print)</small></label>
+        <input id="r-${esc(f.id)}" type="text" value="${esc(f.referencia)}" data-referencia placeholder="ex.: Salmos 23:1" maxlength="80">
+      </div>
+      <div class="post-rodape">
+        ${f.editada ? `<button class="link" data-restaurar>voltar ao ${f.minha ? "texto que você escreveu" : "texto do Claude"}</button>` : "<span></span>"}
+        ${f.minha ? `<button class="link apagar" data-apagar-minha>apagar esta frase</button>` : `<button class="link" data-tirar>tirar dos posts</button>`}
+      </div>
+    </div>
+  </article>`;
+}
+
+function faixaPrints(f, i) {
+  const d = posts;
+  const usado = f.prints[i];
+  const mini = (pid) => d.quadros[pid] ? `<button type="button" class="faixa-print ${pid === usado ? "ativo" : ""}" data-usar="${esc(pid)}" title="${esc(d.quadros[pid].t)}${d.quadros[pid].sorrindo ? " · sorrindo" : ""}"><img src="${d.quadros[pid].mini}" alt="" loading="lazy"><small>${esc(d.quadros[pid].t)}</small></button>` : "";
+  const perto = f.candidatos.filter((p) => d.quadros[p]);
+  const banco = d.banco.filter((p) => !perto.includes(p));
+  return `
+  <div class="faixa" data-faixa>
+    ${perto.length ? `<div class="faixa-rotulo">perto da frase</div><div class="faixa-linha">${perto.map(mini).join("")}</div>` : ""}
+    ${banco.length ? `<div class="faixa-rotulo">do vídeo todo</div><div class="faixa-linha">${banco.map(mini).join("")}</div>` : ""}
+    ${!perto.length && !banco.length ? `<p class="explica">Ainda não há prints. Use “Escolher os prints agora” lá em cima.</p>` : ""}
+  </div>`;
+}
+
+// a edição de uma frase como o servidor guarda: só o que a pessoa mudou
+function edicaoDe(fid) {
+  const ed = posts.estado.edicoes[fid];
+  return { partes: { ...(ed?.partes || {}) }, prints: { ...(ed?.prints || {}) }, ajustes: { ...(ed?.ajustes || {}) }, referencia: ed?.referencia ?? null };
+}
+
+async function salvarPosts(dados, redesenhar = true) {
+  try {
+    const r = await api(urlPosts(), { method: "POST", body: dados });
+    posts = r;
+    postsVersao = Date.now();
+    if (redesenhar) desenharPosts();
+    return true;
+  } catch (err) {
+    aviso(`<b>Não salvou:</b> ${esc(err.message)}`);
+    return false;
+  }
+}
+
+// salva a edição de uma frase sem redesenhar a tela (o cursor fica onde está) e recarrega a prévia
+function salvarEdicao(fid, ed, imediato = false) {
+  clearTimeout(salvarDepois[fid]);
+  posts.estado.edicoes[fid] = ed;
+  const enviar = async () => {
+    delete salvarDepois[fid];
+    const ref = ed.referencia;
+    const ok = await salvarPosts({ edicoes: { [fid]: { ...ed, referencia: ref ?? (posts.frases.find((f) => f.id === fid) || {}).referencia ?? "" } } }, false);
+    if (!ok) return;
+    const el = app.querySelector(`[data-post="${CSS.escape(fid)}"]`);
+    const f = posts.frases.find((x) => x.id === fid);
+    if (!el || !f) return;
+    const img = el.querySelector(".post-previa img");
+    img.src = urlPosts(`/previa/${fid}.jpg?v=${postsVersao}`);
+    el.querySelector(".post-rodape").outerHTML = editorPost(f).match(/<div class="post-rodape">[\s\S]*?<\/div>/)[0];
+    ligarRodape(el, f);
+    const cartao = app.querySelector(`[data-frase="${CSS.escape(fid)}"]`);
+    if (cartao) { cartao.outerHTML = cartaoFrase(f); ligarCartoes(); }
+  };
+  if (imediato) return enviar();
+  salvarDepois[fid] = setTimeout(enviar, 450);
+}
+
+async function terminarSalvamentos() {
+  const pendentes = Object.keys(salvarDepois);
+  for (const fid of pendentes) {
+    clearTimeout(salvarDepois[fid]);
+    await salvarEdicao(fid, posts.estado.edicoes[fid], true);
+  }
+}
+
+function ligarCartoes() {
+  app.querySelectorAll("[data-frase]").forEach((c) => {
+    const alternar = () => {
+      const lista = [...posts.estado.escolhidas];
+      const i = lista.indexOf(c.dataset.frase);
+      if (i >= 0) lista.splice(i, 1); else lista.push(c.dataset.frase);
+      salvarPosts({ escolhidas: lista }).then((ok) => {
+        if (ok && i < 0) aviso(`<b>Post criado.</b> Ajuste lá embaixo, em “Seus posts”.`, 2200);
+      });
+    };
+    c.onclick = (ev) => { if (!ev.target.closest("details, a")) alternar(); };
+    c.onkeydown = (ev) => { if (ev.target === c && (ev.key === " " || ev.key === "Enter")) { ev.preventDefault(); alternar(); } };
+  });
+}
+
+function ligarRodape(el, f) {
+  el.querySelector("[data-restaurar]")?.addEventListener("click", () => salvarPosts({ edicoes: { [f.id]: null } }));
+  el.querySelector("[data-tirar]")?.addEventListener("click", () => salvarPosts({ escolhidas: posts.estado.escolhidas.filter((x) => x !== f.id) }));
+  el.querySelector("[data-apagar-minha]")?.addEventListener("click", () => {
+    if (!confirm("Apagar esta frase sua?")) return;
+    salvarPosts({ minhas: posts.estado.minhas.filter((m) => m.id !== f.id),
+                  escolhidas: posts.estado.escolhidas.filter((x) => x !== f.id), edicoes: { [f.id]: null } });
+  });
+}
+
+function ligarPosts(caixa) {
+  const e = posts.estado;
+  caixa.querySelectorAll("[data-formato]").forEach((b) => (b.onclick = () => b.dataset.formato !== e.formato && salvarPosts({ formato: b.dataset.formato })));
+  caixa.querySelectorAll("[data-prints]").forEach((b) => (b.onclick = () => Number(b.dataset.prints) !== nPrints() && salvarPosts({ prints: { [e.formato]: Number(b.dataset.prints) } })));
+  caixa.querySelectorAll("[data-fonte]").forEach((b) => (b.onclick = () => b.dataset.fonte !== e.fonte && salvarPosts({ fonte: b.dataset.fonte })));
+  caixa.querySelectorAll("[data-destaque]").forEach((b) => (b.onclick = () => salvarPosts({ destaque: b.dataset.destaque || null })));
+  caixa.querySelector("[data-gerar-prints]")?.addEventListener("click", async (ev) => {
+    ev.target.disabled = true;
+    ev.target.textContent = "Começando…";
+    try {
+      await api(urlPosts("/gerar-prints"), { method: "POST" });
+      pediuPrintsEm = Date.now();
+      posts.gerando = { msg: "começando…", pct: 0 };
+      desenharPosts();
+    } catch (err) {
+      aviso(`<b>Não deu para começar:</b> ${esc(err.message)}`);
+      ev.target.disabled = false;
+      ev.target.textContent = "Escolher os prints agora";
+    }
+  });
+  caixa.querySelector("[data-nova-frase]")?.addEventListener("click", abrirNovaFrase);
+  ligarCartoes();
+
+  caixa.querySelectorAll("[data-post]").forEach((el) => {
+    const fid = el.dataset.post;
+    const f = () => posts.frases.find((x) => x.id === fid);
+    const n = nPrints(), chaveAj = `${e.formato}-${n}`;
+    const partesAgora = () => [...f().partes];
+
+    el.querySelectorAll("[data-texto]").forEach((inp) => inp.addEventListener("input", () => {
+      const i = Number(inp.dataset.texto);
+      const partes = partesAgora();
+      partes[i] = retokenizar(partes[i], inp.value);
+      f().partes = partes;
+      const ed = edicaoDe(fid);
+      ed.partes[String(n)] = partes;
+      el.querySelector(`[data-palavras="${i}"]`).innerHTML = tokensDe(partes[i]).map(([w, b], k) => `<button type="button" class="palavra ${b ? "negrito" : ""}" data-w="${k}">${esc(w)}</button>`).join("");
+      salvarEdicao(fid, ed);
+    }));
+    el.querySelectorAll("[data-palavras]").forEach((box) => box.addEventListener("click", (ev) => {
+      const b = ev.target.closest("[data-w]");
+      if (!b) return;
+      const i = Number(box.dataset.palavras), k = Number(b.dataset.w);
+      const partes = partesAgora();
+      const toks = tokensDe(partes[i]);
+      toks[k][1] = !toks[k][1];
+      partes[i] = marcarTokens(toks);
+      f().partes = partes;
+      b.classList.toggle("negrito", toks[k][1]);
+      const ed = edicaoDe(fid);
+      ed.partes[String(n)] = partes;
+      salvarEdicao(fid, ed);
+    }));
+    el.querySelector("[data-referencia]").addEventListener("input", (ev) => {
+      const ed = edicaoDe(fid);
+      ed.referencia = ev.target.value;
+      f().referencia = ev.target.value;
+      salvarEdicao(fid, ed);
+    });
+    el.querySelectorAll("[data-zoom]").forEach((b) => (b.onclick = () => {
+      const i = Number(b.dataset.i);
+      const ed = edicaoDe(fid);
+      const aj = (ed.ajustes[chaveAj] || f().ajustes).map((a) => ({ ...a }));
+      aj[i].zoom = Math.max(0.6, Math.min(2.5, Math.round((aj[i].zoom * (Number(b.dataset.zoom) > 0 ? 1.12 : 1 / 1.12)) * 100) / 100));
+      ed.ajustes[chaveAj] = aj;
+      f().ajustes = aj;
+      salvarEdicao(fid, ed, true);
+    }));
+    el.querySelectorAll("[data-trocar]").forEach((b) => (b.onclick = () => {
+      const i = Number(b.dataset.trocar);
+      trocandoPrint = trocandoPrint && trocandoPrint.fid === fid && trocandoPrint.i === i ? null : { fid, i };
+      desenharPosts();
+      app.querySelector(`[data-post="${CSS.escape(fid)}"] [data-faixa]`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }));
+    el.querySelectorAll("[data-usar]").forEach((b) => (b.onclick = async () => {
+      const i = trocandoPrint.i;
+      const ed = edicaoDe(fid);
+      const pr = [...f().prints];
+      pr[i] = b.dataset.usar;
+      ed.prints[String(n)] = pr;
+      // print novo: o zoom e a posição do antigo não servem mais
+      if (ed.ajustes[chaveAj]) { ed.ajustes[chaveAj] = ed.ajustes[chaveAj].map((a, k) => (k === i ? { zoom: 1, x: 0, y: 0 } : a)); }
+      posts.estado.edicoes[fid] = ed;
+      await salvarPosts({ edicoes: { [fid]: { ...ed, referencia: ed.referencia ?? f().referencia ?? "" } } });
+    }));
+    el.querySelector("[data-baixar]").onclick = async () => {
+      await terminarSalvamentos();
+      location.href = urlPosts(`/baixar/${fid}.png`);
+    };
+    ligarRodape(el, f());
+    ligarArrastar(el, fid, chaveAj, n, f);
+  });
+}
+
+// arrastar a foto na prévia: o print sob o mouse anda junto (a prévia é refeita ao soltar)
+function ligarArrastar(el, fid, chaveAj, n, f) {
+  const caixa = el.querySelector(".post-previa");
+  const img = caixa.querySelector("img");
+  let ini = null;
+  caixa.addEventListener("pointerdown", (ev) => {
+    if (ev.button > 0) return;
+    const r = caixa.getBoundingClientRect();
+    const i = Math.min(n - 1, Math.floor(((ev.clientY - r.top) / r.height) * n));
+    // uma janela só do print arrastado, com uma cópia da prévia dentro: os outros prints ficam parados
+    const janela = document.createElement("div");
+    janela.className = "post-arraste";
+    janela.style.cssText = `top:${(i * 100) / n}%;height:${100 / n}%`;
+    const copia = img.cloneNode();
+    copia.style.cssText = `top:${-i * 100}%;height:${n * 100}%`;
+    janela.appendChild(copia);
+    caixa.appendChild(janela);
+    ini = { x: ev.clientX, y: ev.clientY, i, w: r.width, h: r.height / n, janela, copia };
+    caixa.setPointerCapture(ev.pointerId);
+    caixa.classList.add("arrastando");
+  });
+  caixa.addEventListener("pointermove", (ev) => {
+    if (ini) ini.copia.style.transform = `translate(${ev.clientX - ini.x}px, ${ev.clientY - ini.y}px)`;
+  });
+  const soltar = (ev) => {
+    if (!ini) return;
+    const dx = (ev.clientX - ini.x) / ini.w, dy = (ev.clientY - ini.y) / ini.h;
+    const { i, janela } = ini;
+    ini = null;
+    caixa.classList.remove("arrastando");
+    if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) { janela.remove(); return; }
+    const ed = edicaoDe(fid);
+    const aj = (ed.ajustes[chaveAj] || f().ajustes).map((a) => ({ ...a }));
+    // a foto anda com o mouse: o recorte anda ao contrário
+    aj[i].x = Math.max(-0.8, Math.min(0.8, aj[i].x - dx));
+    aj[i].y = Math.max(-0.8, Math.min(0.8, aj[i].y - dy));
+    ed.ajustes[chaveAj] = aj;
+    f().ajustes = aj;
+    img.addEventListener("load", () => janela.remove(), { once: true });
+    setTimeout(() => janela.remove(), 4000);
+    salvarEdicao(fid, ed, true);
+  };
+  caixa.addEventListener("pointerup", soltar);
+  caixa.addEventListener("pointercancel", soltar);
+}
+
+function barraPosts() {
+  esconderBarra();
+  const n = posts.estado.escolhidas.length;
+  if (!n) return;
+  const barra = document.createElement("div");
+  barra.className = "barra-acao visivel";
+  barra.innerHTML = `<span class="conta"><b>${n}</b> ${n === 1 ? "post" : "posts"} · ${esc(posts.formatos[posts.estado.formato].nome)}</span>
+    <button class="botao pequeno" data-zip>Baixar ${n === 1 ? "o post" : `os ${n}`} (PNG)</button>`;
+  document.body.appendChild(barra);
+  barra.querySelector("[data-zip]").onclick = async () => {
+    await terminarSalvamentos();
+    location.href = n === 1 ? urlPosts(`/baixar/${posts.estado.escolhidas[0]}.png`) : urlPosts("/baixar.zip");
+    aviso(`<b>Baixando.</b> Os PNG também ficam em <span class="mono">projetos/${esc(postsSlug)}/posts/prontos/</span>.`, 4200);
+  };
+}
+
+function abrirNovaFrase() {
+  const fundo = document.createElement("div");
+  fundo.className = "modal-fundo";
+  fundo.innerHTML = `
+  <div class="modal papel fita" role="dialog" aria-modal="true" aria-labelledby="nova-frase-titulo">
+    <h2 class="titulo" id="nova-frase-titulo">Sua frase</h2>
+    <p class="explica">Escreva inteira: o painel divide em ${nPrints()} ${nPrints() === 1 ? "parte" : "partes"} e usa os melhores rostos do vídeo. Depois dá para ajustar tudo.</p>
+    <div class="campo"><label for="nf-texto">Frase</label>
+      <textarea id="nf-texto" rows="3" maxlength="280" placeholder="O Senhor é o meu pastor; nada me faltará."></textarea></div>
+    <div class="campo"><label for="nf-ref">Referência <small class="mudo">(opcional)</small></label>
+      <input id="nf-ref" type="text" maxlength="80" placeholder="Salmos 23:1"></div>
+    <div class="erro" data-erro hidden></div>
+    <div class="modal-acoes">
+      <button type="button" class="botao claro" data-fechar>Cancelar</button>
+      <button type="button" class="botao" data-criar>Criar post</button>
+    </div>
+  </div>`;
+  document.body.appendChild(fundo);
+  const fechar = () => fundo.remove();
+  fundo.addEventListener("click", (ev) => { if (ev.target === fundo || ev.target.closest("[data-fechar]")) fechar(); });
+  const texto = fundo.querySelector("#nf-texto");
+  texto.focus();
+  fundo.querySelector("[data-criar]").onclick = async () => {
+    const t = texto.value.replace(/\s+/g, " ").trim();
+    if (!t) { const er = fundo.querySelector("[data-erro]"); er.hidden = false; er.textContent = "Escreva a frase."; return; }
+    const usados = posts.estado.minhas.map((m) => Number(m.id.split("-")[1]) || 0);
+    const id = `minha-${Math.max(0, ...usados) + 1}`;
+    const ref = fundo.querySelector("#nf-ref").value.trim();
+    const ok = await salvarPosts({
+      minhas: [...posts.estado.minhas, { id, partes: { 1: [t] } }],
+      escolhidas: [...posts.estado.escolhidas, id],
+      edicoes: { [id]: { partes: {}, prints: {}, ajustes: {}, referencia: ref } },
+    });
+    if (ok) {
+      fechar();
+      app.querySelector(`[data-post="${CSS.escape(id)}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+  };
+}
+
+// A tela acompanha sozinha o que chega de fora: os prints sendo escolhidos (pelo botão ou pelo
+// Claude no terminal) e as frases novas que o Claude grava. Redesenha só quando muda o que se
+// vê — e nunca no meio de uma edição.
+const assinaturaPosts = (d) => JSON.stringify([d.frases.map((f) => f.id), d.tem_prints, d.faltam_prints, !!d.gerando, d.banco.length, d.erro_frases]);
+
+function acompanharPrints() {
+  clearInterval(relogio);
+  relogio = setInterval(async () => {
+    if (!posts || document.querySelector(".modal-fundo")) return;
+    const r = await api(urlPosts()).catch(() => null);
+    if (!r || !posts) return;
+    if (!r.gerando && posts.gerando && Date.now() - pediuPrintsEm < 8000 && (!r.tem_prints || r.faltam_prints.length)) r.gerando = posts.gerando;
+    const editando = Object.keys(salvarDepois).length || document.activeElement?.closest?.("#posts input, #posts textarea");
+    if (assinaturaPosts(r) !== assinaturaPosts(posts)) {
+      if (editando) return;                          // espera a pessoa sair do campo
+      const terminou = posts.gerando && !r.gerando;
+      posts = r;
+      postsVersao = Date.now();
+      desenharPosts();
+      if (terminou) aviso("<b>Prints prontos.</b>");
+      return;
+    }
+    if (r.gerando) {
+      posts.gerando = r.gerando;
+      const caixa = app.querySelector(".posts-aviso.andando");
+      if (caixa) {
+        caixa.querySelector(".mudo").textContent = r.gerando.msg || "";
+        const barra = caixa.querySelector(".ativ-barra i");
+        if (barra) barra.style.width = `${r.gerando.pct || 0}%`;
+      }
+    }
+  }, 3000);
 }
 
 // ------------------------------------------------------------------ biblioteca

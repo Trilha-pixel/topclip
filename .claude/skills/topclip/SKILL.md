@@ -46,6 +46,7 @@ projetos/<nome>/
   runs/            as runs da topclip-corte (--workspace aponta aqui)
   motion/<clipe>/  um projeto da topclip-motion por clipe aprovado
   entregas/        os masters finais, um .mp4 por clipe
+  posts/           os posts virais (skill topclip-post): frases, prints, escolhas do painel
 ```
 
 **Chamado com uma pasta** (`/topclip projetos/<nome>`): o projeto já existe, criado
@@ -196,6 +197,15 @@ Copie cada master verificado (`12_master/MASTER_v01.mp4` — nunca o `RASCUNHO.m
 que é só para revisão) para `projetos/<nome>/entregas/<clipe>.mp4` e mostre a
 lista ao usuário com duração e o caminho de cada um. Não declare sucesso sem a
 verificação do master (duração, cadência e MD5 do áudio contra a fonte).
+
+## Posts virais — skill `topclip-post`
+
+O mesmo vídeo vira também posts de imagem: frases fortes da transcrição, cada uma
+dividida em 2 ou 3 prints do rosto, para o feed (4:5) ou os stories (9:16). Quando a
+pessoa pedir ("faz os posts virais", "post de frase"), invoque a skill `topclip-post`.
+Com a run de cortes feita, ela reaproveita a transcrição (`02-transcript.json`) e roda
+em paralelo com o resto. O Claude só escolhe as frases; a pessoa escolhe, edita e baixa
+no painel, na aba **Posts virais** do projeto.
 
 ## O que nunca fazer
 

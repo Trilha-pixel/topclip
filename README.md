@@ -27,6 +27,7 @@ editorial com legenda queimada. Tudo rodando no seu computador, comandado pelo C
 | 📱 **Deixa vertical** | Enquadramento 9:16 que segue **quem está falando** (movimento da boca cruzado com o áudio), não o maior rosto. |
 | 🎨 **Coloca motion** | Cenas no estilo **TopClip Papel** — papel marfim, fita crepe, anotação à mão — ancoradas na palavra exata da fala. |
 | 💬 **Legenda queimada** | Palavra a palavra, sincronizada, com destaque só onde importa. |
+| 🖼️ **Posts virais** | As frases mais fortes do vídeo divididas em 2 ou 3 prints do rosto, com as palavras-chave em negrito — para o feed (4:5) ou os stories (9:16). |
 | 🧠 **100% Claude** | Os assets do motion são desenhados em código pelo próprio Claude. Sem gerador de imagem pago, sem API extra. |
 | 🖥️ **Painel no navegador** | Escolha momentos e cortes clicando, assista as prévias e acompanhe cada projeto — sem precisar entender de código. |
 
@@ -68,6 +69,7 @@ Ou chame direto:
 | `/topclip video.mp4` | o fluxo inteiro: cortes → vertical → motion → entrega |
 | `/topclip-corte video.mp4` | só os cortes verticais, sem motion |
 | `/topclip-motion` | só o motion e a legenda, num clipe vertical que já existe |
+| `/topclip-post` | posts de imagem: 14 frases do vídeo, cada uma com prints do rosto |
 
 Em cada etapa o Claude **para e mostra o resultado** antes de seguir: primeiro a lista
 de momentos, cada um com uma nota estimada, depois os cortes para você assistir,
@@ -88,6 +90,12 @@ Ele abre no navegador (`http://127.0.0.1:7777`) e mostra seus projetos, os momen
 o Claude encontrou (em ordem de nota), as prévias dos cortes e os clipes prontos. Você **marca o que quer**
 ali mesmo e volta ao Claude dizendo *"escolhi no painel, pode seguir"*. Ainda não tem
 projeto? Clique em **Ver um exemplo**.
+
+Em cada projeto, a aba **Posts virais** mostra as frases que o Claude separou. Você marca
+as que viram post, edita o texto, clica nas palavras para pôr negrito, troca o print, a
+fonte, o formato (feed ou stories) e o número de prints, e baixa o PNG — a arte muda na
+hora, sem voltar ao Claude. Dá para escrever a sua própria frase (um salmo, uma citação)
+e usar os melhores rostos do vídeo.
 
 Para começar um projeto, clique em **Novo projeto** e escolha o vídeo pelo Finder — ou
 simplesmente arraste o arquivo para o painel. Nada é copiado nem enviado: o painel só

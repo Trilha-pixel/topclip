@@ -1008,6 +1008,152 @@ def para_lixeira(p: Path) -> None:
         raise ValueError("Não consegui mandar para a Lixeira" + (f": {detalhe[-1]}" if detalhe else "."))
 
 
+# ------------------------------------------------------------------ posts virais
+# Frase + prints do vídeo, para o feed e os stories. Quem acha as frases é o Claude (skill
+# topclip-post, posts/frases.json); quem escolhe os prints é o `./topclip post prints`. O
+# resto acontece aqui, sem esperar o Claude: a pessoa escolhe as frases, edita o texto,
+# troca o print e a fonte, e a arte sai na hora (lib/projeto.py e lib/arte.py da skill).
+POST_LIB = RAIZ / ".claude" / "skills" / "topclip-post" / "lib"
+POST_FONTES = POST_LIB.parent / "fontes"
+_arte = threading.Lock()            # a FreeType não é segura entre threads: uma arte por vez
+
+
+def modulo_posts():
+    lib = str(POST_LIB)
+    if lib not in sys.path:
+        sys.path.insert(0, lib)
+    import projeto as PJ
+    return PJ
+
+
+def _gerando_prints(proj: Path) -> dict | None:
+    """O `./topclip post prints` deste projeto, se estiver rodando: a mensagem e o %. Lê só
+    o diário (a `atividade()` inteira olha a run toda e pesa na prévia ao vivo)."""
+    aberto, prog = None, None
+    for e in ATV.ler(proj, ultimas=400):
+        if e.get("sub") == "post:prints" and e.get("tipo") == "inicio":
+            aberto, prog = e, None
+        elif aberto and e.get("id") == aberto.get("id") and e.get("tipo") in ("fim", "erro"):
+            aberto = None
+        elif aberto and e.get("tipo") == "progresso" and e.get("etapa") == "posts":
+            prog = e
+    if not aberto or not _pid_vivo(aberto.get("pid")):
+        return None
+    return {"msg": (prog or aberto).get("msg"), "pct": (prog or {}).get("pct")}
+
+
+def posts_do_projeto(proj: Path) -> dict:
+    PJ = modulo_posts()
+    estado = PJ.ler_estado(proj)
+    frases, avisos, erro = PJ.ler_frases(proj)
+    doc = PJ.ler_prints(proj)
+    quadros = doc.get("quadros") or {}
+    lista = []
+    for f in frases + [{**m, "minha": True} for m in estado["minhas"]]:
+        m = PJ.montagem(proj, f, estado, doc)
+        ed = estado["edicoes"].get(f["id"]) or {}
+        lista.append({
+            "id": f["id"], "minha": bool(f.get("minha")), "tipo": f.get("tipo"),
+            "tipo_nome": PJ.F.TIPOS.get(f.get("tipo"), f.get("tipo") or ""),
+            "original": f.get("original", ""), "porque": f.get("porque", ""),
+            "inicio": mmss(f["inicio"]) if isinstance(f.get("inicio"), (int, float)) else None,
+            "partes": m["partes"], "prints": m["prints"], "referencia": m["referencia"],
+            "ajustes": [{"zoom": p["zoom"], "x": p["x"], "y": p["y"]} for p in m["paineis"]],
+            "candidatos": ((doc.get("frases") or {}).get(f["id"]) or {}).get("candidatos", []),
+            "tem_prints": f["id"] in (doc.get("frases") or {}) or bool(f.get("minha")),
+            "editada": bool(ed.get("partes") or ed.get("prints") or ed.get("referencia")),
+        })
+    pasta = PJ.pasta(proj)
+    video = PJ.video_do_projeto(proj)
+    return {
+        "estado": estado, "frases": lista, "erro_frases": erro, "avisos": avisos,
+        "quadros": {pid: {"mini": url_midia(pasta / q["mini"]), "t": mmss(q.get("t")), "sorrindo": q.get("sorrindo", False)}
+                    for pid, q in quadros.items() if (pasta / q.get("mini", "-")).is_file()},
+        "banco": [p for p in doc.get("banco") or [] if p in quadros],
+        "tem_prints": bool(doc), "faltam_prints": [f["id"] for f in frases if f["id"] not in (doc.get("frases") or {})],
+        "tem_transcricao": bool(PJ.achar_transcricao(proj)), "tem_video": bool(video and video.is_file()),
+        "gerando": _gerando_prints(proj),
+        "fontes": [{**f, "url": "/fontes/" + quote(Path(f["arquivo"]).name) if not Path(f["arquivo"]).is_absolute() else None}
+                   for f in PJ.fontes()],
+        "formatos": {k: {"nome": v["nome"], "largura": v["tamanho"][0], "altura": v["tamanho"][1]}
+                     for k, v in PJ.A.FORMATOS.items()},
+        "cor_da_marca": _cor_da_marca(),
+    }
+
+
+def _cor_da_marca() -> str | None:
+    """A primária da marca, para o destaque — se não for branca (o formulário vem com branco)."""
+    c = ((marca().get("marca") or {}).get("cores") or {}).get("primaria")
+    return c.upper() if isinstance(c, str) and re.fullmatch(r"#[0-9A-Fa-f]{6}", c) and c.upper() != "#FFFFFF" else None
+
+
+def salvar_posts(proj: Path, dados: dict) -> dict:
+    # sem anotar no diário: a escolha dos posts não é a vez do Claude (o card diria "avise o Claude")
+    modulo_posts().salvar_estado(proj, dados)
+    return posts_do_projeto(proj)
+
+
+def _frase(proj: Path, fid: str):
+    PJ = modulo_posts()
+    estado = PJ.ler_estado(proj)
+    f = PJ.achar_frase(proj, fid, estado)
+    if not f:
+        raise ValueError("Essa frase não existe mais.")
+    return PJ, estado, f
+
+
+def previa_post(proj: Path, fid: str) -> bytes:
+    import io
+    PJ, estado, f = _frase(proj, fid)
+    with _arte:
+        img = PJ.renderizar(proj, f, estado, escala=0.5)
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=86)
+    return buf.getvalue()
+
+
+def png_post(proj: Path, fid: str) -> tuple[str, bytes]:
+    """O PNG final (1080 de largura), gravado também em posts/prontos/."""
+    PJ, estado, f = _frase(proj, fid)
+    ordem = estado["escolhidas"].index(fid) + 1 if fid in estado["escolhidas"] else None
+    destino = PJ.pasta(proj) / "prontos" / PJ.nome_do_arquivo(f, estado, ordem)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    with _arte:
+        PJ.renderizar(proj, f, estado, 1.0).save(destino, optimize=True)
+    return destino.name, destino.read_bytes()
+
+
+def zip_posts(proj: Path) -> tuple[str, bytes]:
+    import io
+    import zipfile
+    PJ = modulo_posts()
+    estado = PJ.ler_estado(proj)
+    if not estado["escolhidas"]:
+        raise ValueError("Escolha pelo menos uma frase.")
+    with _arte:
+        arquivos = PJ.exportar(proj, estado["escolhidas"], estado)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:     # PNG já é comprimido
+        for a in arquivos:
+            z.write(a, a.name)
+    return f"posts-{proj.name}-{estado['formato']}.zip", buf.getvalue()
+
+
+def gerar_prints(proj: Path) -> dict:
+    """Roda `./topclip post prints` em segundo plano (fechar o painel não interrompe)."""
+    if _gerando_prints(proj):
+        return {"ok": True, "ja_rodando": True}
+    PJ = modulo_posts()
+    video = PJ.video_do_projeto(proj)
+    if not video or not video.is_file():
+        raise ValueError("Não achei o vídeo deste projeto. Confira o caminho (ou espere o download terminar).")
+    PJ.pasta(proj).mkdir(parents=True, exist_ok=True)
+    with (PJ.pasta(proj) / "prints.log").open("ab") as log:
+        subprocess.Popen([str(RAIZ / "topclip"), "post", "prints", str(proj)], cwd=str(RAIZ), stdin=subprocess.DEVNULL,
+                         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+    return {"ok": True}
+
+
 # ------------------------------------------------------------------ atividade
 import atividade as ATV  # noqa: E402  — o diário que o lançador e o Claude escrevem
 
@@ -1139,7 +1285,9 @@ def atividade(proj: Path) -> dict:
     # recente antes dele. Com o comando rodando, vai para a manchete; sem comando, o mais
     # novo fica no topo da lista enquanto nada mais novo acontecer.
     progressos = [e for e in eventos if e.get("tipo") == "progresso"]
-    eventos = [e for e in eventos if e.get("tipo") != "progresso"]
+    # os posts virais correm por fora: a caixa dos clipes não conta as notícias deles (a aba
+    # Posts tem o próprio aviso). O comando deles rodando continua aparecendo como trabalho.
+    eventos = [e for e in eventos if e.get("tipo") != "progresso" and e.get("etapa") != "posts"]
     agora = datetime.now().timestamp()
 
     def progresso_de(r):
@@ -1153,8 +1301,9 @@ def atividade(proj: Path) -> dict:
                               "progresso": p["msg"] if p else None, "pct": p.get("pct") if p else None,
                               "etapa": r.get("etapa"), "sub": r.get("sub"), "clipe": r.get("clipe")})
     rodando = vivos[0] if vivos else None
-    if not rodando and progressos and (not eventos or progressos[0]["ts"] > eventos[0]["ts"]):
-        eventos.insert(0, progressos[0])
+    dos_clipes = [p for p in progressos if p.get("etapa") != "posts"]
+    if not rodando and dos_clipes and (not eventos or dos_clipes[0]["ts"] > eventos[0]["ts"]):
+        eventos.insert(0, dos_clipes[0])
     ultima = eventos[0]["ts"] if eventos else None
 
     sua_vez = None
@@ -1202,6 +1351,8 @@ def _etiquetar(eventos: list[dict]) -> None:
     seguinte já começou: é o Claude trabalhando nela."""
     atual, do_comando = "momentos", {}
     for e in reversed(eventos):
+        if e.get("etapa") == "posts":       # os posts correm por fora: nem herdam nem puxam etapa
+            continue
         etapa = e.get("etapa") if e.get("etapa") in ORDEM else None
         if not etapa and e.get("tipo") in ("inicio", "fim", "erro") and e.get("id"):
             # diário de antes da etapa nos comandos: o início diz o comando, o fim casa pelo id
@@ -1429,6 +1580,20 @@ class Painel(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(dados)
 
+    def _bytes(self, dados: bytes, tipo: str, baixar_como: str | None = None):
+        """Bytes gerados na hora: a prévia do post (imagem) ou o PNG/ZIP para salvar."""
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", tipo)
+        if baixar_como:
+            self.send_header("Content-Disposition", f"attachment; filename=\"{quote(baixar_como)}\"; filename*=UTF-8''{quote(baixar_como)}")
+        self.send_header("Content-Length", str(len(dados)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        try:
+            self.wfile.write(dados)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def _corpo(self, limite=1_000_000) -> dict:
         n = int(self.headers.get("Content-Length") or 0)
         if n > limite:
@@ -1456,9 +1621,12 @@ class Painel(BaseHTTPRequestHandler):
             p = ESTATICO / rota[len("/static/"):]
             return self._arquivo(p, cache=False) if dentro(p, ESTATICO) else self._erro("proibido", HTTPStatus.FORBIDDEN)
         if rota.startswith("/fontes/"):
-            p = FONTES / rota[len("/fontes/"):]
-            if dentro(p, FONTES) and p.suffix == ".ttf":
-                return self._arquivo(p, cache=True)
+            nome = rota[len("/fontes/"):]
+            # as do kit do motion e as que só os posts usam (fontes/ da skill topclip-post)
+            for base in (FONTES, POST_FONTES):
+                p = base / nome
+                if dentro(p, base) and p.suffix == ".ttf" and p.is_file():
+                    return self._arquivo(p, cache=True)
             return self._erro("proibido", HTTPStatus.FORBIDDEN)
         if rota.startswith("/midia/"):
             p = RAIZ / rota[len("/midia/"):]
@@ -1470,6 +1638,25 @@ class Painel(BaseHTTPRequestHandler):
             lista = [resumo(p) for p in PROJETOS.iterdir() if p.is_dir() and not p.name.startswith(".")]
             lista.sort(key=lambda r: r.get("criado") or "", reverse=True)
             return self._json({"projetos": lista})
+        m = re.fullmatch(r"/api/projetos/([^/]+)/posts(?:/(previa|baixar)/([a-z0-9-]+)\.(jpg|png)|/(baixar\.zip))?", rota)
+        if m:
+            p = self._projeto(m.group(1))
+            if not p:
+                return self._erro("projeto não encontrado", HTTPStatus.NOT_FOUND)
+            try:
+                if m.group(5):
+                    nome, dados = zip_posts(p)
+                    return self._bytes(dados, "application/zip", nome)
+                if m.group(2) == "previa" and m.group(4) == "jpg":
+                    return self._bytes(previa_post(p, m.group(3)), "image/jpeg")
+                if m.group(2) == "baixar" and m.group(4) == "png":
+                    nome, dados = png_post(p, m.group(3))
+                    return self._bytes(dados, "image/png", nome)
+                if not m.group(2):
+                    return self._json(posts_do_projeto(p))
+            except ValueError as e:
+                return self._erro(str(e))
+            return self._erro("rota não encontrada", HTTPStatus.NOT_FOUND)
         m = re.fullmatch(r"/api/projetos/([^/]+)/atividade", rota)
         if m:
             p = self._projeto(m.group(1))
@@ -1550,6 +1737,12 @@ class Painel(BaseHTTPRequestHandler):
                 if not p:
                     return self._erro("projeto não encontrado", HTTPStatus.NOT_FOUND)
                 return self._json(salvar_escolhas(p, corpo))
+            m = re.fullmatch(r"/api/projetos/([^/]+)/posts(/gerar-prints)?", rota)
+            if m:
+                p = self._projeto(m.group(1))
+                if not p:
+                    return self._erro("projeto não encontrado", HTTPStatus.NOT_FOUND)
+                return self._json(gerar_prints(p) if m.group(2) else salvar_posts(p, corpo))
             m = re.fullmatch(r"/api/projetos/([^/]+)/apagar", rota)
             if m:
                 p = self._projeto(m.group(1))

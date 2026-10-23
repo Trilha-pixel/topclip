@@ -1,8 +1,9 @@
 # TopClip
 
-Vídeo longo → clipes verticais 9:16 com motion e legenda. Quatro skills em
-`.claude/skills/`: `topclip` (fluxo completo), `topclip-corte`, `topclip-motion` e
-`topclip-estilo` (criar o estilo da pessoa, remixar, exportar e importar).
+Vídeo longo → clipes verticais 9:16 com motion e legenda, e posts virais de imagem.
+Cinco skills em `.claude/skills/`: `topclip` (fluxo completo), `topclip-corte`,
+`topclip-motion`, `topclip-estilo` (criar o estilo da pessoa, remixar, exportar e
+importar) e `topclip-post` (frase do vídeo em 2 ou 3 prints do rosto, feed ou stories).
 
 ## Regras do repositório
 
@@ -43,4 +44,8 @@ Vídeo longo → clipes verticais 9:16 com motion e legenda. Quatro skills em
   PNG em `minha-biblioteca/assets/`, linha em `minha-biblioteca/MANIFESTO.md`. Nunca em
   `lib/desenho.py` nem em `biblioteca/`: são do repositório, e o próximo `git pull` do
   usuário daria conflito. Asset só vira oficial quando quem mantém o repositório pede.
+- **Posts virais** (`./topclip post …`, skill `topclip-post`): o Claude só escolhe as frases
+  (`projetos/<nome>/posts/frases.json`) e roda `./topclip post prints`; escolher, editar,
+  trocar print e fonte e baixar é no painel (aba Posts virais), sem voltar ao Claude. O
+  painel grava em `posts/posts.json`. Código em `.claude/skills/topclip-post/lib/`.
 - Depois de mexer em código: `./topclip testes` e `./topclip verificar`.

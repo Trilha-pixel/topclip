@@ -13,6 +13,8 @@
 #                                   o seu estilo (./topclip estilo -h; skill topclip-estilo)
 #   ./topclip objetos               os objetos dos estilos com lápis (oficiais e os seus); confere
 #                                   os seus (minha-biblioteca/objetos.py) e grava a folha deles
+#   ./topclip post <subcomando>     posts virais: frase + prints do vídeo (texto, transcrever,
+#                                   conferir, prints, render, fontes — ./topclip post -h)
 #   ./topclip baixar <link> [projetos/<nome>]   baixa o vídeo de um link (YouTube, Instagram)
 #   ./topclip painel                abre o painel no navegador (http://127.0.0.1:7777)
 #   ./topclip log <projeto> "msg"   anota no diário do projeto (aparece no painel)
@@ -28,6 +30,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PY="$ROOT/.venv/bin/python"
 CORTE="$ROOT/.claude/skills/topclip-corte"
 MOTION="$ROOT/.claude/skills/topclip-motion"
+POST="$ROOT/.claude/skills/topclip-post"
 
 ajuda() {
     sed -n '2,/^# Existe porque/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
@@ -170,6 +173,14 @@ case "$cmd" in
         precisa_venv
         exec "$PY" "$MOTION/lib/estilo.py" --raiz "$ROOT" "$@"
         ;;
+    post)
+        precisa_venv
+        # só os demorados entram no diário do projeto; ler e conferir são instantâneos
+        case "${1:-}" in
+            prints|render|transcrever) rodar_registrando post "$PY" "$POST/lib/post.py" "$@" ;;
+            *) exec "$PY" "$POST/lib/post.py" "$@" ;;
+        esac
+        ;;
     objetos)
         precisa_venv
         exec "$PY" "$MOTION/lib/meus_objetos.py" --raiz "$ROOT" "$@"
@@ -193,6 +204,8 @@ case "$cmd" in
         (cd "$CORTE" && "$PY" -m unittest discover -s tests -t . -q)
         echo "-- motion"
         (cd "$MOTION" && "$PY" -m unittest discover -s tests -t . -q)
+        echo "-- posts"
+        (cd "$POST" && "$PY" -m unittest discover -s tests -t . -q)
         echo "-- painel"
         cd "$ROOT/painel" && exec "$PY" -m unittest test_servidor test_baixar -q
         ;;
